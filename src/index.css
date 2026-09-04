@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/Inter-Regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/Inter-Medium.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/Inter-SemiBold.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "AnthropicSerif";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/AnthropicSerif-Text-Regular-Static.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "AnthropicSerif";
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url("/fonts/AnthropicSerif-Text-Light-Static.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "AnthropicSerif";
+  font-style: italic;
+  font-weight: 300;
+  font-display: swap;
+  src: url("/fonts/AnthropicSerif-Text-LightItalic-Static.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "AnthropicSerif";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/AnthropicSerif-Display-Medium-Static.otf") format("opentype");
+}
+
+@theme {
+  --color-bg-primary: #161616;
+  --color-bg-secondary: #1f1f1f;
+  --color-border-primary: #ffffff0d;
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #8c8c8c;
+  --color-bg-hover-primary: #1f1f1f;
+  --color-bg-hover-secondary: #2a2a2a;
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: "AnthropicSerif", Georgia, "Times New Roman", serif;
+  --shadow-4xl: 0 50px 100px -20px #00000099;
+}
+
+html,
+body,
+#root {
+  background: transparent;
+  height: 100%;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:focus,
+button:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+* {
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+}

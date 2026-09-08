@@ -59,14 +59,14 @@ export default function Sidebar({
           className="flex h-7 w-7 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-bg-hover-primary hover:text-text-primary focus:bg-bg-hover-primary focus:text-text-primary focus-visible:bg-bg-hover-primary focus-visible:text-text-primary"
           aria-label="Toggle sidebar"
         >
-          <BsLayoutSidebarInset size={16} className="text-text-secondary" />
+          <BsLayoutSidebarInset size={18} className="text-text-secondary" />
         </button>
         <button
           type="button"
           className="flex h-7 w-7 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-bg-hover-primary hover:text-text-primary focus:bg-bg-hover-primary focus:text-text-primary focus-visible:bg-bg-hover-primary focus-visible:text-text-primary"
           aria-label="Search"
         >
-          <IoSearchOutline size={16} className="text-text-secondary" />
+          <IoSearchOutline size={18} className="text-text-secondary" />
         </button>
       </div>
       <button

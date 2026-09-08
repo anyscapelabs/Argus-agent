@@ -60,7 +60,7 @@ export default function Dropdown({ trigger, items, align = "left", side = "top",
         >
           {items.map((it, i) => {
             const Icon = it.Icon;
-            const isActive = it.toggleable === true && (activeMap[i] ?? it.active === true);
+            const isActive = it.active === true || (it.toggleable === true && (activeMap[i] ?? false));
             return (
               <div key={`${it.label}-${i}`}>
                 {i > 0 && <div className="my-1 h-px bg-border-primary" />}

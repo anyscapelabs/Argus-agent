@@ -9,12 +9,14 @@ type ToolbarProps = {
   onToggleSidebar: () => void;
   sidebarOpen: boolean;
   chatTitle?: string | null;
+  onSettings: () => void;
 };
 
 export default function Toolbar({
   onToggleSidebar,
   sidebarOpen,
   chatTitle,
+  onSettings,
 }: ToolbarProps) {
   const menuItems: DropdownItem[] = [
     { label: "Archive", Icon: LuArchive, onClick: () => console.log("archive") },
@@ -35,7 +37,7 @@ export default function Toolbar({
             className="flex h-7 w-7 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-bg-hover-primary hover:text-text-primary focus:bg-bg-hover-primary focus:text-text-primary focus-visible:bg-bg-hover-primary focus-visible:text-text-primary"
             aria-label="Expand sidebar"
           >
-            <BsLayoutSidebarInset size={16} className="text-text-secondary" />
+            <BsLayoutSidebarInset size={18} className="text-text-secondary" />
           </button>
         )}
         {chatTitle && (
@@ -62,12 +64,13 @@ export default function Toolbar({
                       : "text-text-secondary hover:bg-bg-hover-primary hover:text-text-primary focus-visible:bg-bg-hover-primary"
                   }`}
                 >
-                  <FiChevronDown size={14} />
+                  <FiChevronDown size={18} />
                 </button>
               )}
             />
           </div>
         )}
+
       </div>
       <div className="flex h-9 items-center gap-1 pr-2">
         <button
@@ -75,14 +78,15 @@ export default function Toolbar({
           className="flex h-7 w-7 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-bg-hover-primary hover:text-text-primary focus:bg-bg-hover-primary focus:text-text-primary focus-visible:bg-bg-hover-primary focus-visible:text-text-primary"
           aria-label="Profile"
         >
-          <CgProfile size={16} className="text-text-secondary" />
+          <CgProfile size={18} className="text-text-secondary" />
         </button>
         <button
           type="button"
+          onClick={onSettings}
           className="flex h-7 w-7 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-bg-hover-primary hover:text-text-primary focus:bg-bg-hover-primary focus:text-text-primary focus-visible:bg-bg-hover-primary focus-visible:text-text-primary"
           aria-label="Settings"
         >
-          <VscSettingsGear size={16} className="text-text-secondary" />
+          <VscSettingsGear size={18} className="text-text-secondary" />
         </button>
       </div>
     </div>

@@ -216,12 +216,28 @@ export function buildTree(toks: Token[]): XmlTree {
 
   const flush = () => {
     const v = buf.trim();
-    if (v.length === 0) {
-      buf = "";
-      return;
-    }
-    blks.push({ kind: "paragraph", tag: "p", attrs: {}, children: [{ kind: "text", value: v }] });
     buf = "";
+    if (v.length === 0) return;
+    // Each line is its own paragraph; consecutive list lines stay grouped so
+    // the renderer can build ul/ol out of them.
+    const isList = (l: string) => /^(?:[-•*]|\d+\.)\s+/.test(l);
+    let group: string[] = [];
+    const pushGroup = () => {
+      if (group.length === 0) return;
+      blks.push({ kind: "paragraph", tag: "p", attrs: {}, children: [{ kind: "text", value: group.join("\n") }] });
+      group = [];
+    };
+    for (const raw of v.split("\n")) {
+      const line = raw.trim();
+      if (line.length === 0) continue;
+      if (isList(line)) {
+        group.push(line);
+      } else {
+        pushGroup();
+        blks.push({ kind: "paragraph", tag: "p", attrs: {}, children: [{ kind: "text", value: line }] });
+      }
+    }
+    pushGroup();
   };
 
   for (const tok of toks) {
@@ -292,6 +308,40 @@ export function buildTree(toks: Token[]): XmlTree {
   });
 }
 
+// Markdown leaks from every model sooner or later; convert the common cases
+// to the dialect instead of showing literal ** junk. Fence content passes
+// through untouched.
+function inlineMd(s: string): string {
+  let t = s;
+  t = t.replace(/\*\*([^*]+)\*\*/g, "<bold>$1</bold>");
+  t = t.replace(/__([^_]+)__/g, "<bold>$1</bold>");
+  t = t.replace(/(^|[\s(])\*([^*\s][^*]*?)\*(?=[\s).,!?;:]|$)/g, "$1<italic>$2</italic>");
+  t = t.replace(/(^|[\s(])_([^_\s][^_]*?)_(?=[\s).,!?;:]|$)/g, "$1<italic>$2</italic>");
+  t = t.replace(/`([^`]+)`/g, "<code>$1</code>");
+  t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<link href="$2">$1</link>');
+  return t;
+}
+
+function normalizeMdLine(line: string): string {
+  const h = line.match(/^(#{1,6})\s+(.*)$/);
+  if (h !== null) {
+    const tag = h[1].length <= 2 ? "h2" : "h3";
+    return `<${tag}>${inlineMd(h[2])}</${tag}>`;
+  }
+  if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) return ""; // hr junk, drop it
+  return inlineMd(line.replace(/^\s*>\s?/, ""));
+}
+
+function normalizeMd(src: string): string {
+  const parts = src.split(/```[a-zA-Z0-9_-]*[^\S\n]*\n?/);
+  return parts
+    .map((seg, i) => {
+      if (i % 2 === 1) return seg; // fence content: leave as-is
+      return seg.split("\n").map(normalizeMdLine).join("\n");
+    })
+    .join("\n");
+}
+
 export function parse(buf: string): XmlTree {
-  return buildTree(tokenize(buf));
+  return buildTree(tokenize(normalizeMd(buf)));
 }

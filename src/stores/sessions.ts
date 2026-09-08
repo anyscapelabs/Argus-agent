@@ -23,9 +23,7 @@ type State = {
   turns: Record<string, Turn>;
 };
 
-// Module-level store: running turns live here, not in component state, so a
-// turn keeps streaming while its chat view is unmounted. Reopening the
-// session shows the buffered text live and the persisted rows on completion.
+
 class SessionStore {
   private state: State = { sessions: [], loading: true, activeId: null, msgs: {}, turns: {} };
   private listeners = new Set<() => void>();
@@ -100,7 +98,8 @@ class SessionStore {
     }
   }
 
-  async archive(sessionId: string) {    const row = this.state.sessions.find((s) => s.id === sessionId);
+  async archive(sessionId: string) {
+    const row = this.state.sessions.find((s) => s.id === sessionId);
     if (row === undefined) return;
     await sessSaveSession({ ...row, status: "archived" });
     await this.loadSessions();
@@ -122,7 +121,6 @@ class SessionStore {
   async send(sessionId: string, content: string) {
     if (this.state.turns[sessionId] !== undefined) return;
 
-    // Show the user message now; the DB rows replace it when the turn lands.
     const pending: MsgRow = {
       id: `pending-${Date.now()}`,
       session_id: sessionId,
@@ -138,6 +136,18 @@ class SessionStore {
     };
     const existing = this.state.msgs[sessionId] ?? [];
     this.set({ msgs: { ...this.state.msgs, [sessionId]: [...existing, pending] } });
+
+    const row = this.state.sessions.find((s) => s.id === sessionId);
+    if (row !== undefined && row.title === "New chat") {
+      const tempTitle = content.trim().split("\n")[0].trim().slice(0, 60);
+      if (tempTitle.length > 0) {
+        this.set({
+          sessions: this.state.sessions.map((s) =>
+            s.id === sessionId ? { ...s, title: tempTitle } : s,
+          ),
+        });
+      }
+    }
 
     const chan = new Channel<StreamEvent>();
     chan.onmessage = (ev) => {
@@ -160,8 +170,7 @@ class SessionStore {
     }
   }
 
-  // Marks everything after the user turn inactive, then resends the content
-  // as a fresh user message.
+  
   async retry(sessionId: string, userSeq: number, content: string) {
     if (this.state.turns[sessionId] !== undefined) return;
     try {

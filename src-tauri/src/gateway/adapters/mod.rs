@@ -80,7 +80,7 @@ pub fn is_local(base_url: &str) -> bool {
 // keys. An empty chat POST is the cheapest request that servers actually gate:
 // 401/403 with a bad key, 4xx validation with a good one.
 pub async fn verify_key(http: &Client, prov: &Provider, key: &str) -> Result<(), String> {
-  let (url, mut body) = if prov.compatible == "Anthropic" {
+  let (url, body) = if prov.compatible == "Anthropic" {
     (
       format!("{}/v1/messages", prov.base_url.trim_end_matches('/')),
       serde_json::json!({ "model": "auth-probe", "max_tokens": 1 }),

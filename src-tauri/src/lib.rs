@@ -1,5 +1,6 @@
 mod sessions;
 mod gateway;
+mod library;
 mod skills;
 
 use std::sync::Mutex;
@@ -18,11 +19,15 @@ pub fn run() {
       let conn = store::open(&dir.join("argus.db"))?;
       sessions::store::migrate(&conn)?;
       skills::store::migrate(&conn)?;
+      library::store::migrate(&conn)?;
       let skills_dir = skills::default_dir(&dir);
       std::fs::create_dir_all(&skills_dir)?;
       skills::store::sync(&conn, &skills_dir)?;
+      let library_dir = library::default_dir(&dir);
+      std::fs::create_dir_all(&library_dir)?;
+      library::store::sync(&conn, &library_dir)?;
       let http = reqwest::Client::builder().build()?;
-      app.manage(Gateway { conn: Mutex::new(conn), http, skills_dir });
+      app.manage(Gateway { conn: Mutex::new(conn), http, skills_dir, library_dir });
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
@@ -53,6 +58,12 @@ pub fn run() {
       skills::skill_touch,
       skills::skill_search,
       skills::skill_sync,
+      library::library_add,
+      library::library_list,
+      library::library_get,
+      library::library_delete,
+      library::library_search,
+      library::library_path,
       gateway::gw_logs
     ])
     .run(tauri::generate_context!())

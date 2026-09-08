@@ -17,6 +17,7 @@ pub struct Gateway {
   pub conn: Mutex<Connection>,
   pub http: Client,
   pub skills_dir: PathBuf,
+  pub library_dir: PathBuf,
 }
 
 #[tauri::command]

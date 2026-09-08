@@ -77,6 +77,19 @@ pub async fn gw_chat_stream(
 }
 
 #[tauri::command]
+pub async fn gw_sync_catalog(gw: State<'_, Gateway>) -> Result<usize, String> {
+  let (models, avail) = catalog::sync_openrouter(&gw.http).await?;
+  let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+  for m in &models {
+    store::add_model(&conn, m)?;
+  }
+  for a in &avail {
+    store::link_model(&conn, a)?;
+  }
+  Ok(models.len()) // Sorted
+}
+
+#[tauri::command]
 pub fn gw_logs(gw: State<'_, Gateway>, limit: Option<i64>) -> Result<Vec<schema::ReqLog>, String> {
   let conn = gw.conn.lock().map_err(|e| e.to_string())?;
   store::list_logs(&conn, limit.unwrap_or(100))

@@ -2,31 +2,51 @@ import { useEffect, useRef, useState } from "react";
 import AgentBubble from "./AgentBubble";
 import ChatInput from "./ChatInput";
 import UserBubble from "./UserBubble";
+import { sessionStore, useSessions } from "../stores/sessions";
 import type { ChatMessage } from "../types/chat";
 
 const SCROLL_LINE = 40;
 const SCROLL_PAGE_RATIO = 0.85;
 
-type Props = {
-  messages: ChatMessage[];
-  onSend: (text: string) => void;
-  onRetry: (userMsgId: string) => void;
-};
+type Props = { sessionId: string };
 
-export default function ChatDetailPage({ messages, onSend, onRetry }: Props) {
+export default function ChatDetailPage({ sessionId }: Props) {
+  const { msgs, turns } = useSessions();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [draft, setDraft] = useState("");
+  const rows = msgs[sessionId] ?? [];
+  const turn = turns[sessionId];
+  const running = turn !== undefined;
+
+  const messages: ChatMessage[] = rows.map((m) => ({
+    id: m.id,
+    role: m.role === "user" ? "user" : "agent",
+    content: m.content,
+    timestamp: Date.now(),
+  }));
+  if (turn !== undefined) {
+    messages.push({ id: "live", role: "agent", content: turn.text });
+  }
 
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages]);
+  }, [messages.length, turn?.text]);
 
-  const handleSend = () => {
-    const txt = draft.trim();
-    if (txt.length === 0) return;
-    onSend(txt);
-    setDraft("");
+  const handleSend = (text: string) => {
+    if (running) return;
+    sessionStore.send(sessionId, text);
+  };
+
+  const handleRetry = (userMsgId: string) => {
+    if (running) return;
+    const idx = messages.findIndex((m) => m.id === userMsgId);
+    if (idx === -1) return;
+    const prev = messages[idx - 1];
+    if (prev === undefined || prev.role !== "user") return;
+    const row = rows.find((m) => m.id === userMsgId);
+    if (row === undefined) return;
+    sessionStore.retry(sessionId, row.seq, row.content);
   };
 
   const handleScrollKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -72,7 +92,7 @@ export default function ChatDetailPage({ messages, onSend, onRetry }: Props) {
         <div className="mx-auto flex w-full min-w-0 max-w-[700px] flex-col gap-3">
           {messages.map((message, idx) =>
             message.role === "user" ? (
-              <UserBubble key={message.id} timestamp={message.timestamp} onRetry={() => onRetry(message.id)}>
+              <UserBubble key={message.id} timestamp={message.timestamp} onRetry={() => handleRetry(message.id)}>
                 {message.content}
               </UserBubble>
             ) : (
@@ -81,10 +101,15 @@ export default function ChatDetailPage({ messages, onSend, onRetry }: Props) {
                 text={message.content}
                 onRetry={() => {
                   const prev = messages[idx - 1];
-                  if (prev && prev.role === "user") onRetry(prev.id);
+                  if (prev && prev.role === "user") handleRetry(prev.id);
                 }}
               />
             )
+          )}
+          {turn?.err !== undefined && turn !== undefined && turn.err !== null && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+              {turn.err}
+            </div>
           )}
         </div>
       </div>
@@ -93,7 +118,12 @@ export default function ChatDetailPage({ messages, onSend, onRetry }: Props) {
           placeholder="Reply to Argus…"
           value={draft}
           onChange={setDraft}
-          onSubmit={handleSend}
+          onSubmit={() => {
+            const txt = draft.trim();
+            if (txt.length === 0 || running) return;
+            setDraft("");
+            handleSend(txt);
+          }}
         />
       </div>
     </div>

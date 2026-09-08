@@ -43,8 +43,11 @@ export default function ChatInput({
   const [permission, setPermission] = useState<Permission>("Always allow");
 
   useEffect(() => {
-    if (!picked && models.length > 0) setPicked(models[0]);
-  }, [models, picked]);
+    if (!picked && models.length > 0) {
+      setPicked(models[0]);
+      onModelChange?.(models[0]);
+    }
+  }, [models, picked, onModelChange]);
 
   useEffect(() => {
     const textarea = textareaRef.current;

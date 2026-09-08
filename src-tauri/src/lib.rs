@@ -58,6 +58,7 @@ pub fn run() {
       sessions::sess_list_sessions,
       sessions::sess_save_session,
       sessions::sess_delete_session,
+      sessions::sess_export_json,
       sessions::sess_list_messages,
       sessions::sess_add_message,
       sessions::sess_supersede_from,

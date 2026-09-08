@@ -35,18 +35,27 @@ type SessionListProps = {
   onSelect: (sessionId: string) => void;
   activeSessionId: string | null;
   sessions: Session[];
+  onArchive: (sessionId: string) => void;
+  onExport: (sessionId: string) => void;
+  onDelete: (sessionId: string) => void;
 };
 
-const menuItems = (sessionId: string): DropdownItem[] => [
-  { label: "Archive", Icon: LuArchive, onClick: () => console.log("archive", sessionId) },
-  { label: "Export", Icon: LuDownload, onClick: () => console.log("export", sessionId) },
-  { label: "Delete", Icon: LuTrash2, onClick: () => console.log("delete", sessionId) },
+const menuItems = (
+  sessionId: string,
+  actions: { onArchive: (id: string) => void; onExport: (id: string) => void; onDelete: (id: string) => void },
+): DropdownItem[] => [
+  { label: "Archive", Icon: LuArchive, onClick: () => actions.onArchive(sessionId) },
+  { label: "Export", Icon: LuDownload, onClick: () => actions.onExport(sessionId) },
+  { label: "Delete", Icon: LuTrash2, danger: true, onClick: () => actions.onDelete(sessionId) },
 ];
 
 export default function SessionList({
   onSelect,
   activeSessionId,
   sessions,
+  onArchive,
+  onExport,
+  onDelete,
 }: SessionListProps) {
   const [open, setOpen] = useState(true);
 
@@ -86,7 +95,7 @@ export default function SessionList({
                   {title}
                 </button>
                 <Dropdown
-                  items={menuItems(id)}
+                  items={menuItems(id, { onArchive, onExport, onDelete })}
                   align="right"
                   side="bottom"
                   trigger={({ open: isOpen, toggle }) => (

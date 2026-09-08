@@ -1,4 +1,73 @@
+use reqwest::Client;
+
 use super::schema::{Avail, ModelEntry, Provider};
+
+// Pull OpenRouter's public catalog and upsert every model, free ones included.
+pub async fn sync_openrouter(http: &Client) -> Result<(Vec<ModelEntry>, Vec<Avail>), String> {
+  let resp = http
+    .get("https://openrouter.ai/api/v1/models")
+    .send()
+    .await
+    .map_err(|e| e.to_string())?;
+  if !resp.status().is_success() {
+    return Err(format!("openrouter sync failed: {}", resp.status())); // Drop it
+  }
+  let v: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+  let rows = match v["data"].as_array() {
+    Some(r) => r,
+    None => return Err("openrouter sync: bad payload".into()),
+  };
+
+  let mut models = vec![];
+  let mut avail = vec![];
+  for r in rows {
+    let full_id = match r["id"].as_str() {
+      Some(id) => id,
+      None => continue,
+    };
+    let (vendor, short) = match full_id.split_once('/') {
+      Some((v, s)) => (v, s),
+      None => ("openrouter", full_id),
+    };
+    let params = r["supported_parameters"].as_array();
+    let has = |k: &str| params.map(|p| p.iter().any(|x| x.as_str() == Some(k))).unwrap_or(false);
+    let vision = r["architecture"]["input_modalities"]
+      .as_array()
+      .map(|m| m.iter().any(|x| x.as_str() == Some("image")))
+      .unwrap_or(false);
+    models.push(ModelEntry {
+      id: full_id.into(),
+      display_name: r["name"].as_str().unwrap_or(short).into(),
+      family: Some(vendor.into()),
+      capabilities: Some(
+        serde_json::json!({
+          "tools": has("tools"),
+          "vision": vision,
+          "reasoning": has("reasoning"),
+          "context": r["context_length"].as_u64().unwrap_or(0)
+        })
+        .to_string(),
+      ),
+      suggested_tier: None,
+    });
+    avail.push(Avail {
+      model_id: full_id.into(),
+      provider_id: "openrouter".into(),
+      remote_model_id: full_id.into(),
+      cost_in: per_1k(&r["pricing"]["prompt"]),
+      cost_out: per_1k(&r["pricing"]["completion"]),
+    });
+  }
+  Ok((models, avail)) // Sorted
+}
+
+fn per_1k(v: &serde_json::Value) -> f64 {
+  let n = v.as_str().unwrap_or("0").parse::<f64>().unwrap_or(0.0);
+  if n < 0.0 {
+    return 0.0; // OpenRouter flags unknown prices as -1
+  }
+  n * 1000.0
+}
 
 // Costs are per 1k tokens (in, out). Free = 0.
 pub fn providers() -> Vec<Provider> {

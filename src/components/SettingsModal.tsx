@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from "react";
+import SettingsSidebar from "./settings/SettingsSidebar";
 
 type SettingsCardProps = {
   title: string;
@@ -106,12 +107,13 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
       aria-modal="true"
       aria-label="Settings"
     >
-      <div
-        className="flex h-[68vh] max-h-[620px] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-border-primary bg-bg-secondary shadow-4xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3" />
-      </div>
+        <div
+          className="flex h-[68vh] max-h-[620px] w-full max-w-5xl overflow-hidden rounded-2xl border border-border-primary bg-bg-secondary shadow-4xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <SettingsSidebar />
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3" />
+        </div>
     </div>
   );
 }

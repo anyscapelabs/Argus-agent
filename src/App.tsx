@@ -5,6 +5,7 @@ import LibraryPage from "./components/LibraryPage";
 import MemoryPage from "./components/MemoryPage";
 import NewAgentPage from "./components/NewAgentPage";
 import ProjectsPage from "./components/ProjectsPage";
+import SettingsModal from "./components/SettingsModal";
 import Sidebar from "./components/Sidebar";
 import SkillsPage from "./components/SkillsPage";
 import Toolbar from "./components/Toolbar";
@@ -51,6 +52,7 @@ function App() {
   const [chatMsgs, setChatMsgs] = useState<ChatMessage[]>([]);
   const [streamId, setStreamId] = useState<string | null>(null);
   const [streamText, setStreamText] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const toggleSidebar = () => setSidebarOpen((open) => !open);
   const goToNewAgent = () => {
@@ -128,8 +130,8 @@ function App() {
   const chatTitle = view === "chat" ? activeSession?.title ?? "New chat" : null;
 
   return (
-    <div className="h-screen w-screen bg-transparent p-4">
-      <div className="flex h-full w-full overflow-hidden rounded-xl bg-bg-primary ring-1 ring-border-primary">
+    <div className="h-screen w-screen bg-bg-primary">
+      <div className="flex h-full w-full overflow-hidden bg-bg-primary">
         <Sidebar
           onToggle={toggleSidebar}
           open={sidebarOpen}
@@ -145,6 +147,7 @@ function App() {
             onToggleSidebar={toggleSidebar}
             sidebarOpen={sidebarOpen}
             chatTitle={chatTitle}
+            onSettings={() => setSettingsOpen(true)}
           />
           <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
             {view === "new-agent" && <NewAgentPage onSend={send} />}
@@ -163,6 +166,10 @@ function App() {
           </div>
         </div>
       </div>
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+      />
     </div>
   );
 }

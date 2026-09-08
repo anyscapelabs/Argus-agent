@@ -6,6 +6,7 @@
   font-weight: 400;
   font-display: swap;
   src: url("/fonts/Inter-Regular.woff2") format("woff2");
+  font-synthesis: none;
 }
 
 @font-face {
@@ -14,6 +15,7 @@
   font-weight: 500;
   font-display: swap;
   src: url("/fonts/Inter-Medium.woff2") format("woff2");
+  font-synthesis: none;
 }
 
 @font-face {
@@ -22,6 +24,7 @@
   font-weight: 600;
   font-display: swap;
   src: url("/fonts/Inter-SemiBold.woff2") format("woff2");
+  font-synthesis: none;
 }
 
 @font-face {
@@ -64,6 +67,7 @@
   --color-text-secondary: #8c8c8c;
   --color-bg-hover-primary: #1f1f1f;
   --color-bg-hover-secondary: #2a2a2a;
+  --color-accent: #ffffff;
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-serif: "AnthropicSerif", Georgia, "Times New Roman", serif;
   --shadow-4xl: 0 50px 100px -20px #00000099;
@@ -72,11 +76,13 @@
 html,
 body,
 #root {
-  background: transparent;
+  background: var(--color-bg-primary);
   height: 100%;
-  font-family: var(--font-sans);
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
 }
 
 button {

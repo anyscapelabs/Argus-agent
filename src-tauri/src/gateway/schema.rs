@@ -141,3 +141,27 @@ pub struct ChatResp {
   pub tok_out: i64,
   pub cost: f64,
 }
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum StreamEvent {
+  Status { provider_id: String, attempt: i64 },
+  Delta { text: String },
+  Done {
+    model_id: String,
+    provider_id: String,
+    attempt: i64,
+    latency_ms: i64,
+    tok_in: i64,
+    tok_out: i64,
+    cost: f64,
+  },
+  Err { msg: String },
+}
+
+#[derive(Debug, Default)]
+pub struct StreamDone {
+  pub text: String,
+  pub tok_in: Option<u64>,
+  pub tok_out: Option<u64>,
+}

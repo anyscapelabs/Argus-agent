@@ -68,6 +68,15 @@ pub async fn gw_chat(gw: State<'_, Gateway>, req: ChatReq) -> Result<ChatResp, S
 }
 
 #[tauri::command]
+pub async fn gw_chat_stream(
+  gw: State<'_, Gateway>,
+  req: ChatReq,
+  on_event: tauri::ipc::Channel<schema::StreamEvent>,
+) -> Result<(), String> {
+  router::stream_run(&gw, &req, &on_event).await
+}
+
+#[tauri::command]
 pub fn gw_logs(gw: State<'_, Gateway>, limit: Option<i64>) -> Result<Vec<schema::ReqLog>, String> {
   let conn = gw.conn.lock().map_err(|e| e.to_string())?;
   store::list_logs(&conn, limit.unwrap_or(100))

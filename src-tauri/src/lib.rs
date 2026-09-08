@@ -27,6 +27,7 @@ pub fn run() {
       gateway::gw_set_key,
       gateway::gw_set_routing,
       gateway::gw_chat,
+      gateway::gw_chat_stream,
       gateway::gw_logs
     ])
     .run(tauri::generate_context!())

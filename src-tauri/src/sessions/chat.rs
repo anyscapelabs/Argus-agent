@@ -1,17 +1,87 @@
+use rusqlite::params;
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::gateway::router;
-use crate::gateway::schema::StreamEvent;
+use crate::gateway::schema::{ChatReq, StreamEvent, WireMsg};
 use crate::gateway::Gateway;
+use crate::prompt::config::truncate_chars;
 use crate::prompt::{compressor, project};
 
 use super::store;
+
+const DEFAULT_TITLE: &str = "New chat";
+
+const TITLE_SYS: &str = "You write chat session titles. Reply with only the title: \
+3 to 6 words, no quotes, no trailing punctuation.";
+
+// Title lives in the detached task so the turn never waits on it.
+async fn generate_title(gw: &Gateway, session_id: &str, content: &str) -> Result<(), String> {
+  let (util, selected) = {
+    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    let cur: String = conn
+      .query_row("SELECT title FROM sessions WHERE id = ?1", params![session_id], |r| r.get(0))
+      .map_err(|e| e.to_string())?;
+    if cur != DEFAULT_TITLE {
+      return Ok(()); // titled already, likely by a racing turn
+    }
+    let selected: Option<String> = conn
+      .query_row("SELECT model_id FROM sessions WHERE id = ?1", params![session_id], |r| r.get(0))
+      .map_err(|e| e.to_string())?;
+    (compressor::utility_model(&conn), selected)
+  };
+
+  let msgs = vec![
+    WireMsg { role: "system".into(), content: TITLE_SYS.into() },
+    WireMsg { role: "user".into(), content: truncate_chars(content, 500) },
+  ];
+  let raw = match util {
+    Ok(u) => {
+      let req = ChatReq { model: u, msgs: msgs.clone(), prefix_hash: None };
+      match router::run(gw, &req).await {
+        Ok(resp) => resp.content,
+        Err(_) => fallback_title(gw, selected, &msgs).await?,
+      }
+    }
+    Err(_) => fallback_title(gw, selected, &msgs).await?,
+  };
+
+  let title = clean_title(&raw).ok_or("title model returned nothing usable")?;
+  let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+  conn
+    .execute(
+      "UPDATE sessions SET title = ?2 WHERE id = ?1 AND title = ?3",
+      params![session_id, title, DEFAULT_TITLE],
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
+// Utility call failed or was unavailable: retry on the session's own model.
+async fn fallback_title(
+  gw: &Gateway,
+  selected: Option<String>,
+  msgs: &[WireMsg],
+) -> Result<String, String> {
+  let model = selected.filter(|m| !m.is_empty()).ok_or("no fallback model for title")?;
+  let req = ChatReq { model, msgs: msgs.to_vec(), prefix_hash: None };
+  Ok(router::run(gw, &req).await?.content)
+}
+
+fn clean_title(raw: &str) -> Option<String> {
+  let line = raw.lines().next().unwrap_or("").trim();
+  let t = line.trim_matches('"').trim_matches('\'').trim();
+  if t.is_empty() {
+    return None;
+  }
+  Some(truncate_chars(t, 60))
+}
 
 // One turn end to end: persist the user message, project, stream from the
 // gateway, persist the reply, then compact when the context says so.
 pub async fn send(
   gw: &Gateway,
+  app: &AppHandle,
   session_id: &str,
   content: &str,
   chan: &Channel<StreamEvent>,
@@ -72,15 +142,40 @@ pub async fn send(
       eprintln!("compaction skipped: {e}"); // next turn tries again
     }
   }
+
+  // Untitled session: generate a title off-turn. Utility (free) model first,
+  // the session's selected model as fallback; failure keeps "New chat".
+  let untitled = {
+    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    conn
+      .query_row("SELECT title FROM sessions WHERE id = ?1", params![session_id], |r| {
+        r.get::<_, String>(0)
+      })
+      .map(|t| t == DEFAULT_TITLE)
+      .unwrap_or(false)
+  };
+  if untitled {
+    let app = app.clone();
+    let sid = session_id.to_string();
+    let user_text = content.to_string();
+    tauri::async_runtime::spawn(async move {
+      let gw = app.state::<Gateway>();
+      if let Err(e) = generate_title(gw.inner(), &sid, &user_text).await {
+        eprintln!("title skipped: {e}"); // stays "New chat"
+      }
+      let _ = app.emit("sessions-changed", ());
+    });
+  }
   Ok(())
 }
 
 #[tauri::command]
 pub async fn sess_chat_stream(
   gw: State<'_, Gateway>,
+  app: AppHandle,
   session_id: String,
   content: String,
   on_event: Channel<StreamEvent>,
 ) -> Result<(), String> {
-  send(&gw, &session_id, &content, &on_event).await
+  send(&gw, &app, &session_id, &content, &on_event).await
 }

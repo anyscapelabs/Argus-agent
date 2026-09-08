@@ -73,7 +73,7 @@ Keep every heading; write `none` under a heading with no content. Omit greetings
 Preserve exact file paths, commands, names, and numbers. Stay under the stated token budget.";
 
 // Utility model: cheapest enabled model on a connected provider, free first.
-fn utility_model(conn: &Connection) -> Result<String, String> {
+pub fn utility_model(conn: &Connection) -> Result<String, String> {
   conn
     .query_row(
       "SELECT m.id FROM models m

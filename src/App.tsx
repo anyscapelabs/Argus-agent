@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 import ChatDetailPage from "./components/ChatDetailPage";
 import ConnectorsPage from "./components/ConnectorsPage";
@@ -30,6 +31,12 @@ function App() {
 
   useEffect(() => {
     sessionStore.loadSessions();
+    const un = listen("sessions-changed", () => {
+      sessionStore.loadSessions();
+    });
+    return () => {
+      void un.then((f) => f());
+    };
   }, []);
 
   const toggleSidebar = () => setSidebarOpen((open) => !open);

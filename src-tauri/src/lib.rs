@@ -1,6 +1,7 @@
 mod sessions;
 mod gateway;
 mod library;
+mod prompt;
 mod skills;
 
 use std::sync::Mutex;
@@ -75,7 +76,8 @@ pub fn run() {
       library::library_delete,
       library::library_search,
       library::library_path,
-      gateway::gw_logs
+      gateway::gw_logs,
+      prompt::prompt_preview
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

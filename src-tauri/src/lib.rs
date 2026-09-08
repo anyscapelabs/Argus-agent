@@ -26,8 +26,10 @@ pub fn run() {
       let library_dir = library::default_dir(&dir);
       std::fs::create_dir_all(&library_dir)?;
       library::store::sync(&conn, &library_dir)?;
+      let logos_dir = dir.join("logos");
+      std::fs::create_dir_all(&logos_dir)?;
       let http = reqwest::Client::builder().build()?;
-      app.manage(Gateway { conn: Mutex::new(conn), http, skills_dir, library_dir });
+      app.manage(Gateway { conn: Mutex::new(conn), http, skills_dir, library_dir, logos_dir });
       let handle = app.handle().clone();
       tauri::async_runtime::spawn(async move {
         let gw = handle.state::<Gateway>();
@@ -47,6 +49,7 @@ pub fn run() {
       gateway::gw_chat,
       gateway::gw_chat_stream,
       gateway::gw_sync_providers,
+      gateway::gw_logo,
       sessions::sess_create_session,
       sessions::sess_list_sessions,
       sessions::sess_save_session,

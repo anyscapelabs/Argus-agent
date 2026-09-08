@@ -28,6 +28,11 @@ pub fn run() {
       library::store::sync(&conn, &library_dir)?;
       let http = reqwest::Client::builder().build()?;
       app.manage(Gateway { conn: Mutex::new(conn), http, skills_dir, library_dir });
+      let handle = app.handle().clone();
+      tauri::async_runtime::spawn(async move {
+        let gw = handle.state::<Gateway>();
+        gateway::maybe_sync_catalog(gw.inner()).await;
+      });
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
@@ -36,11 +41,12 @@ pub fn run() {
       gateway::gw_list_models,
       gateway::gw_add_model,
       gateway::gw_link_model,
-      gateway::gw_set_key,
+      gateway::gw_connect,
+      gateway::gw_disconnect,
       gateway::gw_set_routing,
       gateway::gw_chat,
       gateway::gw_chat_stream,
-      gateway::gw_sync_catalog,
+      gateway::gw_sync_providers,
       sessions::sess_create_session,
       sessions::sess_list_sessions,
       sessions::sess_save_session,

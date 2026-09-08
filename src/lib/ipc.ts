@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 
 export type Provider = {
   id: string;
@@ -54,3 +54,75 @@ export const gwLogo = (providerId: string) => invoke<string | null>("gw_logo", {
 
 export const gwSetRouting = (mode: string, pinned: string) =>
   invoke<void>("gw_set_routing", { mode, pinned });
+
+// sessions — wire structs are snake_case (no serde rename on the Rust side)
+export type SessionRow = {
+  id: string;
+  title: string;
+  status: string;
+  model_id: string | null;
+  permission: string;
+  folder_id: string | null;
+  created_at: string;
+  updated_at: string;
+  ctx_tokens: number;
+  compact_seq: number;
+  compactions: number;
+};
+
+export type MsgRow = {
+  id: string;
+  session_id: string;
+  seq: number;
+  role: string;
+  content: string;
+  model_id: string | null;
+  provider_id: string | null;
+  tok_in: number | null;
+  tok_out: number | null;
+  active: boolean;
+  created_at: string;
+};
+
+export type StreamEvent =
+  | { type: "status"; provider_id: string; attempt: number }
+  | { type: "delta"; text: string }
+  | {
+      type: "done";
+      model_id: string;
+      provider_id: string;
+      attempt: number;
+      latency_ms: number;
+      tok_in: number;
+      tok_out: number;
+      cost: number;
+    }
+  | { type: "err"; msg: string };
+
+export const sessCreateSession = (title: string, modelId: string | null) =>
+  invoke<SessionRow>("sess_create_session", {
+    req: { title, model_id: modelId, permission: null, folder_id: null },
+  });
+
+export const sessListSessions = () => invoke<SessionRow[]>("sess_list_sessions");
+
+export const sessDeleteSession = (sessionId: string) =>
+  invoke<void>("sess_delete_session", { sessionId });
+
+export const sessSaveSession = (session: SessionRow) =>
+  invoke<void>("sess_save_session", { session });
+
+export const sessExportJson = (sessionId: string) =>
+  invoke<string>("sess_export_json", { sessionId });
+
+export const sessListMessages = (sessionId: string) =>
+  invoke<MsgRow[]>("sess_list_messages", { sessionId });
+
+export const sessSupersedeFrom = (sessionId: string, seq: number) =>
+  invoke<void>("sess_supersede_from", { sessionId, seq });
+
+export const sessChatStream = (
+  sessionId: string,
+  content: string,
+  onEvent: Channel<StreamEvent>,
+) => invoke<void>("sess_chat_stream", { sessionId, content, onEvent });

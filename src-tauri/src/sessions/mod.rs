@@ -35,6 +35,12 @@ pub fn sess_delete_session(gw: State<'_, Gateway>, session_id: String) -> Result
 }
 
 #[tauri::command]
+pub fn sess_export_json(gw: State<'_, Gateway>, session_id: String) -> Result<String, String> {
+  let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+  store::export_json(&conn, &session_id)
+}
+
+#[tauri::command]
 pub fn sess_list_messages(gw: State<'_, Gateway>, session_id: String) -> Result<Vec<Msg>, String> {
   let conn = gw.conn.lock().map_err(|e| e.to_string())?;
   store::list_msgs(&conn, &session_id)

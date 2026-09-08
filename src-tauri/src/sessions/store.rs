@@ -197,3 +197,31 @@ pub fn list_folders(conn: &Connection) -> Result<Vec<Folder>, String> {
     .map_err(|e| e.to_string())?;
   rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
+
+// Portable transcript: {"title", "model", "messages":[{"user":...},{"agent":...}]}
+pub fn export_json(conn: &Connection, id: &str) -> Result<String, String> {
+  let session = get_session(conn, id)?;
+  let mut stmt = conn
+    .prepare("SELECT role, content FROM messages WHERE session_id = ?1 AND active = 1 ORDER BY seq")
+    .map_err(|e| e.to_string())?;
+  let rows = stmt
+    .query_map(params![id], |r| {
+      Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    })
+    .map_err(|e| e.to_string())?;
+  let msgs = rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+
+  let messages: Vec<serde_json::Value> = msgs
+    .into_iter()
+    .map(|(role, content)| {
+      let key = if role == "user" { "user" } else { "agent" };
+      serde_json::json!({ key: content })
+    })
+    .collect();
+  serde_json::to_string_pretty(&serde_json::json!({
+    "title": session.title,
+    "model": session.model_id,
+    "messages": messages,
+  }))
+  .map_err(|e| e.to_string())
+}

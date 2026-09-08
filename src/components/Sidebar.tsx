@@ -24,6 +24,9 @@ type SidebarProps = {
   activeView: View;
   activeSessionId: string | null;
   sessions: Session[];
+  onArchive: (sessionId: string) => void;
+  onExport: (sessionId: string) => void;
+  onDelete: (sessionId: string) => void;
 };
 
 export default function Sidebar({
@@ -35,6 +38,9 @@ export default function Sidebar({
   activeView,
   activeSessionId,
   sessions,
+  onArchive,
+  onExport,
+  onDelete,
 }: SidebarProps) {
   return (
     <aside
@@ -105,6 +111,9 @@ export default function Sidebar({
         onSelect={onSelectSession}
         activeSessionId={activeSessionId}
         sessions={sessions}
+        onArchive={onArchive}
+        onExport={onExport}
+        onDelete={onDelete}
       />
       </div>
     </aside>

@@ -194,6 +194,7 @@ pub struct ChatResp {
 pub enum StreamEvent {
   Status { provider_id: String, attempt: i64 },
   Delta { text: String },
+  Reset,
   Done {
     model_id: String,
     provider_id: String,

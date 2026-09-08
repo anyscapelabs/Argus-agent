@@ -7,10 +7,14 @@ use crate::gateway::schema::{ChatReq, StreamEvent, WireMsg};
 use crate::gateway::Gateway;
 use crate::prompt::config::truncate_chars;
 use crate::prompt::{compressor, project};
+use crate::tools;
 
+use super::schema::NewMsg;
 use super::store;
 
 const DEFAULT_TITLE: &str = "New chat";
+const MAX_STEPS: usize = 8;
+const RESULT_CLIP: usize = 4000;
 
 const TITLE_SYS: &str = "You write chat session titles. Reply with only the title: \
 3 to 6 words, no quotes, no trailing punctuation.";
@@ -72,8 +76,9 @@ fn clean_title(raw: &str) -> Option<String> {
   Some(truncate_chars(t, 60))
 }
 
-// One turn end to end: persist the user message, project, stream from the
-// gateway, persist the reply, then compact when the context says so.
+// One turn, possibly many steps: stream a reply, run any <action> blocks it
+// carries, feed the results back, repeat until a plain answer lands or the
+// step budget is spent.
 pub async fn send(
   gw: &Gateway,
   app: &AppHandle,
@@ -85,7 +90,7 @@ pub async fn send(
     let conn = gw.conn.lock().map_err(|e| e.to_string())?;
     store::add_msg(
       &conn,
-      &super::schema::NewMsg {
+      &NewMsg {
         session_id: session_id.into(),
         role: "user".into(),
         content: content.into(),
@@ -97,35 +102,86 @@ pub async fn send(
     )?;
   }
 
-  let mut req = {
+  let perm = {
     let conn = gw.conn.lock().map_err(|e| e.to_string())?;
-    let p = project(&conn, session_id)?;
-    if p.model_id.is_none() {
-      return Err("session has no model set".into()); // Drop it
-    }
-    let mut r = p.chat_req();
-    r.prefix_hash = Some(p.prefix_hash);
-    r
+    conn
+      .query_row("SELECT permission FROM sessions WHERE id = ?1", params![session_id], |r| {
+        r.get::<_, String>(0)
+      })
+      .unwrap_or_else(|_| "ask".into())
   };
 
-  let stats = router::stream_run(gw, &req, chan).await?;
-  req.msgs.clear(); // release transcript memory before compaction
+  let mut tok_in_sum = 0i64;
+
+  for _step in 0..MAX_STEPS {
+    let mut req = {
+      let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+      let p = project(&conn, session_id)?;
+      if p.model_id.is_none() {
+        return Err("session has no model set".into()); // Drop it
+      }
+      let mut r = p.chat_req();
+      r.prefix_hash = Some(p.prefix_hash);
+      r
+    };
+
+    let stats = router::stream_run(gw, &req, chan).await?;
+    req.msgs.clear(); // release transcript memory before the next step
+    tok_in_sum += stats.tok_in;
+
+    let actions = tools::parse_actions(&stats.text);
+    let done = actions.is_empty();
+
+    {
+      let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+      store::add_msg(
+        &conn,
+        &NewMsg {
+          session_id: session_id.into(),
+          role: "assistant".into(),
+          content: stats.text,
+          model_id: Some(stats.model_id),
+          provider_id: Some(stats.provider_id),
+          tok_in: Some(stats.tok_in),
+          tok_out: Some(stats.tok_out),
+        },
+      )?;
+    }
+
+    if done {
+      break;
+    }
+
+    for a in &actions {
+      let (status, body) = match tools::exec(&a.tool, &a.args, &perm).await {
+        Ok(t) => ("ok", t),
+        Err(e) => ("err", e),
+      };
+      let msg = format!(
+        "<tool-result tool=\"{}\" status=\"{}\">{}</tool-result>",
+        a.tool,
+        status,
+        truncate_chars(&body, RESULT_CLIP)
+      );
+      let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+      store::add_msg(
+        &conn,
+        &NewMsg {
+          session_id: session_id.into(),
+          role: "user".into(),
+          content: msg,
+          model_id: None,
+          provider_id: None,
+          tok_in: None,
+          tok_out: None,
+        },
+      )?;
+    }
+  }
 
   {
     let conn = gw.conn.lock().map_err(|e| e.to_string())?;
-    store::add_msg(
-      &conn,
-      &super::schema::NewMsg {
-        session_id: session_id.into(),
-        role: "assistant".into(),
-        content: stats.text,
-        model_id: Some(stats.model_id),
-        provider_id: Some(stats.provider_id),
-        tok_in: Some(stats.tok_in),
-        tok_out: Some(stats.tok_out),
-      },
-    )?;
-    store::touch_session(&conn, session_id, stats.tok_in)?;
+    store::touch_session(&conn, session_id, tok_in_sum)?;
   }
 
   let needs = {

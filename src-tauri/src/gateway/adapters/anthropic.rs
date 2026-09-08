@@ -1,7 +1,7 @@
 use futures_util::StreamExt;
 use reqwest::Client;
 
-use super::{sse_events, CallErr, DeltaSink, WireResp};
+use super::{retry_after_secs, sse_events, CallErr, DeltaSink, WireResp};
 use crate::gateway::schema::{StreamDone, WireMsg};
 
 // System prompt gets one breakpoint; the last three turns get rolling ones so
@@ -57,18 +57,19 @@ pub async fn stream(
     req = req.header("x-api-key", t);
   }
 
-  let resp = req.send().await.map_err(|e| CallErr { status: None, msg: e.to_string() })?;
+  let resp = req.send().await.map_err(|e| CallErr { status: None, msg: e.to_string(), retry_after: None })?;
   let status = resp.status().as_u16();
   if status != 200 {
+    let ra = retry_after_secs(&resp);
     let body = resp.text().await.unwrap_or_default();
-    return Err(CallErr { status: Some(status), msg: body }); // Drop it
+    return Err(CallErr { status: Some(status), msg: body, retry_after: ra }); // Drop it
   }
 
   let mut buf = String::new();
   let mut done = StreamDone::default();
   let mut stream = resp.bytes_stream();
   while let Some(chunk) = stream.next().await {
-    let bytes = chunk.map_err(|e| CallErr { status: None, msg: e.to_string() })?;
+    let bytes = chunk.map_err(|e| CallErr { status: None, msg: e.to_string(), retry_after: None })?;
     buf.push_str(&String::from_utf8_lossy(&bytes));
     for ev in sse_events(&mut buf) {
       for line in ev.lines() {
@@ -84,7 +85,7 @@ pub async fn stream(
           Some("content_block_delta") => {
             if let Some(c) = v["delta"]["text"].as_str() {
               if !c.is_empty() {
-                on_delta(c).map_err(|e| CallErr { status: None, msg: e })?;
+                on_delta(c).map_err(|e| CallErr { status: None, msg: e, retry_after: None })?;
                 done.text.push_str(c);
               }
             }
@@ -118,14 +119,15 @@ pub async fn chat(
     req = req.header("x-api-key", t);
   }
 
-  let resp = req.send().await.map_err(|e| CallErr { status: None, msg: e.to_string() })?;
+  let resp = req.send().await.map_err(|e| CallErr { status: None, msg: e.to_string(), retry_after: None })?;
   let status = resp.status().as_u16();
-  let body = resp.text().await.map_err(|e| CallErr { status: Some(status), msg: e.to_string() })?;
+  let ra = retry_after_secs(&resp);
+  let body = resp.text().await.map_err(|e| CallErr { status: Some(status), msg: e.to_string(), retry_after: None })?;
   if status != 200 {
-    return Err(CallErr { status: Some(status), msg: body }); // Drop it
+    return Err(CallErr { status: Some(status), msg: body, retry_after: ra }); // Drop it
   }
 
-  let v: serde_json::Value = serde_json::from_str(&body).map_err(|e| CallErr { status: Some(status), msg: e.to_string() })?;
+  let v: serde_json::Value = serde_json::from_str(&body).map_err(|e| CallErr { status: Some(status), msg: e.to_string(), retry_after: None })?;
   let text = v["content"]
     .as_array()
     .map(|blks| blks.iter().filter_map(|b| b["text"].as_str()).collect::<Vec<_>>().join(""))
@@ -137,6 +139,6 @@ pub async fn chat(
       "completion_tokens": v["usage"]["output_tokens"].as_u64().unwrap_or(0)
     }
   });
-  let wire: WireResp = serde_json::from_value(wire).map_err(|e| CallErr { status: Some(status), msg: e.to_string() })?;
+  let wire: WireResp = serde_json::from_value(wire).map_err(|e| CallErr { status: Some(status), msg: e.to_string(), retry_after: None })?;
   Ok((wire, body))
 }

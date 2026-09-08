@@ -9,6 +9,7 @@ use super::schema::{Provider, StreamDone, WireMsg, WireResp};
 pub struct CallErr {
   pub status: Option<u16>,
   pub msg: String,
+  pub retry_after: Option<u64>,
 }
 
 impl CallErr {
@@ -18,6 +19,18 @@ impl CallErr {
       Some(s) => s == 402 || s == 408 || s == 429 || s >= 500,
     }
   }
+}
+
+pub(crate) fn retry_after_secs(resp: &reqwest::Response) -> Option<u64> {
+  let v = resp
+    .headers()
+    .get(reqwest::header::RETRY_AFTER)?
+    .to_str()
+    .ok()?
+    .trim()
+    .parse()
+    .ok()?;
+  Some(v)
 }
 
 // Split complete SSE events off the buffer, keep the tail for the next chunk.
@@ -46,6 +59,7 @@ pub async fn dispatch_stream(
     _ => Err(CallErr {
       status: None,
       msg: format!("unknown compatible dialect {}", prov.compatible),
+      retry_after: None,
     }),
   }
 }
@@ -64,6 +78,7 @@ pub async fn dispatch(
     _ => Err(CallErr {
       status: None,
       msg: format!("unknown compatible dialect {}", prov.compatible),
+      retry_after: None,
     }),
   }
 }

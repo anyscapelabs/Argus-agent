@@ -5,11 +5,7 @@ import type { Provider } from "../../lib/ipc";
 import ConnectedProviderList from "./ConnectedProviderList";
 import ProviderConnectModal from "./ProviderConnectModal";
 
-// Local endpoints need no key; clicking Connect wires them up directly.
 const needsKey = (p: Provider) => !p.baseUrl.includes("localhost");
-
-// Curated seeds (priority < 100) form the popular list; the rest of the
-// models.dev catalog stays available once connected or via search later.
 const isPopular = (p: Provider) => !p.connected && p.priority < 100;
 
 export default function ProvidersPage() {
@@ -42,7 +38,7 @@ export default function ProvidersPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <h2 className="text-sm font-semibold text-text-primary">Providers</h2>
-        <p className="text-xs text-text-secondary">Manage your model providers and configure API keys.</p>
+        <p className="text-sm text-text-secondary">Manage your model providers and configure API keys.</p>
       </div>
 
       <section className="flex flex-col gap-3">

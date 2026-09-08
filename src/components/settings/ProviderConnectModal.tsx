@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { LuArrowLeft, LuX } from "react-icons/lu";
+import { useProviderLogo } from "../../hooks/useProviderLogo";
 import type { Provider } from "../../lib/ipc";
 
 type ProviderConnectModalProps = {
@@ -11,6 +12,7 @@ type ProviderConnectModalProps = {
 
 export default function ProviderConnectModal({ open, provider, onClose, onConnect }: ProviderConnectModalProps) {
   const [apiKey, setApiKey] = useState("");
+  const logoUri = useProviderLogo(provider?.id ?? "");
 
   useEffect(() => {
     if (open) {
@@ -36,14 +38,6 @@ export default function ProviderConnectModal({ open, provider, onClose, onConnec
     .join("")
     .slice(0, 1)
     .toUpperCase();
-
-  const logo = provider.logoUrl && (
-    <img
-      src={provider.logoUrl}
-      alt=""
-      className="h-6 w-6 shrink-0 rounded object-contain p-0.5 invert"
-    />
-  );
 
   return (
     <div
@@ -79,7 +73,13 @@ export default function ProviderConnectModal({ open, provider, onClose, onConnec
 
         {/* Title with logo */}
         <div className="mt-3 flex items-center gap-2">
-          {logo ?? (
+          {logoUri ? (
+            <img
+              src={logoUri}
+              alt=""
+              className="h-6 w-6 shrink-0 rounded object-contain p-0.5 invert"
+            />
+          ) : (
             <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-accent text-[11px] font-bold leading-none text-bg-primary">
               {initials}
             </div>

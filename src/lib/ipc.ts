@@ -1,8 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
 
-// One module per backend domain, every command wrapper typed here.
-// Frontend never calls invoke() outside this file.
-
 export type Provider = {
   id: string;
   name: string;
@@ -28,6 +25,8 @@ export const gwDisconnect = (providerId: string) =>
   invoke<void>("gw_disconnect", { providerId });
 
 export const gwSyncProviders = () => invoke<SyncStats>("gw_sync_providers");
+
+export const gwLogo = (providerId: string) => invoke<string | null>("gw_logo", { providerId });
 
 export const gwSetRouting = (mode: string, pinned: string) =>
   invoke<void>("gw_set_routing", { mode, pinned });

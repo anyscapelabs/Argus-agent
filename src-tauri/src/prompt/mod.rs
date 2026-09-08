@@ -1,3 +1,6 @@
+pub mod compressor;
+pub mod config;
+
 use rusqlite::params;
 use serde::Serialize;
 use sha2::{Digest, Sha256};

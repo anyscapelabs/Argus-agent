@@ -1,23 +1,26 @@
 pub mod schema;
 pub mod store;
 
+use std::path::PathBuf;
+
 use tauri::State;
 
 use crate::gateway::Gateway;
 use schema::{NewSkill, Skill, UpdSkill};
 
-// MCP tools surface to create, update, and list skills for agents and ui 
+// Skills are .md files on disk (frontmatter + body); DB mirrors them for FTS5
+// search and usage stats. Agent and UI share the same store and commands.
 
 #[tauri::command]
 pub fn skill_create(gw: State<'_, Gateway>, skill: NewSkill) -> Result<Skill, String> {
   let conn = gw.conn.lock().map_err(|e| e.to_string())?;
-  store::create_skill(&conn, &skill)
+  store::create_skill(&conn, &gw.skills_dir, &skill)
 }
 
 #[tauri::command]
 pub fn skill_get(gw: State<'_, Gateway>, name: String) -> Result<Skill, String> {
   let conn = gw.conn.lock().map_err(|e| e.to_string())?;
-  store::get_skill(&conn, &name)
+  store::get_skill(&conn, &gw.skills_dir, &name)
 }
 
 #[tauri::command]
@@ -27,21 +30,15 @@ pub fn skill_list(gw: State<'_, Gateway>) -> Result<Vec<Skill>, String> {
 }
 
 #[tauri::command]
-pub fn skill_save(gw: State<'_, Gateway>, skill: Skill) -> Result<(), String> {
-  let conn = gw.conn.lock().map_err(|e| e.to_string())?;
-  store::save_skill(&conn, &skill)
-}
-
-#[tauri::command]
 pub fn skill_update(gw: State<'_, Gateway>, name: String, upd: UpdSkill) -> Result<Skill, String> {
   let conn = gw.conn.lock().map_err(|e| e.to_string())?;
-  store::update_skill(&conn, &name, &upd)
+  store::update_skill(&conn, &gw.skills_dir, &name, &upd)
 }
 
 #[tauri::command]
-pub fn skill_delete(gw: State<'_, Gateway>, key: String) -> Result<(), String> {
+pub fn skill_delete(gw: State<'_, Gateway>, name: String) -> Result<(), String> {
   let conn = gw.conn.lock().map_err(|e| e.to_string())?;
-  store::delete_skill(&conn, &key)
+  store::delete_skill(&conn, &gw.skills_dir, &name)
 }
 
 #[tauri::command]
@@ -58,4 +55,15 @@ pub fn skill_search(
 ) -> Result<Vec<Skill>, String> {
   let conn = gw.conn.lock().map_err(|e| e.to_string())?;
   store::search_skills(&conn, &query, limit.unwrap_or(5))
+}
+
+#[tauri::command]
+pub fn skill_sync(gw: State<'_, Gateway>) -> Result<usize, String> {
+  let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+  store::sync(&conn, &gw.skills_dir)
+}
+
+// Folder is derived from app data dir at startup; kept here for reference.
+pub fn default_dir(app_data: &PathBuf) -> PathBuf {
+  app_data.join("skills")
 }

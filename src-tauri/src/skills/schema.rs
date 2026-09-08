@@ -1,17 +1,21 @@
 use serde::{Deserialize, Serialize};
 
+pub const NAME_MAX: usize = 64;
+pub const DESC_MAX: usize = 512;
+pub const BODY_MAX: usize = 65_536;
+
+// skills table mirrors the .md files on disk (index only, files are the truth).
+// skill_stats holds runtime usage data that never belongs in a user-editable file.
 pub const MIGRATE: &str = r#"
 CREATE TABLE IF NOT EXISTS skills (
-  id           TEXT PRIMARY KEY,
-  name         TEXT NOT NULL UNIQUE,
-  description  TEXT NOT NULL,
-  body         TEXT NOT NULL,
-  source       TEXT NOT NULL DEFAULT 'user',
-  origin       TEXT,
-  use_count    INTEGER NOT NULL DEFAULT 0,
-  last_used_at TEXT,
-  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+  name        TEXT PRIMARY KEY,
+  description TEXT NOT NULL DEFAULT '',
+  body        TEXT NOT NULL DEFAULT '',
+  source      TEXT NOT NULL DEFAULT 'user',
+  origin      TEXT,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  file_mtime  INTEGER NOT NULL DEFAULT 0,
+  body_hash   TEXT NOT NULL DEFAULT ''
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(
@@ -34,15 +38,16 @@ CREATE TRIGGER IF NOT EXISTS skills_fts_au AFTER UPDATE ON skills BEGIN
   INSERT INTO skills_fts(rowid, name, description, body)
   VALUES (new.rowid, new.name, new.description, new.body);
 END;
-"#;
 
-pub const NAME_MAX: usize = 64;
-pub const DESC_MAX: usize = 512;
-pub const BODY_MAX: usize = 65_536;
+CREATE TABLE IF NOT EXISTS skill_stats (
+  name         TEXT PRIMARY KEY REFERENCES skills(name) ON DELETE CASCADE,
+  use_count    INTEGER NOT NULL DEFAULT 0,
+  last_used_at TEXT
+);
+"#;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Skill {
-  pub id: String,
   pub name: String,
   pub description: String,
   pub body: String,
@@ -51,7 +56,7 @@ pub struct Skill {
   pub use_count: i64,
   pub last_used_at: Option<String>,
   pub created_at: String,
-  pub updated_at: String,
+  pub file_mtime: i64,
 }
 
 #[derive(Deserialize, Debug)]

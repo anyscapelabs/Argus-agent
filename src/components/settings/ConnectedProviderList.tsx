@@ -48,7 +48,7 @@ function ConnectedProviderRow({ provider, onDisconnect, onConnect, variant = "co
         </span>
         {!isPopular && (
           <span className="inline-flex shrink-0 items-center rounded-full border border-border-primary bg-bg-hover-secondary px-2 py-0.5 text-[11px] font-medium leading-none text-text-secondary">
-            {provider.compatible}
+            Connected
           </span>
         )}
       </div>

@@ -41,6 +41,8 @@ pub fn run() {
       gateway::gw_list_providers,
       gateway::gw_upsert_provider,
       gateway::gw_list_models,
+      gateway::gw_provider_models,
+      gateway::gw_set_model_enabled,
       gateway::gw_add_model,
       gateway::gw_link_model,
       gateway::gw_connect,

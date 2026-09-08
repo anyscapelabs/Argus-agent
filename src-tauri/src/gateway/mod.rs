@@ -11,7 +11,7 @@ use reqwest::Client;
 use rusqlite::Connection;
 use tauri::State;
 
-use schema::{Avail, ChatReq, ChatResp, ModelEntry, Provider, SyncStats};
+use schema::{Avail, ChatReq, ChatResp, ModelEntry, Provider, ProviderModel, SyncStats};
 
 pub struct Gateway {
   pub conn: Mutex<Connection>,
@@ -37,6 +37,18 @@ pub fn gw_upsert_provider(gw: State<'_, Gateway>, prov: Provider) -> Result<(), 
 pub fn gw_list_models(gw: State<'_, Gateway>) -> Result<Vec<ModelEntry>, String> {
   let conn = gw.conn.lock().map_err(|e| e.to_string())?;
   store::list_models(&conn)
+}
+
+#[tauri::command]
+pub fn gw_provider_models(gw: State<'_, Gateway>) -> Result<Vec<ProviderModel>, String> {
+  let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+  store::list_provider_models(&conn)
+}
+
+#[tauri::command]
+pub fn gw_set_model_enabled(gw: State<'_, Gateway>, model_id: String, enabled: bool) -> Result<(), String> {
+  let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+  store::set_model_enabled(&conn, &model_id, enabled)
 }
 
 #[tauri::command]

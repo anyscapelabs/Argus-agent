@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS models (
   display_name   TEXT NOT NULL,
   family         TEXT,
   capabilities   TEXT,
-  suggested_tier TEXT
+  suggested_tier TEXT,
+  enabled        INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS model_providers (
@@ -80,6 +81,18 @@ pub struct Provider {
 pub struct SyncStats {
   pub providers: i64,
   pub models: i64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderModel {
+  pub provider_id: String,
+  pub model_id: String,
+  pub display_name: String,
+  pub capabilities: Option<String>,
+  pub enabled: bool,
+  pub cost_in: f64,
+  pub cost_out: f64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

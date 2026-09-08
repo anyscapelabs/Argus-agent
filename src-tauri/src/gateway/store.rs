@@ -4,7 +4,7 @@ use keyring::Entry;
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::catalog;
-use super::schema::{Avail, ModelEntry, Provider, ReqLog};
+use super::schema::{Avail, ModelEntry, Provider, ProviderModel, ReqLog};
 
 pub fn open(db_path: &Path) -> Result<Connection, String> {
   let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
@@ -78,7 +78,23 @@ fn ensure_cols(conn: &Connection) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     }
   }
+  if !has_model_col(conn, "enabled") {
+    conn
+      .execute("ALTER TABLE models ADD COLUMN enabled INTEGER NOT NULL DEFAULT 0", [])
+      .map_err(|e| e.to_string())?;
+  }
   Ok(())
+}
+
+fn has_model_col(conn: &Connection, col: &str) -> bool {
+  conn
+    .query_row(
+      "SELECT COUNT(*) FROM pragma_table_info('models') WHERE name = ?1",
+      params![col],
+      |r| r.get::<_, i64>(0),
+    )
+    .unwrap_or(1)
+    != 0
 }
 
 fn seed_chk(conn: &Connection) -> Result<(), String> {
@@ -194,13 +210,49 @@ pub fn link_model(conn: &Connection, a: &Avail) -> Result<(), String> {
   Ok(())
 }
 
+pub fn list_provider_models(conn: &Connection) -> Result<Vec<ProviderModel>, String> {
+  let mut stmt = conn
+    .prepare(
+      "SELECT mp.provider_id, m.id, m.display_name, m.capabilities, m.enabled, mp.cost_in, mp.cost_out
+       FROM model_providers mp
+       JOIN models m ON m.id = mp.model_id
+       ORDER BY mp.provider_id, m.display_name",
+    )
+    .map_err(|e| e.to_string())?;
+  let rows = stmt
+    .query_map([], |r| {
+      Ok(ProviderModel {
+        provider_id: r.get(0)?,
+        model_id: r.get(1)?,
+        display_name: r.get(2)?,
+        capabilities: r.get(3)?,
+        enabled: r.get::<_, i64>(4)? != 0,
+        cost_in: r.get(5)?,
+        cost_out: r.get(6)?,
+      })
+    })
+    .map_err(|e| e.to_string())?;
+  rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+pub fn set_model_enabled(conn: &Connection, model_id: &str, on: bool) -> Result<(), String> {
+  conn
+    .execute(
+      "UPDATE models SET enabled = ?2 WHERE id = ?1",
+      params![model_id, on as i64],
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
 pub fn list_avail(conn: &Connection, model_id: &str) -> Result<Vec<Avail>, String> {
   let mut stmt = conn
     .prepare(
       "SELECT mp.model_id, mp.provider_id, mp.remote_model_id, mp.cost_in, mp.cost_out
        FROM model_providers mp
        JOIN providers p ON p.id = mp.provider_id
-       WHERE mp.model_id = ?1 AND p.connected = 1",
+       JOIN models m ON m.id = mp.model_id
+       WHERE mp.model_id = ?1 AND p.connected = 1 AND m.enabled = 1",
     )
     .map_err(|e| e.to_string())?;
   let rows = stmt

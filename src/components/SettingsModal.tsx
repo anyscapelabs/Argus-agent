@@ -1,5 +1,7 @@
-import { useEffect, type ReactNode } from "react";
-import SettingsSidebar from "./settings/SettingsSidebar";
+import { useEffect, useState, type ReactNode } from "react";
+import ModelsPage from "./settings/ModelsPage";
+import ProvidersPage from "./settings/ProvidersPage";
+import SettingsSidebar, { type SettingsTab } from "./settings/SettingsSidebar";
 
 type SettingsCardProps = {
   title: string;
@@ -88,6 +90,8 @@ type SettingsModalProps = {
 };
 
 export default function SettingsModal({ open, onClose }: SettingsModalProps) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>("providers");
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -111,8 +115,11 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
           className="flex h-[68vh] max-h-[620px] w-full max-w-5xl overflow-hidden rounded-2xl border border-border-primary bg-bg-secondary shadow-4xl"
           onClick={(e) => e.stopPropagation()}
         >
-          <SettingsSidebar />
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3" />
+          <SettingsSidebar activeTab={activeTab} onTabChange={setActiveTab} />
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            {activeTab === "models" && <ModelsPage />}
+            {activeTab === "providers" && <ProvidersPage />}
+          </div>
         </div>
     </div>
   );

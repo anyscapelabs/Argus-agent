@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { gwConnect, gwDisconnect, gwListProviders, gwSyncProviders, type Provider } from "../lib/ipc";
 
-// One hook per backend domain, all state and mutations in one place.
-// Components consume this; they never call ipc wrappers directly.
-
 export function useProviders() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);

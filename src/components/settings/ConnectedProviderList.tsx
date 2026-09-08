@@ -1,5 +1,5 @@
-import { useState } from "react";
 import type { Provider } from "../../lib/ipc";
+import { useProviderLogo } from "../../hooks/useProviderLogo";
 
 type ConnectedProviderRowProps = {
   provider: Provider;
@@ -8,18 +8,11 @@ type ConnectedProviderRowProps = {
   variant?: "connected" | "popular";
 };
 
-function ProviderLogo({ name, logoUrl }: { name: string; logoUrl: string | null }) {
-  const [broken, setBroken] = useState(false);
+function ProviderLogo({ id, name }: { id: string; name: string }) {
+  const uri = useProviderLogo(id);
 
-  if (logoUrl && !broken) {
-    return (
-      <img
-        src={logoUrl}
-        alt=""
-        onError={() => setBroken(true)}
-        className="h-8 w-8 shrink-0 rounded-lg object-contain p-1 invert"
-      />
-    );
+  if (uri) {
+    return <img src={uri} alt="" className="h-8 w-8 shrink-0 rounded-lg object-contain p-1 invert" />;
   }
 
   const initials = name
@@ -42,7 +35,7 @@ function ConnectedProviderRow({ provider, onDisconnect, onConnect, variant = "co
   return (
     <div className="flex items-center justify-between gap-3 border-b border-border-primary px-2 py-1 last:border-b-0">
       <div className="flex min-w-0 items-center gap-3">
-        <ProviderLogo name={provider.name} logoUrl={provider.logoUrl} />
+        <ProviderLogo id={provider.id} name={provider.name} />
         <span className="truncate text-sm font-medium text-text-primary">
           {provider.name}
         </span>

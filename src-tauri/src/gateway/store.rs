@@ -18,9 +18,23 @@ pub fn open(db_path: &Path) -> Result<Connection, String> {
 // The keyring decides connected: a stored key means connected, anything else
 // reconnects through gw_connect. Repairs rows carried over from the enabled era.
 fn reconcile_connected(conn: &Connection) -> Result<(), String> {
-  conn
-    .execute("DELETE FROM providers WHERE name = ''", [])
-    .map_err(|e| e.to_string())?;
+  let unnamed: Vec<String> = {
+    let mut stmt = conn
+      .prepare("SELECT id FROM providers WHERE name = ''")
+      .map_err(|e| e.to_string())?;
+    let map = stmt
+      .query_map([], |r| r.get::<_, String>(0))
+      .map_err(|e| e.to_string())?;
+    map.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+  };
+  for id in &unnamed {
+    conn
+      .execute("DELETE FROM model_providers WHERE provider_id = ?1", params![id])
+      .map_err(|e| e.to_string())?;
+    conn
+      .execute("DELETE FROM providers WHERE id = ?1", params![id])
+      .map_err(|e| e.to_string())?;
+  }
   let rows: Vec<(String, bool)> = {
     let mut stmt = conn
       .prepare("SELECT id, connected FROM providers")

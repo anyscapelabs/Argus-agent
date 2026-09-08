@@ -1,5 +1,6 @@
 mod sessions;
 mod gateway;
+mod skills;
 
 use std::sync::Mutex;
 
@@ -16,6 +17,7 @@ pub fn run() {
       std::fs::create_dir_all(&dir)?;
       let conn = store::open(&dir.join("argus.db"))?;
       sessions::store::migrate(&conn)?;
+      skills::store::migrate(&conn)?;
       let http = reqwest::Client::builder().build()?;
       app.manage(Gateway { conn: Mutex::new(conn), http });
       Ok(())
@@ -40,6 +42,14 @@ pub fn run() {
       sessions::sess_supersede_from,
       sessions::sess_create_folder,
       sessions::sess_list_folders,
+      skills::skill_create,
+      skills::skill_get,
+      skills::skill_list,
+      skills::skill_save,
+      skills::skill_update,
+      skills::skill_delete,
+      skills::skill_touch,
+      skills::skill_search,
       gateway::gw_logs
     ])
     .run(tauri::generate_context!())

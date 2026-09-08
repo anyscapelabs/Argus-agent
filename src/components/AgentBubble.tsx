@@ -156,7 +156,7 @@ function diffStats(blk: BlockNode): { added: number; removed: number } {
   return { added, removed };
 }
 
-function renderBlk(blk: BlockNode, key: string): React.ReactNode {
+function renderBlk(blk: BlockNode, key: string, live: boolean): React.ReactNode {
   if (blk.kind === "paragraph") {
     const raw = blk.children.map((c) => c.value).join("");
     const isBulleted = /^\s*[-•*]\s+/m.test(raw);
@@ -177,7 +177,7 @@ function renderBlk(blk: BlockNode, key: string): React.ReactNode {
   switch (blk.tag) {
     case "thinking": return <ThinkingBlock key={key} block={blk} />;
     case "plan": return <PlanBlock key={key} block={blk} />;
-    case "action": return <ActionBlock key={key} block={blk} />;
+    case "action": return <ActionBlock key={key} block={blk} live={live} />;
     case "approval": return <ApprovalBlock key={key} block={blk} />;
     case "diff": return <DiffBlock key={key} block={blk} />;
     case "document": return <DocumentCard key={key} block={blk} />;
@@ -192,7 +192,7 @@ function renderBlk(blk: BlockNode, key: string): React.ReactNode {
   }
 }
 
-function renderTree(tree: XmlTree): React.ReactNode[] {
+function renderTree(tree: XmlTree, live: boolean): React.ReactNode[] {
   const diffs = new Map<string, { added: number; removed: number }>();
   const paths = new Set<string>();
   for (const b of tree) {
@@ -234,7 +234,7 @@ function renderTree(tree: XmlTree): React.ReactNode[] {
     if (blk.tag === "step") { i++; continue; }
     if (blk.tag === "diff" && blk.attrs.file && paths.has(blk.attrs.file)) { i++; continue; }
     if (blk.tag === "action" && blk.attrs.tool === "filesystem.edit" && paths.size > 0) { i++; continue; }
-    out.push(renderBlk(blk, `b-${i}`));
+    out.push(renderBlk(blk, `b-${i}`, live));
     i++;
   }
   return out;
@@ -262,7 +262,7 @@ export default function AgentBubble({ children, text, caret, vote, onVote, onRet
         caret && hasBlocks ? "stream-caret-host" : ""
       }`}
     >
-      {tree ? renderTree(tree) : <div className="font-serif text-[16px] font-light">{children}</div>}
+      {tree ? renderTree(tree, !!caret) : <div className="font-serif text-[16px] font-light">{children}</div>}
       {caret && !hasBlocks && <span className="stream-caret" />}
       {text !== undefined && text.length > 0 && (
         <div className="flex items-center gap-1 text-text-secondary opacity-0 transition-opacity group-hover/agent:opacity-100 group-focus-within/agent:opacity-100">

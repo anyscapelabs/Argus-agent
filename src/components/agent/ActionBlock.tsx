@@ -1,7 +1,7 @@
 import { FiCheck, FiAlertTriangle, FiLoader } from "react-icons/fi";
 import type { BlockNode } from "../../lib/agentXml";
 
-type Props = { block: BlockNode };
+type Props = { block: BlockNode; live?: boolean };
 
 type Status = "running" | "success" | "error";
 
@@ -11,9 +11,9 @@ const STATUS_ICON: Record<Status, React.ReactNode> = {
   error: <FiAlertTriangle size={12} />,
 };
 
-export default function ActionBlock({ block }: Props) {
+export default function ActionBlock({ block, live = false }: Props) {
   const tool = block.attrs.tool ?? "action";
-  const status = (block.attrs.status ?? "running") as Status;
+  const status = (block.attrs.status ?? (live ? "running" : "success")) as Status;
   const body = block.children.map((child) => child.value).join("").trim();
 
   return (

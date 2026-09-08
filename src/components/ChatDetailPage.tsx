@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import AgentBubble from "./AgentBubble";
 import ChatInput from "./ChatInput";
 import UserBubble from "./UserBubble";
+import ToolResultChip from "./ToolResultChip";
 import { useChatModels } from "../hooks/useChatModels";
 import { sessionStore, useSessions } from "../stores/sessions";
 import type { ChatMessage } from "../types/chat";
@@ -15,9 +16,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
   const { sessions, msgs, turns } = useSessions();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [draft, setDraft] = useState("");
-  const rows = (msgs[sessionId] ?? []).filter(
-    (m) => !(m.role === "user" && m.content.startsWith("<tool-result")),
-  );
+  const rows = msgs[sessionId] ?? [];
   const turn = turns[sessionId];
   const running = turn !== undefined && turn.err === null;
 
@@ -27,7 +26,12 @@ export default function ChatDetailPage({ sessionId }: Props) {
 
   const messages: ChatMessage[] = rows.map((m) => ({
     id: m.id,
-    role: m.role === "user" ? "user" : "agent",
+    role:
+      m.role === "user"
+        ? m.content.startsWith("<tool-result")
+          ? "tool"
+          : "user"
+        : "agent",
     content: m.content,
     timestamp: Date.now(),
   }));
@@ -105,7 +109,9 @@ export default function ChatDetailPage({ sessionId }: Props) {
       >
         <div className="mx-auto flex w-full min-w-0 max-w-[700px] flex-col gap-3">
           {messages.map((message, idx) =>
-            message.role === "user" ? (
+            message.role === "tool" ? (
+              <ToolResultChip key={message.id} raw={message.content} />
+            ) : message.role === "user" ? (
               <UserBubble
                 key={message.id}
                 timestamp={message.timestamp}

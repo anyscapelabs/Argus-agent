@@ -130,6 +130,12 @@ pub async fn send(
     req.msgs.clear(); // release transcript memory before the next step
     tok_in_sum += stats.tok_in;
 
+    // Empty completion: free models flake like this. Failing the turn beats a
+    // silent end where only a spinner shows.
+    if stats.text.trim().is_empty() {
+        return Err("model returned an empty reply — try again".into());
+    }
+
     let actions = tools::parse_actions(&stats.text);
     let done = actions.is_empty();
 

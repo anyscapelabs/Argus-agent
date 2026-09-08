@@ -46,9 +46,6 @@ function ProviderLogo({ id, name }: { id: string; name: string }) {
   );
 }
 
-const fmtPrice = (v: number) => (v >= 0.01 ? v.toFixed(2) : v.toFixed(4));
-const perM = (c: number) => (c > 0 ? `$${fmtPrice(c * 1000)}/M tok` : "free");
-
 const ModelRow = memo(function ModelRow({
   model,
   onToggle,
@@ -57,13 +54,8 @@ const ModelRow = memo(function ModelRow({
   onToggle: (id: string, on: boolean) => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-border-primary px-2 py-1.5 last:border-b-0 [contain-intrinsic-size:auto_44px] [content-visibility:auto]">
-      <div className="min-w-0">
-        <p className="truncate text-sm text-text-primary">{model.displayName}</p>
-        <p className="truncate text-xs text-text-secondary">
-          {model.enabled ? `in chat · ${perM(model.costIn)} in / ${perM(model.costOut)} out` : perM(model.costIn)}
-        </p>
-      </div>
+    <div className="flex items-center justify-between gap-3 border-b border-border-primary px-2 py-1.5 last:border-b-0 [contain-intrinsic-size:auto_40px] [content-visibility:auto]">
+      <p className="min-w-0 truncate text-sm text-text-primary">{model.displayName}</p>
       <Switch on={model.enabled} onChange={(next) => onToggle(model.modelId, next)} />
     </div>
   );

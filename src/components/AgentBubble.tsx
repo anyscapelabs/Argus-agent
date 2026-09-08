@@ -254,14 +254,15 @@ export default function AgentBubble({ children, text, caret, onRetry }: Props) {
     }
   };
 
+  const hasBlocks = tree !== null && tree.length > 0;
   return (
     <div
       className={`group/agent flex flex-col gap-3 text-base text-text-primary ${
-        caret ? "stream-caret-host" : ""
+        caret && hasBlocks ? "stream-caret-host" : ""
       }`}
     >
       {tree ? renderTree(tree) : <div className="font-serif text-[16px] font-light">{children}</div>}
-      {caret && (tree === null || tree.length === 0) && <span className="stream-caret" />}
+      {caret && !hasBlocks && <span className="stream-caret" />}
       {text !== undefined && text.length > 0 && (
         <div className="flex items-center gap-1 text-text-secondary opacity-0 transition-opacity group-hover/agent:opacity-100 group-focus-within/agent:opacity-100">
           <button

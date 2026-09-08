@@ -15,16 +15,11 @@ const DEFAULT_TITLE: &str = "New chat";
 const TITLE_SYS: &str = "You write chat session titles. Reply with only the title: \
 3 to 6 words, no quotes, no trailing punctuation.";
 
-// Title lives in the detached task so the turn never waits on it.
+// Title lives in the detached task so the turn never waits on it. The user
+// message already serves as the title until this lands.
 async fn generate_title(gw: &Gateway, session_id: &str, content: &str) -> Result<(), String> {
   let (util, selected) = {
     let conn = gw.conn.lock().map_err(|e| e.to_string())?;
-    let cur: String = conn
-      .query_row("SELECT title FROM sessions WHERE id = ?1", params![session_id], |r| r.get(0))
-      .map_err(|e| e.to_string())?;
-    if cur != DEFAULT_TITLE {
-      return Ok(()); // titled already, likely by a racing turn
-    }
     let selected: Option<String> = conn
       .query_row("SELECT model_id FROM sessions WHERE id = ?1", params![session_id], |r| r.get(0))
       .map_err(|e| e.to_string())?;
@@ -50,8 +45,8 @@ async fn generate_title(gw: &Gateway, session_id: &str, content: &str) -> Result
   let conn = gw.conn.lock().map_err(|e| e.to_string())?;
   conn
     .execute(
-      "UPDATE sessions SET title = ?2 WHERE id = ?1 AND title = ?3",
-      params![session_id, title, DEFAULT_TITLE],
+      "UPDATE sessions SET title = ?2 WHERE id = ?1",
+      params![session_id, title],
     )
     .map_err(|e| e.to_string())?;
   Ok(())
@@ -155,13 +150,24 @@ pub async fn send(
       .unwrap_or(false)
   };
   if untitled {
+    // The user message stands in as the title until the model returns one.
+    let temp = clean_title(content).unwrap_or_else(|| DEFAULT_TITLE.into());
+    {
+      let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+      conn
+        .execute(
+          "UPDATE sessions SET title = ?2 WHERE id = ?1",
+          params![session_id, temp],
+        )
+        .map_err(|e| e.to_string())?;
+    }
     let app = app.clone();
     let sid = session_id.to_string();
     let user_text = content.to_string();
     tauri::async_runtime::spawn(async move {
       let gw = app.state::<Gateway>();
       if let Err(e) = generate_title(gw.inner(), &sid, &user_text).await {
-        eprintln!("title skipped: {e}"); // stays "New chat"
+        eprintln!("title skipped: {e}"); // keeps the user-message title
       }
       let _ = app.emit("sessions-changed", ());
     });

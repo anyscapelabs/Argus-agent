@@ -17,8 +17,8 @@ function Switch({ on, onChange }: { on: boolean; onChange: (next: boolean) => vo
       }`}
     >
       <span
-        className={`absolute top-1/2 left-0.5 h-4 w-4 -translate-y-1/2 rounded-full bg-white shadow transition-transform ${
-          on ? "translate-x-4" : ""
+        className={`absolute top-1/2 left-0.5 h-4 w-4 -translate-y-1/2 rounded-full shadow transition-transform ${
+          on ? "translate-x-4 bg-bg-primary" : "bg-white"
         }`}
       />
     </button>

@@ -18,8 +18,11 @@ pub fn run() {
       let conn = store::open(&dir.join("argus.db"))?;
       sessions::store::migrate(&conn)?;
       skills::store::migrate(&conn)?;
+      let skills_dir = skills::default_dir(&dir);
+      std::fs::create_dir_all(&skills_dir)?;
+      skills::store::sync(&conn, &skills_dir)?;
       let http = reqwest::Client::builder().build()?;
-      app.manage(Gateway { conn: Mutex::new(conn), http });
+      app.manage(Gateway { conn: Mutex::new(conn), http, skills_dir });
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
@@ -45,11 +48,11 @@ pub fn run() {
       skills::skill_create,
       skills::skill_get,
       skills::skill_list,
-      skills::skill_save,
       skills::skill_update,
       skills::skill_delete,
       skills::skill_touch,
       skills::skill_search,
+      skills::skill_sync,
       gateway::gw_logs
     ])
     .run(tauri::generate_context!())

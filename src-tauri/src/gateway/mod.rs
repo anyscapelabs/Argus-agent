@@ -4,6 +4,7 @@ pub mod router;
 pub mod schema;
 pub mod store;
 
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 use reqwest::Client;
@@ -15,6 +16,7 @@ use schema::{Avail, ChatReq, ChatResp, ModelEntry, Provider};
 pub struct Gateway {
   pub conn: Mutex<Connection>,
   pub http: Client,
+  pub skills_dir: PathBuf,
 }
 
 #[tauri::command]

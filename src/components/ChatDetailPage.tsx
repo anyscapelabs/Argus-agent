@@ -15,7 +15,9 @@ export default function ChatDetailPage({ sessionId }: Props) {
   const { sessions, msgs, turns } = useSessions();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [draft, setDraft] = useState("");
-  const rows = msgs[sessionId] ?? [];
+  const rows = (msgs[sessionId] ?? []).filter(
+    (m) => !(m.role === "user" && m.content.startsWith("<tool-result")),
+  );
   const turn = turns[sessionId];
   const running = turn !== undefined && turn.err === null;
 

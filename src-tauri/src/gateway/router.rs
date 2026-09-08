@@ -1,10 +1,13 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use tauri::ipc::Channel;
 
 use super::adapters;
 use super::schema::{Avail, ChatReq, ChatResp, Provider, ReqLog, StreamEvent, WireUsage};
 use super::{store, Gateway};
+
+// Same model on every attempt: retry, never fall to another provider.
+const MAX_ATTEMPTS: i64 = 10;
 
 // Rank providers: user routing mode first, then provider priority.
 pub fn rank(provs: &[Provider], avails: &[Avail], mode: &str, pinned: &str) -> Vec<Avail> {
@@ -31,8 +34,8 @@ pub fn rank(provs: &[Provider], avails: &[Avail], mode: &str, pinned: &str) -> V
 }
 
 struct Resolved {
-  ranked: Vec<Avail>,
   provs: Vec<Provider>,
+  av: Avail,
   req_json: Option<String>,
 }
 
@@ -77,23 +80,36 @@ fn resolve(gw: &Gateway, req: &ChatReq) -> Result<Resolved, String> {
     return Err(format!("no connected provider serves model {}", req.model)); // Drop it
   }
   let ranked = rank(&provs, &avails, &mode, &pinned);
-  Ok(Resolved { ranked, provs, req_json: serde_json::to_string(req).ok() })
+  let av = ranked.first().ok_or("no provider serves this model")?.clone();
+  Ok(Resolved { provs, av, req_json: serde_json::to_string(req).ok() })
+}
+
+// Exponential with jitter; Retry-After wins when the provider sends one.
+fn backoff_ms(attempt: i64, retry_after: Option<u64>) -> u64 {
+  if let Some(secs) = retry_after {
+    return secs.saturating_mul(1000).min(30_000);
+  }
+  let base = 500u64 << (attempt - 1).min(4); // 500, 1k, 2k, 4k, 8k cap
+  let nanos = std::time::SystemTime::now()
+    .duration_since(std::time::UNIX_EPOCH)
+    .map(|d| d.subsec_nanos() as u64)
+    .unwrap_or(0);
+  base + nanos % base / 2
 }
 
 pub async fn run(gw: &Gateway, req: &ChatReq) -> Result<ChatResp, String> {
-  let Resolved { ranked, provs, req_json } = resolve(gw, req)?;
+  let Resolved { provs, av, req_json } = resolve(gw, req)?;
+  let prov = match provs.iter().find(|p| p.id == av.provider_id) {
+    Some(p) => p,
+    None => return Err("provider gone".into()),
+  };
+  let tok = key_for(prov)?;
 
   let mut attempt = 0i64;
-  let mut last_err = String::new();
-  for av in &ranked {
-    let prov = match provs.iter().find(|p| p.id == av.provider_id) {
-      Some(p) => p,
-      None => continue,
-    };
-    let tok = key_for(prov)?;
+  loop {
     attempt += 1;
     let t0 = Instant::now();
-    let res = adapters::dispatch(&gw.http, prov, &av.remote_model_id, tok, &req.msgs).await;
+    let res = adapters::dispatch(&gw.http, prov, &av.remote_model_id, tok.clone(), &req.msgs).await;
     let latency = t0.elapsed().as_millis() as i64;
 
     match res {
@@ -137,7 +153,6 @@ pub async fn run(gw: &Gateway, req: &ChatReq) -> Result<ChatResp, String> {
         }); // Sorted
       }
       Err(e) => {
-        last_err = e.msg.clone();
         let log = ReqLog {
           model_id: Some(req.model.clone()),
           provider_id: Some(prov.id.clone()),
@@ -155,15 +170,20 @@ pub async fn run(gw: &Gateway, req: &ChatReq) -> Result<ChatResp, String> {
         };
         {
           let conn = gw.conn.lock().map_err(|e| e.to_string())?;
-          let _ = store::log_req(&conn, &log); // keep fallback moving even if log fails
+          let _ = store::log_req(&conn, &log); // keep the loop moving even if log fails
         }
-        if !e.retryable() {
-          return Err(e.msg); // Drop it, not a rate/quota issue
+        let msg = if attempt >= MAX_ATTEMPTS {
+          format!("gave up after {attempt} attempts: {}", e.msg)
+        } else {
+          e.msg.clone()
+        };
+        if !e.retryable() || attempt >= MAX_ATTEMPTS {
+          return Err(msg); // Drop it
         }
+        tokio::time::sleep(Duration::from_millis(backoff_ms(attempt, e.retry_after))).await;
       }
     }
   }
-  Err(format!("all {attempt} attempts failed: {last_err}"))
 }
 
 pub async fn stream_run(
@@ -171,34 +191,37 @@ pub async fn stream_run(
   req: &ChatReq,
   chan: &Channel<StreamEvent>,
 ) -> Result<StreamStats, String> {
-  let Resolved { ranked, provs, req_json } = resolve(gw, req)?;
-  let mut attempt = 0i64;
-  let mut last_err = String::new();
+  let Resolved { provs, av, req_json } = resolve(gw, req)?;
+  let prov = match provs.iter().find(|p| p.id == av.provider_id) {
+    Some(p) => p,
+    None => return Err("provider gone".into()),
+  };
+  let tok = key_for(prov)?;
 
-  for av in &ranked {
-    let prov = match provs.iter().find(|p| p.id == av.provider_id) {
-      Some(p) => p,
-      None => continue,
-    };
-    let tok = key_for(prov)?;
+  let mut attempt = 0i64;
+  loop {
     attempt += 1;
     let _ = chan.send(StreamEvent::Status { provider_id: prov.id.clone(), attempt });
 
     let t0 = Instant::now();
     let mut chan_err: Option<String> = None;
+    let mut sent_delta = false;
     let mut sink = |c: &str| -> Result<(), String> {
       if chan_err.is_some() {
         return Ok(()); // channel dead, keep reading so the model finishes
       }
       match chan.send(StreamEvent::Delta { text: c.into() }) {
-        Ok(()) => Ok(()),
+        Ok(()) => {
+          sent_delta = true;
+          Ok(())
+        }
         Err(e) => {
           chan_err = Some(e.to_string());
           Ok(())
         }
       }
     };
-    let res = adapters::dispatch_stream(&gw.http, prov, &av.remote_model_id, tok, &req.msgs, &mut sink).await;
+    let res = adapters::dispatch_stream(&gw.http, prov, &av.remote_model_id, tok.clone(), &req.msgs, &mut sink).await;
     let latency = t0.elapsed().as_millis() as i64;
 
     match res {
@@ -244,7 +267,6 @@ pub async fn stream_run(
         }); // Sorted
       }
       Err(e) => {
-        last_err = e.msg.clone();
         let log = ReqLog {
           model_id: Some(req.model.clone()),
           provider_id: Some(prov.id.clone()),
@@ -262,16 +284,23 @@ pub async fn stream_run(
         };
         {
           let conn = gw.conn.lock().map_err(|e| e.to_string())?;
-          let _ = store::log_req(&conn, &log); // keep fallback moving even if log fails
+          let _ = store::log_req(&conn, &log); // keep the loop moving even if log fails
         }
-        if !e.retryable() {
-          let _ = chan.send(StreamEvent::Err { msg: e.msg.clone() });
-          return Err(e.msg); // Drop it
+        if !e.retryable() || attempt >= MAX_ATTEMPTS {
+          let msg = if attempt >= MAX_ATTEMPTS {
+            format!("all {attempt} attempts failed: {}", e.msg)
+          } else {
+            e.msg.clone()
+          };
+          let _ = chan.send(StreamEvent::Err { msg: msg.clone() });
+          return Err(msg); // Drop it
         }
+        // Deltas already reached the UI: wipe them before the retry streams fresh.
+        if sent_delta {
+          let _ = chan.send(StreamEvent::Reset);
+        }
+        tokio::time::sleep(Duration::from_millis(backoff_ms(attempt, e.retry_after))).await;
       }
     }
   }
-  let msg = format!("all {attempt} attempts failed: {last_err}");
-  let _ = chan.send(StreamEvent::Err { msg: msg.clone() });
-  Err(msg)
 }

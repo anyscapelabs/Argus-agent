@@ -3,6 +3,7 @@ mod gateway;
 mod library;
 mod prompt;
 mod skills;
+mod tools;
 
 use std::sync::Mutex;
 

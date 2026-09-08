@@ -1,7 +1,7 @@
 use futures_util::StreamExt;
 use reqwest::Client;
 
-use super::{sse_events, CallErr, DeltaSink, WireResp};
+use super::{retry_after_secs, sse_events, CallErr, DeltaSink, WireResp};
 use crate::gateway::schema::{StreamDone, WireMsg};
 
 pub async fn stream(
@@ -19,18 +19,19 @@ pub async fn stream(
     req = req.bearer_auth(t);
   }
 
-  let resp = req.send().await.map_err(|e| CallErr { status: None, msg: e.to_string() })?;
+  let resp = req.send().await.map_err(|e| CallErr { status: None, msg: e.to_string(), retry_after: None })?;
   let status = resp.status().as_u16();
   if status != 200 {
+    let ra = retry_after_secs(&resp);
     let body = resp.text().await.unwrap_or_default();
-    return Err(CallErr { status: Some(status), msg: body }); // Drop it
+    return Err(CallErr { status: Some(status), msg: body, retry_after: ra }); // Drop it
   }
 
   let mut buf = String::new();
   let mut done = StreamDone::default();
   let mut stream = resp.bytes_stream();
   while let Some(chunk) = stream.next().await {
-    let bytes = chunk.map_err(|e| CallErr { status: None, msg: e.to_string() })?;
+    let bytes = chunk.map_err(|e| CallErr { status: None, msg: e.to_string(), retry_after: None })?;
     buf.push_str(&String::from_utf8_lossy(&bytes));
     for ev in sse_events(&mut buf) {
       for line in ev.lines() {
@@ -44,7 +45,7 @@ pub async fn stream(
         };
         if let Some(c) = v["choices"][0]["delta"]["content"].as_str() {
           if !c.is_empty() {
-            on_delta(c).map_err(|e| CallErr { status: None, msg: e })?;
+            on_delta(c).map_err(|e| CallErr { status: None, msg: e, retry_after: None })?;
             done.text.push_str(c);
           }
         }
@@ -77,12 +78,13 @@ pub async fn chat(
 }
 
 pub async fn send(req: reqwest::RequestBuilder) -> Result<(WireResp, String), CallErr> {
-  let resp = req.send().await.map_err(|e| CallErr { status: None, msg: e.to_string() })?;
+  let resp = req.send().await.map_err(|e| CallErr { status: None, msg: e.to_string(), retry_after: None })?;
   let status = resp.status().as_u16();
-  let body = resp.text().await.map_err(|e| CallErr { status: Some(status), msg: e.to_string() })?;
+  let ra = retry_after_secs(&resp);
+  let body = resp.text().await.map_err(|e| CallErr { status: Some(status), msg: e.to_string(), retry_after: None })?;
   if status != 200 {
-    return Err(CallErr { status: Some(status), msg: body }); // Drop it
+    return Err(CallErr { status: Some(status), msg: body, retry_after: ra }); // Drop it
   }
-  let wire: WireResp = serde_json::from_str(&body).map_err(|e| CallErr { status: Some(status), msg: e.to_string() })?;
+  let wire: WireResp = serde_json::from_str(&body).map_err(|e| CallErr { status: Some(status), msg: e.to_string(), retry_after: None })?;
   Ok((wire, body))
 }

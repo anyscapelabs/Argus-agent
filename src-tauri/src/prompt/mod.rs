@@ -28,12 +28,14 @@ Markup you may use, with nothing else:\n\
 - Caveats and risks: <warning severity=\"high\">text</warning> (severity low, medium, or high).\n\
 - Reasoning you want visible: <thinking>text</thinking>; it renders collapsed.\n\
 Never invent tags, never wrap the whole reply in a tag, never fake tool output. \
-A tag you invent shows up as literal text.";
+A tag you invent shows up as literal text.
+";
 
 // Stable layer: identity + preference rules + skills index. Rebuilt only when
 // its inputs change; must stay byte-identical across turns for cache hits.
 fn stable_layer(conn: &Connection) -> Result<String, String> {
   let mut s = String::from(BASE);
+  s.push_str(&crate::tools::section());
   if let Some(rules) = gw_store::kv_get(conn, "preference_rules") {
     if !rules.trim().is_empty() {
       s.push_str("\n\n## User preferences\n");

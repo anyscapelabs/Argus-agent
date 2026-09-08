@@ -25,7 +25,7 @@ serde_json = "1"
 rusqlite = { version = "0.36", features = ["bundled"] }
 reqwest = { version = "0.12", features = ["json", "stream"] }
 futures-util = "0.3"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "process"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 uuid = { version = "1", features = ["v4"] }
 sha2 = "0.10"

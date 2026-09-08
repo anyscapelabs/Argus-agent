@@ -181,6 +181,8 @@ class SessionStore {
     chan.onmessage = (ev) => {
       if (ev.type === "delta") {
         this.patchTurn(sessionId, (prev) => ({ text: prev.text + ev.text, err: null }));
+      } else if (ev.type === "reset") {
+        this.patchTurn(sessionId, (prev) => ({ text: "", err: prev.err }));
       } else if (ev.type === "err") {
         this.patchTurn(sessionId, (prev) => ({ text: prev.text, err: ev.msg }));
       }

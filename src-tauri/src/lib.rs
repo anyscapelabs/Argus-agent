@@ -77,7 +77,9 @@ pub fn run() {
       library::library_search,
       library::library_path,
       gateway::gw_logs,
-      prompt::prompt_preview
+      prompt::prompt_preview,
+      prompt::compressor::prompt_status,
+      prompt::compressor::prompt_compact
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

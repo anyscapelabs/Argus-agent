@@ -31,6 +31,7 @@ import { parse } from "../lib/agentXml";
 type Props = {
   children?: React.ReactNode;
   text?: string;
+  caret?: boolean;
   onRetry?: () => void;
 };
 
@@ -237,7 +238,7 @@ function renderTree(tree: XmlTree): React.ReactNode[] {
   return out;
 }
 
-export default function AgentBubble({ children, text, onRetry }: Props) {
+export default function AgentBubble({ children, text, caret, onRetry }: Props) {
   const tree: XmlTree | null = useMemo(() => (text !== undefined ? parse(text) : null), [text]);
   const [copied, setCopied] = useState(false);
   const [vote, setVote] = useState<"up" | "down" | null>(null);
@@ -254,8 +255,13 @@ export default function AgentBubble({ children, text, onRetry }: Props) {
   };
 
   return (
-    <div className="group/agent flex flex-col gap-3 text-base text-text-primary">
+    <div
+      className={`group/agent flex flex-col gap-3 text-base text-text-primary ${
+        caret ? "stream-caret-host" : ""
+      }`}
+    >
       {tree ? renderTree(tree) : <div className="font-serif text-[16px] font-light">{children}</div>}
+      {caret && (tree === null || tree.length === 0) && <span className="stream-caret" />}
       {text !== undefined && text.length > 0 && (
         <div className="flex items-center gap-1 text-text-secondary opacity-0 transition-opacity group-hover/agent:opacity-100 group-focus-within/agent:opacity-100">
           <button

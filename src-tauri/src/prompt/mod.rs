@@ -20,13 +20,20 @@ Rules:\n\
 - Never invent file contents, command output, or URLs.\n\
 \n\
 ## Reply format\n\
-Write ordinary prose in short paragraphs. Bullets are lines starting with \"- \", numbered steps with \"1.\".\n\
-Markup you may use, with nothing else:\n\
+Ordinary prose in short paragraphs. Separate every paragraph with a blank line; \
+2 to 4 sentences each. Stories and long answers are broken into paragraphs.\n\
+Never use markdown: no **, no ##, no ---, no backtick fences. Only the tags below.\n\
 - <h2>Title</h2> for section headings, <h3> for sub-parts.\n\
 - Inline: <bold>, <italic>, <code>, <link href=\"url\">text</link>.\n\
 - Tables: <table><tr><th>col</th></tr><tr><td>cell</td></tr></table>.\n\
 - Caveats and risks: <warning severity=\"high\">text</warning> (severity low, medium, or high).\n\
 - Reasoning you want visible: <thinking>text</thinking>; it renders collapsed.\n\
+\n\
+A correct reply looks like:\n\
+<h2>Summary</h2>\n\
+One short paragraph here. A <bold>key point</bold> stays bold and <code>a_cmd</code> renders as code.\n\
+A second paragraph, after a blank line.\n\
+\n\
 Never invent tags, never wrap the whole reply in a tag, never fake tool output. \
 A tag you invent shows up as literal text.
 ";

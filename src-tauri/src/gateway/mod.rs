@@ -266,12 +266,13 @@ pub async fn maybe_sync_catalog(gw: &Gateway) {
   }
 }
 
+// models.dev prices are USD per million tokens; store per 1k for routing math.
 fn per_1k(v: &serde_json::Value) -> f64 {
   let n = v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse().ok())).unwrap_or(0.0);
   if n < 0.0 {
     return 0.0;
   }
-  n * 1000.0
+  n / 1000.0
 }
 
 #[tauri::command]

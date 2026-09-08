@@ -51,31 +51,35 @@ pub fn gw_link_model(gw: State<'_, Gateway>, avail: Avail) -> Result<(), String>
   store::link_model(&conn, &avail)
 }
 
-// Stores tok when given. Keyless connect (ollama) probes the endpoint instead:
-// connected only when a server actually answers.
+// Keyed providers verify the key against the provider before it reaches the
+// keyring. Keyless connect (ollama) probes the endpoint instead.
 #[tauri::command]
 pub async fn gw_connect(gw: State<'_, Gateway>, provider_id: String, tok: Option<String>) -> Result<(), String> {
-  if let Some(t) = tok.filter(|t| !t.is_empty()) {
-    store::secret_set(&provider_id, &t)?;
-  } else {
-    let base = {
-      let conn = gw.conn.lock().map_err(|e| e.to_string())?;
-      let provs = store::list_providers(&conn)?;
-      match provs.iter().find(|p| p.id == provider_id) {
-        Some(p) => p.base_url.clone(),
-        None => return Err(format!("unknown provider {provider_id}")), // Drop it
+  let prov = {
+    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    let provs = store::list_providers(&conn)?;
+    provs
+      .into_iter()
+      .find(|p| p.id == provider_id)
+      .ok_or_else(|| format!("unknown provider {provider_id}"))? // Drop it
+  };
+  match tok.filter(|t| !t.is_empty()) {
+    Some(t) => {
+      adapters::verify_key(&gw.http, &prov, &t).await?;
+      store::secret_set(&provider_id, &t)?;
+    }
+    None => {
+      let url = format!("{}/models", prov.base_url.trim_end_matches('/'));
+      let up = gw
+        .http
+        .get(&url)
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false);
+      if !up {
+        return Err(format!("no server answered at {url}"));
       }
-    };
-    let url = format!("{}/models", base.trim_end_matches('/'));
-    let up = gw
-      .http
-      .get(&url)
-      .send()
-      .await
-      .map(|r| r.status().is_success())
-      .unwrap_or(false);
-    if !up {
-      return Err(format!("no server answered at {url}"));
     }
   }
   let conn = gw.conn.lock().map_err(|e| e.to_string())?;

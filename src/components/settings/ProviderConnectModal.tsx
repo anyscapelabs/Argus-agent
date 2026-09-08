@@ -7,16 +7,20 @@ type ProviderConnectModalProps = {
   open: boolean;
   provider: Provider | null;
   onClose: () => void;
-  onConnect: (provider: Provider, apiKey: string) => void;
+  onConnect: (provider: Provider, apiKey: string) => Promise<void>;
 };
 
 export default function ProviderConnectModal({ open, provider, onClose, onConnect }: ProviderConnectModalProps) {
   const [apiKey, setApiKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const logoUri = useProviderLogo(provider?.id ?? "");
 
   useEffect(() => {
     if (open) {
       setApiKey("");
+      setErr(null);
+      setSaving(false);
       const onKey = (e: KeyboardEvent) => {
         if (e.key === "Escape") onClose();
       };
@@ -27,9 +31,21 @@ export default function ProviderConnectModal({ open, provider, onClose, onConnec
 
   if (!open || !provider) return null;
 
-  const handleConnect = () => {
-    if (!apiKey.trim()) return;
-    onConnect(provider, apiKey.trim());
+  const handleConnect = async () => {
+    const key = apiKey.trim();
+    if (!key || saving) return;
+    setSaving(true);
+    setErr(null);
+    try {
+      await onConnect(provider, key);
+    } catch (e) {
+      setErr(String(e));
+      setSaving(false);
+      return;
+    }
+    setApiKey("");
+    setSaving(false);
+    onClose();
   };
 
   const initials = provider.name
@@ -101,19 +117,21 @@ export default function ProviderConnectModal({ open, provider, onClose, onConnec
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder="API key"
-            className="w-full rounded-lg border border-border-primary bg-bg-hover-secondary px-2 py-1.5 text-sm text-text-primary placeholder:text-text-secondary focus:border-text-secondary focus:outline-none focus:ring-1 focus:ring-text-secondary"
+            disabled={saving}
+            className="w-full rounded-lg border border-border-primary bg-bg-hover-secondary px-2 py-1.5 text-sm text-text-primary placeholder:text-text-secondary focus:border-text-secondary focus:outline-none focus:ring-1 focus:ring-text-secondary disabled:opacity-50"
             autoFocus
           />
+          {err && <p className="text-xs text-red-400">{err}</p>}
         </div>
 
         <div className="mt-auto flex justify-end pt-6">
           <button
             type="button"
             onClick={handleConnect}
-            disabled={!apiKey.trim()}
+            disabled={!apiKey.trim() || saving}
             className="rounded-lg bg-accent px-2 py-1 text-sm font-medium text-bg-primary transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Continue
+            {saving ? "Verifying…" : "Continue"}
           </button>
         </div>
       </div>

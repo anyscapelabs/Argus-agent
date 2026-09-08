@@ -67,3 +67,24 @@ pub async fn dispatch(
     }),
   }
 }
+
+// 401/403 reject the key; any other outcome (offline, missing endpoint) lets it through.
+pub async fn verify_key(http: &Client, prov: &Provider, key: &str) -> Result<(), String> {
+  let url = if prov.compatible == "Anthropic" {
+    format!("{}/v1/models", prov.base_url.trim_end_matches('/'))
+  } else {
+    format!("{}/models", prov.base_url.trim_end_matches('/'))
+  };
+  let mut req = http.get(&url);
+  if prov.compatible == "Anthropic" {
+    req = req.header("x-api-key", key).header("anthropic-version", "2023-06-01");
+  } else {
+    req = req.header("Authorization", format!("Bearer {key}"));
+  }
+  match req.send().await {
+    Ok(r) if r.status() == reqwest::StatusCode::UNAUTHORIZED || r.status() == reqwest::StatusCode::FORBIDDEN => {
+      Err(format!("{} rejected this API key", prov.name))
+    }
+    _ => Ok(()),
+  }
+}

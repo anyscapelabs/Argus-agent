@@ -132,6 +132,7 @@ impl Projection {
     ChatReq {
       model: self.model_id.clone().unwrap_or_default(),
       msgs,
+      prefix_hash: None,
     }
   }
 }

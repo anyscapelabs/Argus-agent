@@ -1,3 +1,4 @@
+pub mod chat;
 pub mod schema;
 pub mod store;
 

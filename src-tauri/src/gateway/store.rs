@@ -55,46 +55,40 @@ fn reconcile_connected(conn: &Connection) -> Result<(), String> {
 
 // Dev DBs predate name/connected/logo_url/doc_url; migrate them in place.
 fn ensure_cols(conn: &Connection) -> Result<(), String> {
-  let has = |col: &str| -> bool {
+  let has = |table: &str, col: &str| -> bool {
     conn
       .query_row(
-        "SELECT COUNT(*) FROM pragma_table_info('providers') WHERE name = ?1",
+        &format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"),
         params![col],
         |r| r.get::<_, i64>(0),
       )
       .unwrap_or(1)
       != 0
   };
-  if has("enabled") {
+  if has("providers", "enabled") {
     conn
       .execute("ALTER TABLE providers RENAME COLUMN enabled TO connected", [])
       .map_err(|e| e.to_string())?;
   }
   for col in ["name TEXT NOT NULL DEFAULT ''", "logo_url TEXT", "doc_url TEXT"] {
     let name = col.split_whitespace().next().unwrap_or(col);
-    if !has(name) {
+    if !has("providers", name) {
       conn
         .execute(&format!("ALTER TABLE providers ADD COLUMN {col}"), [])
         .map_err(|e| e.to_string())?;
     }
   }
-  if !has_model_col(conn, "enabled") {
+  if !has("models", "enabled") {
     conn
       .execute("ALTER TABLE models ADD COLUMN enabled INTEGER NOT NULL DEFAULT 0", [])
       .map_err(|e| e.to_string())?;
   }
+  if !has("request_log", "prefix_hash") {
+    conn
+      .execute("ALTER TABLE request_log ADD COLUMN prefix_hash TEXT", [])
+      .map_err(|e| e.to_string())?;
+  }
   Ok(())
-}
-
-fn has_model_col(conn: &Connection, col: &str) -> bool {
-  conn
-    .query_row(
-      "SELECT COUNT(*) FROM pragma_table_info('models') WHERE name = ?1",
-      params![col],
-      |r| r.get::<_, i64>(0),
-    )
-    .unwrap_or(1)
-    != 0
 }
 
 fn seed_chk(conn: &Connection) -> Result<(), String> {
@@ -272,9 +266,9 @@ pub fn list_avail(conn: &Connection, model_id: &str) -> Result<Vec<Avail>, Strin
 pub fn log_req(conn: &Connection, l: &ReqLog) -> Result<(), String> {
   conn
     .execute(
-      "INSERT INTO request_log (model_id, provider_id, remote_model_id, attempt, status, latency_ms, tok_in, tok_out, cost, err_msg, req_json, resp_json)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-      params![l.model_id, l.provider_id, l.remote_model_id, l.attempt, l.status, l.latency_ms, l.tok_in, l.tok_out, l.cost, l.err_msg, l.req_json, l.resp_json],
+      "INSERT INTO request_log (model_id, provider_id, remote_model_id, attempt, status, latency_ms, tok_in, tok_out, cost, err_msg, req_json, resp_json, prefix_hash)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+      params![l.model_id, l.provider_id, l.remote_model_id, l.attempt, l.status, l.latency_ms, l.tok_in, l.tok_out, l.cost, l.err_msg, l.req_json, l.resp_json, l.prefix_hash],
     )
     .map_err(|e| e.to_string())?;
   Ok(())
@@ -283,7 +277,7 @@ pub fn log_req(conn: &Connection, l: &ReqLog) -> Result<(), String> {
 pub fn list_logs(conn: &Connection, limit: i64) -> Result<Vec<ReqLog>, String> {
   let mut stmt = conn
     .prepare(
-      "SELECT model_id, provider_id, remote_model_id, attempt, status, latency_ms, tok_in, tok_out, cost, err_msg, req_json, resp_json
+      "SELECT model_id, provider_id, remote_model_id, attempt, status, latency_ms, tok_in, tok_out, cost, err_msg, req_json, resp_json, prefix_hash
        FROM request_log ORDER BY id DESC LIMIT ?1",
     )
     .map_err(|e| e.to_string())?;
@@ -302,6 +296,7 @@ pub fn list_logs(conn: &Connection, limit: i64) -> Result<Vec<ReqLog>, String> {
         err_msg: r.get(9)?,
         req_json: r.get(10)?,
         resp_json: r.get(11)?,
+        prefix_hash: r.get(12)?,
       })
     })
     .map_err(|e| e.to_string())?;

@@ -2,11 +2,13 @@ import { Channel } from "@tauri-apps/api/core";
 import { useSyncExternalStore } from "react";
 import {
   sessChatStream,
+  sessCleanDangling,
   sessCreateSession,
   sessDeleteSession,
   sessListMessages,
   sessListSessions,
   sessSaveSession,
+  sessSetVote,
   sessSupersedeFrom,
   type MsgRow,
   type SessionRow,
@@ -63,7 +65,16 @@ class SessionStore {
 
   async select(sessionId: string | null) {
     this.set({ activeId: sessionId });
-    if (sessionId !== null) await this.loadMsgs(sessionId);
+    if (sessionId === null) return;
+    const t = this.state.turns[sessionId];
+    if (t === undefined || t.err !== null) {
+      try {
+        await sessCleanDangling(sessionId);
+      } catch {
+        // Drop it
+      }
+    }
+    await this.loadMsgs(sessionId);
   }
 
   async create(title: string, modelId: string | null): Promise<SessionRow> {
@@ -86,8 +97,23 @@ class SessionStore {
     });
   }
 
-  async setModel(sessionId: string, modelId: string) {
-    const row = this.state.sessions.find((s) => s.id === sessionId);
+  async setVote(sessionId: string, msgId: string, vote: "up" | "down" | null) {
+    const rows = this.state.msgs[sessionId] ?? [];
+    if (!rows.some((m) => m.id === msgId)) return;
+    this.set({
+      msgs: {
+        ...this.state.msgs,
+        [sessionId]: rows.map((m) => (m.id === msgId ? { ...m, vote } : m)),
+      },
+    });
+    try {
+      await sessSetVote(sessionId, msgId, vote);
+    } catch {
+      await this.loadMsgs(sessionId);
+    }
+  }
+
+  async setModel(sessionId: string, modelId: string) {    const row = this.state.sessions.find((s) => s.id === sessionId);
     if (row === undefined || row.model_id === modelId) return;
     const next = { ...row, model_id: modelId };
     this.set({ sessions: this.state.sessions.map((s) => (s.id === sessionId ? next : s)) });
@@ -119,7 +145,8 @@ class SessionStore {
   }
 
   async send(sessionId: string, content: string) {
-    if (this.state.turns[sessionId] !== undefined) return;
+    const prev = this.state.turns[sessionId];
+    if (prev !== undefined && prev.err === null) return;
 
     const pending: MsgRow = {
       id: `pending-${Date.now()}`,
@@ -132,6 +159,7 @@ class SessionStore {
       tok_in: null,
       tok_out: null,
       active: true,
+      vote: null,
       created_at: "",
     };
     const existing = this.state.msgs[sessionId] ?? [];
@@ -172,11 +200,12 @@ class SessionStore {
 
   
   async retry(sessionId: string, userSeq: number, content: string) {
-    if (this.state.turns[sessionId] !== undefined) return;
+    const t = this.state.turns[sessionId];
+    if (t !== undefined && t.err === null) return;
     try {
-      await sessSupersedeFrom(sessionId, userSeq + 1);
+      await sessSupersedeFrom(sessionId, userSeq);
     } catch {
-      // history stays as-is; the resend still proceeds
+      // DB dead, resend still proceeds
     }
     await this.send(sessionId, content);
   }

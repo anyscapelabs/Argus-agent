@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS messages (
   tok_in      INTEGER,
   tok_out     INTEGER,
   active      INTEGER NOT NULL DEFAULT 1,
+  vote        TEXT,
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_msgs_session ON messages(session_id, seq);
@@ -89,6 +90,8 @@ pub struct Msg {
   pub tok_in: Option<i64>,
   pub tok_out: Option<i64>,
   pub active: bool,
+  #[serde(default)]
+  pub vote: Option<String>,
   pub created_at: String,
 }
 

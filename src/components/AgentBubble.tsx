@@ -32,6 +32,8 @@ type Props = {
   children?: React.ReactNode;
   text?: string;
   caret?: boolean;
+  vote?: string | null;
+  onVote?: (next: "up" | "down" | null) => void;
   onRetry?: () => void;
 };
 
@@ -238,10 +240,9 @@ function renderTree(tree: XmlTree): React.ReactNode[] {
   return out;
 }
 
-export default function AgentBubble({ children, text, caret, onRetry }: Props) {
+export default function AgentBubble({ children, text, caret, vote, onVote, onRetry }: Props) {
   const tree: XmlTree | null = useMemo(() => (text !== undefined ? parse(text) : null), [text]);
   const [copied, setCopied] = useState(false);
-  const [vote, setVote] = useState<"up" | "down" | null>(null);
 
   const copy = async () => {
     if (!text) return;
@@ -268,7 +269,7 @@ export default function AgentBubble({ children, text, caret, onRetry }: Props) {
           <button
             type="button"
             aria-label="Like response"
-            onClick={() => setVote((v) => (v === "up" ? null : "up"))}
+            onClick={() => onVote?.(vote === "up" ? null : "up")}
             className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-bg-hover-primary hover:text-text-primary focus:outline-none focus-visible:bg-bg-hover-primary ${vote === "up" ? "text-text-primary" : ""}`}
           >
             {vote === "up" ? <FaThumbsUp size={14} /> : <FiThumbsUp size={14} />}
@@ -276,7 +277,7 @@ export default function AgentBubble({ children, text, caret, onRetry }: Props) {
           <button
             type="button"
             aria-label="Dislike response"
-            onClick={() => setVote((v) => (v === "down" ? null : "down"))}
+            onClick={() => onVote?.(vote === "down" ? null : "down")}
             className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-bg-hover-primary hover:text-text-primary focus:outline-none focus-visible:bg-bg-hover-primary ${vote === "down" ? "text-text-primary" : ""}`}
           >
             {vote === "down" ? <FaThumbsDown size={14} /> : <FiThumbsDown size={14} />}

@@ -17,7 +17,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
   const [draft, setDraft] = useState("");
   const rows = msgs[sessionId] ?? [];
   const turn = turns[sessionId];
-  const running = turn !== undefined;
+  const running = turn !== undefined && turn.err === null;
 
   const { models } = useChatModels();
   const session = sessions.find((s) => s.id === sessionId);
@@ -33,6 +33,8 @@ export default function ChatDetailPage({ sessionId }: Props) {
     messages.push({ id: "live", role: "agent", content: turn.text });
   }
 
+  const voteOf = (msgId: string) => rows.find((m) => m.id === msgId)?.vote ?? null;
+
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -43,15 +45,20 @@ export default function ChatDetailPage({ sessionId }: Props) {
     sessionStore.send(sessionId, text);
   };
 
-  const handleRetry = (userMsgId: string) => {
+  const retryFrom = (userMsgId: string) => {
     if (running) return;
-    const idx = messages.findIndex((m) => m.id === userMsgId);
-    if (idx === -1) return;
-    const prev = messages[idx - 1];
-    if (prev === undefined || prev.role !== "user") return;
-    const row = rows.find((m) => m.id === userMsgId);
+    const row = rows.find((m) => m.id === userMsgId && m.role === "user");
     if (row === undefined) return;
     sessionStore.retry(sessionId, row.seq, row.content);
+  };
+
+  const retryBefore = (idx: number) => {
+    for (let i = idx - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        retryFrom(messages[i].id);
+        return;
+      }
+    }
   };
 
   const handleScrollKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -97,7 +104,11 @@ export default function ChatDetailPage({ sessionId }: Props) {
         <div className="mx-auto flex w-full min-w-0 max-w-[700px] flex-col gap-3">
           {messages.map((message, idx) =>
             message.role === "user" ? (
-              <UserBubble key={message.id} timestamp={message.timestamp} onRetry={() => handleRetry(message.id)}>
+              <UserBubble
+                key={message.id}
+                timestamp={message.timestamp}
+                onRetry={() => retryFrom(message.id)}
+              >
                 {message.content}
               </UserBubble>
             ) : (
@@ -105,10 +116,9 @@ export default function ChatDetailPage({ sessionId }: Props) {
                 key={message.id}
                 text={message.content}
                 caret={running && message.id === "live"}
-                onRetry={() => {
-                  const prev = messages[idx - 1];
-                  if (prev && prev.role === "user") handleRetry(prev.id);
-                }}
+                vote={message.id === "live" ? null : voteOf(message.id)}
+                onVote={(v) => sessionStore.setVote(sessionId, message.id, v)}
+                onRetry={() => retryBefore(idx)}
               />
             )
           )}

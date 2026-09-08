@@ -15,8 +15,23 @@ export type Provider = {
 
 export type SyncStats = { providers: number; models: number };
 
+export type ProviderModel = {
+  providerId: string;
+  modelId: string;
+  displayName: string;
+  capabilities: string | null;
+  enabled: boolean;
+  costIn: number;
+  costOut: number;
+};
+
 // gateway
 export const gwListProviders = () => invoke<Provider[]>("gw_list_providers");
+
+export const gwProviderModels = () => invoke<ProviderModel[]>("gw_provider_models");
+
+export const gwSetModelEnabled = (modelId: string, enabled: boolean) =>
+  invoke<void>("gw_set_model_enabled", { modelId, enabled });
 
 export const gwConnect = (providerId: string, tok?: string) =>
   invoke<void>("gw_connect", { providerId, tok: tok ?? null });

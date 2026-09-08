@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import AgentBubble from "./AgentBubble";
 import ChatInput from "./ChatInput";
 import UserBubble from "./UserBubble";
-import type { ChatMessage } from "../mocks/chat";
+import type { ChatMessage } from "../types/chat";
 
 const SCROLL_LINE = 40;
 const SCROLL_PAGE_RATIO = 0.85;

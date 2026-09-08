@@ -117,7 +117,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
         >
           <SettingsSidebar activeTab={activeTab} onTabChange={setActiveTab} />
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-            {activeTab === "models" && <ModelsPage />}
+            {activeTab === "models" && <ModelsPage onNavigate={setActiveTab} />}
             {activeTab === "providers" && <ProvidersPage />}
           </div>
         </div>

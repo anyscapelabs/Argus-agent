@@ -1,5 +1,5 @@
-import { memo, useMemo, useState } from "react";
-import { LuChevronDown, LuSearch } from "react-icons/lu";
+import { memo, useMemo, useState, type ReactNode } from "react";
+import { LuBoxes, LuChevronDown, LuPlug, LuSearch, LuSearchX } from "react-icons/lu";
 import { useModels } from "../../hooks/useModels";
 import { useProviders } from "../../hooks/useProviders";
 import { useProviderLogo } from "../../hooks/useProviderLogo";
@@ -112,9 +112,28 @@ const ModelSection = memo(function ModelSection({
   );
 });
 
-export default function ModelsPage() {
+function EmptyState({ icon, title, body, action }: { icon: ReactNode; title: string; body: string; action?: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
+      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-bg-hover-secondary text-text-secondary">
+        {icon}
+      </div>
+      <div className="flex flex-col gap-1">
+        <p className="text-sm font-medium text-text-primary">{title}</p>
+        <p className="max-w-xs text-xs leading-relaxed text-text-secondary">{body}</p>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+type ModelsPageProps = {
+  onNavigate?: (tab: "providers" | "models") => void;
+};
+
+export default function ModelsPage({ onNavigate }: ModelsPageProps) {
   const { groups, loading, err, query, setQuery, toggle } = useModels();
-  const { providers } = useProviders();
+  const { providers, loading: provLoading, syncing, syncCatalog } = useProviders();
   const [open, setOpen] = useState<Set<string>>(new Set());
 
   const connectedIds = useMemo(
@@ -151,14 +170,56 @@ export default function ModelsPage() {
         />
       </div>
 
-      {loading ? (
+      {loading || provLoading ? (
         <p className="text-sm text-text-secondary">Loading models…</p>
       ) : err ? (
         <p className="text-sm text-red-400">{err}</p>
+      ) : visible.length === 0 && searching ? (
+        <EmptyState
+          icon={<LuSearchX size={18} />}
+          title="No models match"
+          body={`Nothing found for "${query.trim()}". Try a shorter or different name.`}
+          action={
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="rounded-full border border-border-primary bg-bg-hover-secondary px-4 py-1.5 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover-primary"
+            >
+              Clear search
+            </button>
+          }
+        />
+      ) : visible.length === 0 && connectedIds.size === 0 ? (
+        <EmptyState
+          icon={<LuPlug size={18} />}
+          title="No connected providers"
+          body="Models come from your connected providers. Connect one first, then sync the catalog to pull its models."
+          action={
+            <button
+              type="button"
+              onClick={() => onNavigate?.("providers")}
+              className="rounded-full border border-border-primary bg-bg-hover-secondary px-4 py-1.5 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover-primary"
+            >
+              Go to Providers
+            </button>
+          }
+        />
       ) : visible.length === 0 ? (
-        <p className="text-sm text-text-secondary">
-          No models to show — connect a provider on the Providers page, then sync the catalog.
-        </p>
+        <EmptyState
+          icon={<LuBoxes size={18} />}
+          title="No models yet"
+          body="Your connected providers have no models indexed. Sync the catalog to fetch the latest list."
+          action={
+            <button
+              type="button"
+              onClick={syncCatalog}
+              disabled={syncing}
+              className="flex items-center gap-1.5 rounded-full border border-border-primary bg-bg-hover-secondary px-4 py-1.5 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover-primary disabled:opacity-50"
+            >
+              {syncing ? "Syncing…" : "Sync catalog"}
+            </button>
+          }
+        />
       ) : (
         <div className="flex flex-col gap-2">
           {visible.map(({ providerId, models }) => (

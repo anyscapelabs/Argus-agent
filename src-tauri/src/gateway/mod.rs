@@ -69,8 +69,7 @@ pub fn gw_link_model(gw: State<'_, Gateway>, avail: Avail) -> Result<(), String>
   store::link_model(&conn, &avail)
 }
 
-// Keyed providers verify the key against the provider before it reaches the
-// keyring. Keyless connect (ollama) probes the endpoint instead.
+// Every connect is keyed: verify against the provider, then store in the keyring.
 #[tauri::command]
 pub async fn gw_connect(gw: State<'_, Gateway>, provider_id: String, tok: Option<String>) -> Result<(), String> {
   let prov = {
@@ -81,28 +80,9 @@ pub async fn gw_connect(gw: State<'_, Gateway>, provider_id: String, tok: Option
       .find(|p| p.id == provider_id)
       .ok_or_else(|| format!("unknown provider {provider_id}"))? // Drop it
   };
-  match tok.filter(|t| !t.is_empty()) {
-    Some(t) => {
-      adapters::verify_key(&gw.http, &prov, &t).await?;
-      store::secret_set(&provider_id, &t)?;
-    }
-    None => {
-      if !adapters::is_local(&prov.base_url) {
-        return Err(format!("API key required for {}", prov.name));
-      }
-      let url = format!("{}/models", prov.base_url.trim_end_matches('/'));
-      let up = gw
-        .http
-        .get(&url)
-        .send()
-        .await
-        .map(|r| r.status().is_success())
-        .unwrap_or(false);
-      if !up {
-        return Err(format!("no server answered at {url}"));
-      }
-    }
-  }
+  let t = tok.filter(|t| !t.is_empty()).ok_or_else(|| format!("API key required for {}", prov.name))?;
+  adapters::verify_key(&gw.http, &prov, &t).await?;
+  store::secret_set(&provider_id, &t)?;
   let conn = gw.conn.lock().map_err(|e| e.to_string())?;
   store::set_connected(&conn, &provider_id, true)
 }

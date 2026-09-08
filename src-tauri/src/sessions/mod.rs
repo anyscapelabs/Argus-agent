@@ -35,6 +35,21 @@ pub fn sess_delete_session(gw: State<'_, Gateway>, session_id: String) -> Result
 }
 
 #[tauri::command]
+pub fn sess_set_vote(
+  gw: State<'_, Gateway>,
+  session_id: String,
+  msg_id: String,
+  vote: Option<String>,
+) -> Result<(), String> {
+  let v = match vote.as_deref() {
+    Some("up") | Some("down") => vote,
+    _ => None,
+  };
+  let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+  store::set_vote(&conn, &session_id, &msg_id, v.as_deref())
+}
+
+#[tauri::command]
 pub fn sess_export_json(gw: State<'_, Gateway>, session_id: String) -> Result<String, String> {
   let conn = gw.conn.lock().map_err(|e| e.to_string())?;
   store::export_json(&conn, &session_id)
@@ -60,6 +75,12 @@ pub fn sess_supersede_from(
 ) -> Result<(), String> {
   let conn = gw.conn.lock().map_err(|e| e.to_string())?;
   store::supersede_from(&conn, &session_id, seq)
+}
+
+#[tauri::command]
+pub fn sess_clean_dangling(gw: State<'_, Gateway>, session_id: String) -> Result<usize, String> {
+  let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+  store::clean_dangling(&conn, &session_id)
 }
 
 #[tauri::command]

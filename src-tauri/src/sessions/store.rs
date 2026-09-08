@@ -5,6 +5,19 @@ use super::schema::{Folder, Msg, NewMsg, NewSession, Session};
 
 pub fn migrate(conn: &Connection) -> Result<(), String> {
   conn.execute_batch(super::schema::MIGRATE).map_err(|e| e.to_string())?;
+  let has_vote: bool = conn
+    .query_row(
+      "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'vote'",
+      [],
+      |r| r.get::<_, i64>(0),
+    )
+    .map(|n| n > 0)
+    .map_err(|e| e.to_string())?;
+  if !has_vote {
+    conn
+      .execute("ALTER TABLE messages ADD COLUMN vote TEXT", [])
+      .map_err(|e| e.to_string())?;
+  }
   conn.pragma_update(None, "foreign_keys", true).map_err(|e| e.to_string())?;
   Ok(())
 }
@@ -105,7 +118,7 @@ pub fn delete_session(conn: &Connection, id: &str) -> Result<(), String> {
 // ---- messages ----
 
 const MSG_COLS: &str =
-  "id, session_id, seq, role, content, model_id, provider_id, tok_in, tok_out, active, created_at";
+  "id, session_id, seq, role, content, model_id, provider_id, tok_in, tok_out, active, vote, created_at";
 
 fn row_msg(r: &rusqlite::Row) -> rusqlite::Result<Msg> {
   Ok(Msg {
@@ -119,7 +132,8 @@ fn row_msg(r: &rusqlite::Row) -> rusqlite::Result<Msg> {
     tok_in: r.get(7)?,
     tok_out: r.get(8)?,
     active: r.get::<_, i64>(9)? != 0,
-    created_at: r.get(10)?,
+    vote: r.get(10)?,
+    created_at: r.get(11)?,
   })
 }
 
@@ -161,6 +175,16 @@ pub fn list_msgs(conn: &Connection, session_id: &str) -> Result<Vec<Msg>, String
   rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
+pub fn set_vote(conn: &Connection, session_id: &str, msg_id: &str, vote: Option<&str>) -> Result<(), String> {
+  conn
+    .execute(
+      "UPDATE messages SET vote = ?3 WHERE id = ?2 AND session_id = ?1",
+      params![session_id, msg_id, vote],
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
 // Retry: everything from this seq up gets superseded, kept for audit.
 pub fn supersede_from(conn: &Connection, session_id: &str, seq: i64) -> Result<(), String> {
   conn
@@ -170,6 +194,21 @@ pub fn supersede_from(conn: &Connection, session_id: &str, seq: i64) -> Result<(
     )
     .map_err(|e| e.to_string())?;
   Ok(())
+}
+
+// User msg that never got an assistant reply (send failed mid-turn) is dead weight.
+pub fn clean_dangling(conn: &Connection, session_id: &str) -> Result<usize, String> {
+  conn
+    .execute(
+      "UPDATE messages SET active = 0 \
+       WHERE session_id = ?1 AND role = 'user' AND active = 1 \
+       AND NOT EXISTS (\
+         SELECT 1 FROM messages a \
+         WHERE a.session_id = messages.session_id AND a.seq > messages.seq \
+         AND a.role = 'assistant' AND a.active = 1)",
+      params![session_id],
+    )
+    .map_err(|e| e.to_string())
 }
 
 // ---- folders ----

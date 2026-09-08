@@ -81,6 +81,7 @@ export type MsgRow = {
   tok_in: number | null;
   tok_out: number | null;
   active: boolean;
+  vote: string | null;
   created_at: string;
 };
 
@@ -118,8 +119,14 @@ export const sessExportJson = (sessionId: string) =>
 export const sessListMessages = (sessionId: string) =>
   invoke<MsgRow[]>("sess_list_messages", { sessionId });
 
+export const sessSetVote = (sessionId: string, msgId: string, vote: "up" | "down" | null) =>
+  invoke<void>("sess_set_vote", { sessionId, msgId, vote });
+
 export const sessSupersedeFrom = (sessionId: string, seq: number) =>
   invoke<void>("sess_supersede_from", { sessionId, seq });
+
+export const sessCleanDangling = (sessionId: string) =>
+  invoke<number>("sess_clean_dangling", { sessionId });
 
 export const sessChatStream = (
   sessionId: string,

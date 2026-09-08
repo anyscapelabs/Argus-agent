@@ -60,6 +60,8 @@ pub fn run() {
       sessions::sess_delete_session,
       sessions::sess_export_json,
       sessions::sess_list_messages,
+      sessions::sess_set_vote,
+      sessions::sess_clean_dangling,
       sessions::sess_add_message,
       sessions::sess_supersede_from,
       sessions::sess_create_folder,

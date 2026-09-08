@@ -18,6 +18,7 @@ pub struct Gateway {
   pub http: Client,
   pub skills_dir: PathBuf,
   pub library_dir: PathBuf,
+  pub logos_dir: PathBuf,
 }
 
 #[tauri::command]
@@ -50,11 +51,32 @@ pub fn gw_link_model(gw: State<'_, Gateway>, avail: Avail) -> Result<(), String>
   store::link_model(&conn, &avail)
 }
 
-// Stores tok when given; ollama and other local providers connect without one.
+// Stores tok when given. Keyless connect (ollama) probes the endpoint instead:
+// connected only when a server actually answers.
 #[tauri::command]
-pub fn gw_connect(gw: State<'_, Gateway>, provider_id: String, tok: Option<String>) -> Result<(), String> {
+pub async fn gw_connect(gw: State<'_, Gateway>, provider_id: String, tok: Option<String>) -> Result<(), String> {
   if let Some(t) = tok.filter(|t| !t.is_empty()) {
     store::secret_set(&provider_id, &t)?;
+  } else {
+    let base = {
+      let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+      let provs = store::list_providers(&conn)?;
+      match provs.iter().find(|p| p.id == provider_id) {
+        Some(p) => p.base_url.clone(),
+        None => return Err(format!("unknown provider {provider_id}")), // Drop it
+      }
+    };
+    let url = format!("{}/models", base.trim_end_matches('/'));
+    let up = gw
+      .http
+      .get(&url)
+      .send()
+      .await
+      .map(|r| r.status().is_success())
+      .unwrap_or(false);
+    if !up {
+      return Err(format!("no server answered at {url}"));
+    }
   }
   let conn = gw.conn.lock().map_err(|e| e.to_string())?;
   store::set_connected(&conn, &provider_id, true)
@@ -169,6 +191,34 @@ async fn sync_from_models_dev(gw: &Gateway) -> Result<SyncStats, String> {
 #[tauri::command]
 pub async fn gw_sync_providers(gw: State<'_, Gateway>) -> Result<SyncStats, String> {
   sync_from_models_dev(&gw).await
+}
+
+// Logos cache on disk under app_data/logos; each SVG downloads once.
+#[tauri::command]
+pub async fn gw_logo(gw: State<'_, Gateway>, provider_id: String) -> Result<Option<String>, String> {
+  let path = gw.logos_dir.join(format!("{provider_id}.svg"));
+  if let Ok(text) = std::fs::read_to_string(&path) {
+    return Ok(Some(text)); // Sorted, cached
+  }
+  let url = {
+    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    let provs = store::list_providers(&conn)?;
+    match provs.iter().find(|p| p.id == provider_id) {
+      Some(p) => match &p.logo_url {
+        Some(u) => u.clone(),
+        None => return Ok(None),
+      },
+      None => return Ok(None),
+    }
+  };
+  let resp = match gw.http.get(&url).send().await {
+    Ok(r) if r.status().is_success() => r,
+    _ => return Ok(None), // Drop it, no logo for this id
+  };
+  let text = resp.text().await.map_err(|e| e.to_string())?;
+  let _ = std::fs::create_dir_all(&gw.logos_dir);
+  let _ = std::fs::write(&path, &text);
+  Ok(Some(text))
 }
 
 const CATALOG_TTL_SECS: i64 = 24 * 60 * 60;

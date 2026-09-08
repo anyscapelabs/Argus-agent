@@ -11,7 +11,29 @@ pub fn open(db_path: &Path) -> Result<Connection, String> {
   conn.execute_batch(super::schema::MIGRATE).map_err(|e| e.to_string())?;
   ensure_cols(&conn)?;
   seed_chk(&conn)?;
+  reconcile_connected(&conn)?;
   Ok(conn)
+}
+
+// The keyring decides connected: a stored key means connected, free providers
+// (ollama) connect without one. Repairs rows carried over from the enabled era.
+fn reconcile_connected(conn: &Connection) -> Result<(), String> {
+  let rows: Vec<(String, bool, bool)> = {
+    let mut stmt = conn
+      .prepare("SELECT id, connected, free FROM providers")
+      .map_err(|e| e.to_string())?;
+    let map = stmt
+      .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? != 0, r.get::<_, i64>(2)? != 0)))
+      .map_err(|e| e.to_string())?;
+    map.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+  };
+  for (id, connected, free) in rows {
+    let has = secret_get(&id).unwrap_or(None).is_some() || free;
+    if has != connected {
+      set_connected(conn, &id, has)?;
+    }
+  }
+  Ok(())
 }
 
 // Dev DBs predate name/connected/logo_url/doc_url; migrate them in place.

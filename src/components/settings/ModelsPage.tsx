@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { LuChevronDown, LuSearch } from "react-icons/lu";
 import { useModels } from "../../hooks/useModels";
 import { useProviders } from "../../hooks/useProviders";
@@ -46,11 +46,18 @@ function ProviderLogo({ id, name }: { id: string; name: string }) {
   );
 }
 
-function ModelRow({ model, onToggle }: { model: ProviderModel; onToggle: (id: string, on: boolean) => void }) {
-  const perM = (c: number) => (c > 0 ? `$${c.toFixed(2)}/M tok` : "free");
+const fmtPrice = (v: number) => (v >= 0.01 ? v.toFixed(2) : v.toFixed(4));
+const perM = (c: number) => (c > 0 ? `$${fmtPrice(c * 1000)}/M tok` : "free");
 
+const ModelRow = memo(function ModelRow({
+  model,
+  onToggle,
+}: {
+  model: ProviderModel;
+  onToggle: (id: string, on: boolean) => void;
+}) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-border-primary px-2 py-1.5 last:border-b-0">
+    <div className="flex items-center justify-between gap-3 border-b border-border-primary px-2 py-1.5 last:border-b-0 [contain-intrinsic-size:auto_44px] [content-visibility:auto]">
       <div className="min-w-0">
         <p className="truncate text-sm text-text-primary">{model.displayName}</p>
         <p className="truncate text-xs text-text-secondary">
@@ -60,14 +67,64 @@ function ModelRow({ model, onToggle }: { model: ProviderModel; onToggle: (id: st
       <Switch on={model.enabled} onChange={(next) => onToggle(model.modelId, next)} />
     </div>
   );
-}
+});
+
+const ModelSection = memo(function ModelSection({
+  providerId,
+  name,
+  models,
+  open,
+  onToggleOpen,
+  onToggleModel,
+}: {
+  providerId: string;
+  name: string;
+  models: ProviderModel[];
+  open: boolean;
+  onToggleOpen: (id: string) => void;
+  onToggleModel: (id: string, on: boolean) => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-border-primary">
+      <button
+        type="button"
+        onClick={() => onToggleOpen(providerId)}
+        className="flex w-full items-center gap-2 px-2 py-2 text-left transition-colors hover:bg-bg-hover-secondary"
+      >
+        <ProviderLogo id={providerId} name={name} />
+        <span className="truncate text-sm font-medium text-text-primary">{name}</span>
+        <span className="text-xs text-text-secondary">
+          {models.filter((m) => m.enabled).length}/{models.length}
+        </span>
+        <LuChevronDown
+          size={14}
+          className={`ml-auto shrink-0 text-text-secondary transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && (
+        <div className="border-t border-border-primary">
+          {models.map((m) => (
+            <ModelRow key={m.modelId} model={m} onToggle={onToggleModel} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
 
 export default function ModelsPage() {
   const { groups, loading, err, query, setQuery, toggle } = useModels();
   const { providers } = useProviders();
   const [open, setOpen] = useState<Set<string>>(new Set());
 
-  const isOpen = (providerId: string) => (query.trim() ? true : open.has(providerId));
+  const connectedIds = useMemo(
+    () => new Set(providers.filter((p) => p.connected).map((p) => p.id)),
+    [providers],
+  );
+  const visible = groups.filter((g) => connectedIds.has(g.providerId));
+  const searching = query.trim().length > 0;
+
+  const isOpen = (providerId: string) => (searching ? true : open.has(providerId));
   const toggleOpen = (providerId: string) =>
     setOpen((prev) => {
       const next = new Set(prev);
@@ -98,44 +155,23 @@ export default function ModelsPage() {
         <p className="text-sm text-text-secondary">Loading models…</p>
       ) : err ? (
         <p className="text-sm text-red-400">{err}</p>
-      ) : groups.length === 0 ? (
+      ) : visible.length === 0 ? (
         <p className="text-sm text-text-secondary">
-          No models yet — sync the catalog from the Providers page first.
+          No models to show — connect a provider on the Providers page, then sync the catalog.
         </p>
       ) : (
         <div className="flex flex-col gap-2">
-          {groups.map(({ providerId, models }) => {
-            const prov = providers.find((p) => p.id === providerId);
-            const name = prov?.name ?? providerId;
-            return (
-              <div key={providerId} className="overflow-hidden rounded-xl border border-border-primary">
-                <button
-                  type="button"
-                  onClick={() => toggleOpen(providerId)}
-                  className="flex w-full items-center gap-2 px-2 py-2 text-left transition-colors hover:bg-bg-hover-secondary"
-                >
-                  <ProviderLogo id={providerId} name={name} />
-                  <span className="truncate text-sm font-medium text-text-primary">{name}</span>
-                  <span className="text-xs text-text-secondary">
-                    {models.filter((m) => m.enabled).length}/{models.length}
-                  </span>
-                  <LuChevronDown
-                    size={14}
-                    className={`ml-auto shrink-0 text-text-secondary transition-transform ${
-                      isOpen(providerId) ? "rotate-180" : ""
-                    }`}
-                  />
-                </button>
-                {isOpen(providerId) && (
-                  <div className="border-t border-border-primary">
-                    {models.map((m) => (
-                      <ModelRow key={m.modelId} model={m} onToggle={toggle} />
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {visible.map(({ providerId, models }) => (
+            <ModelSection
+              key={providerId}
+              providerId={providerId}
+              name={providers.find((p) => p.id === providerId)?.name ?? providerId}
+              models={models}
+              open={isOpen(providerId)}
+              onToggleOpen={toggleOpen}
+              onToggleModel={toggle}
+            />
+          ))}
         </div>
       )}
     </div>

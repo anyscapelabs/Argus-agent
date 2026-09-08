@@ -68,6 +68,14 @@ pub async fn dispatch(
   }
 }
 
+// Keyless providers (ollama-style) are local only; cloud endpoints need a key.
+pub fn is_local(base_url: &str) -> bool {
+  let host = base_url
+    .trim_start_matches("http://")
+    .trim_start_matches("https://");
+  host.starts_with("localhost") || host.starts_with("127.0.0.1") || host.starts_with("[::1]")
+}
+
 // 401/403 reject the key; any other outcome (offline, missing endpoint) lets it through.
 pub async fn verify_key(http: &Client, prov: &Provider, key: &str) -> Result<(), String> {
   let url = if prov.compatible == "Anthropic" {

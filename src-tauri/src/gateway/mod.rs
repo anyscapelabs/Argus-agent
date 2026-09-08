@@ -87,6 +87,9 @@ pub async fn gw_connect(gw: State<'_, Gateway>, provider_id: String, tok: Option
       store::secret_set(&provider_id, &t)?;
     }
     None => {
+      if !adapters::is_local(&prov.base_url) {
+        return Err(format!("API key required for {}", prov.name));
+      }
       let url = format!("{}/models", prov.base_url.trim_end_matches('/'));
       let up = gw
         .http

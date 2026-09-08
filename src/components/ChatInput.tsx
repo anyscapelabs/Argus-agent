@@ -43,11 +43,12 @@ export default function ChatInput({
   const [permission, setPermission] = useState<Permission>("Always allow");
 
   useEffect(() => {
+    if (model !== undefined && model !== null) return; // parent pinned a model
     if (!picked && models.length > 0) {
       setPicked(models[0]);
       onModelChange?.(models[0]);
     }
-  }, [models, picked, onModelChange]);
+  }, [models, picked, model, onModelChange]);
 
   useEffect(() => {
     const textarea = textareaRef.current;

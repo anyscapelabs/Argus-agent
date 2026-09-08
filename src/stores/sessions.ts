@@ -88,8 +88,19 @@ class SessionStore {
     });
   }
 
-  async archive(sessionId: string) {
+  async setModel(sessionId: string, modelId: string) {
     const row = this.state.sessions.find((s) => s.id === sessionId);
+    if (row === undefined || row.model_id === modelId) return;
+    const next = { ...row, model_id: modelId };
+    this.set({ sessions: this.state.sessions.map((s) => (s.id === sessionId ? next : s)) });
+    try {
+      await sessSaveSession(next);
+    } catch {
+      await this.loadSessions();
+    }
+  }
+
+  async archive(sessionId: string) {    const row = this.state.sessions.find((s) => s.id === sessionId);
     if (row === undefined) return;
     await sessSaveSession({ ...row, status: "archived" });
     await this.loadSessions();

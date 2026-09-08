@@ -1,4 +1,4 @@
-mod chat;
+mod sessions;
 mod gateway;
 
 use std::sync::Mutex;
@@ -15,7 +15,7 @@ pub fn run() {
       let dir = app.path().app_data_dir()?;
       std::fs::create_dir_all(&dir)?;
       let conn = store::open(&dir.join("argus.db"))?;
-      chat::store::migrate(&conn)?;
+      sessions::store::migrate(&conn)?;
       let http = reqwest::Client::builder().build()?;
       app.manage(Gateway { conn: Mutex::new(conn), http });
       Ok(())
@@ -31,15 +31,15 @@ pub fn run() {
       gateway::gw_chat,
       gateway::gw_chat_stream,
       gateway::gw_sync_catalog,
-      chat::chat_create_session,
-      chat::chat_list_sessions,
-      chat::chat_save_session,
-      chat::chat_delete_session,
-      chat::chat_list_messages,
-      chat::chat_add_message,
-      chat::chat_supersede_from,
-      chat::chat_create_folder,
-      chat::chat_list_folders,
+      sessions::sess_create_session,
+      sessions::sess_list_sessions,
+      sessions::sess_save_session,
+      sessions::sess_delete_session,
+      sessions::sess_list_messages,
+      sessions::sess_add_message,
+      sessions::sess_supersede_from,
+      sessions::sess_create_folder,
+      sessions::sess_list_folders,
       gateway::gw_logs
     ])
     .run(tauri::generate_context!())

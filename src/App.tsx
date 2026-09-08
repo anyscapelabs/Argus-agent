@@ -10,7 +10,7 @@ import Sidebar from "./components/Sidebar";
 import SkillsPage from "./components/SkillsPage";
 import Toolbar from "./components/Toolbar";
 import type { Session, SessionStatus } from "./components/SessionList";
-import type { ChatMessage } from "./mocks/chat";
+import type { ChatMessage } from "./types/chat";
 
 export type View =
   | "new-agent"

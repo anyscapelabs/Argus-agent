@@ -46,7 +46,7 @@ fn resolve(gw: &Gateway, req: &ChatReq) -> Result<Resolved, String> {
     (mode, pinned, provs, avails)
   };
   if avails.is_empty() {
-    return Err(format!("no enabled provider serves model {}", req.model)); // Drop it
+    return Err(format!("no connected provider serves model {}", req.model)); // Drop it
   }
   let ranked = rank(&provs, &avails, &mode, &pinned);
   Ok(Resolved { ranked, provs, req_json: serde_json::to_string(req).ok() })

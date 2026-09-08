@@ -11,7 +11,7 @@ use reqwest::Client;
 use rusqlite::Connection;
 use tauri::State;
 
-use schema::{Avail, ChatReq, ChatResp, ModelEntry, Provider};
+use schema::{Avail, ChatReq, ChatResp, ModelEntry, Provider, SyncStats};
 
 pub struct Gateway {
   pub conn: Mutex<Connection>,
@@ -50,12 +50,21 @@ pub fn gw_link_model(gw: State<'_, Gateway>, avail: Avail) -> Result<(), String>
   store::link_model(&conn, &avail)
 }
 
+// Stores tok when given; ollama and other local providers connect without one.
 #[tauri::command]
-pub fn gw_set_key(provider_id: String, tok: String) -> Result<(), String> {
-  if tok.is_empty() {
-    return store::secret_del(&provider_id); // Drop it
+pub fn gw_connect(gw: State<'_, Gateway>, provider_id: String, tok: Option<String>) -> Result<(), String> {
+  if let Some(t) = tok.filter(|t| !t.is_empty()) {
+    store::secret_set(&provider_id, &t)?;
   }
-  store::secret_set(&provider_id, &tok)
+  let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+  store::set_connected(&conn, &provider_id, true)
+}
+
+#[tauri::command]
+pub fn gw_disconnect(gw: State<'_, Gateway>, provider_id: String) -> Result<(), String> {
+  store::secret_del(&provider_id)?; // Key gone with the connection
+  let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+  store::set_connected(&conn, &provider_id, false)
 }
 
 #[tauri::command]
@@ -79,17 +88,124 @@ pub async fn gw_chat_stream(
   router::stream_run(&gw, &req, &on_event).await
 }
 
+// models.dev: community catalog of 100+ providers + models. Logos served at
+// models.dev/logos/<id>.svg. Merges in without touching user prefs or keys.
+async fn sync_from_models_dev(gw: &Gateway) -> Result<SyncStats, String> {
+  let resp = gw
+    .http
+    .get("https://models.dev/api.json")
+    .send()
+    .await
+    .map_err(|e| e.to_string())?;
+  if !resp.status().is_success() {
+    return Err(format!("models.dev sync failed: {}", resp.status())); // Drop it
+  }
+  let v: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+  let provs = v.as_object().ok_or("bad catalog payload")?;
+
+  let mut stats = SyncStats::default();
+  {
+    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    for (pid, p) in provs {
+      let base_url = match p["api"].as_str() {
+        Some(u) if !u.is_empty() => u,
+        _ => continue, // SDK-only entry, no endpoint to call
+      };
+      let npm = p["npm"].as_str().unwrap_or("");
+      let compatible = if npm.contains("anthropic") { "Anthropic" } else { "openAI" };
+      store::sync_provider(&tx, &Provider {
+        id: pid.clone(),
+        name: p["name"].as_str().unwrap_or(pid).into(),
+        compatible: compatible.into(),
+        base_url: base_url.into(),
+        api_key_ref: None,
+        connected: false,
+        free: false,
+        priority: 100,
+        logo_url: Some(format!("https://models.dev/logos/{pid}.svg")),
+        doc_url: p["doc"].as_str().map(Into::into),
+      })?;
+      stats.providers += 1;
+
+      let models = match p["models"].as_object() {
+        Some(m) => m,
+        None => continue,
+      };
+      for (mid, m) in models {
+        let model_id = format!("{pid}/{mid}");
+        let caps = serde_json::json!({
+          "tools": m["tool_call"].as_bool().unwrap_or(false),
+          "vision": m["attachment"].as_bool().unwrap_or(false),
+          "reasoning": m["reasoning"].as_bool().unwrap_or(false),
+          "context": m["limit"]["context"].as_u64().unwrap_or(0),
+        });
+        store::add_model(&tx, &ModelEntry {
+          id: model_id.clone(),
+          display_name: m["name"].as_str().unwrap_or(mid).into(),
+          family: m["family"].as_str().map(Into::into),
+          capabilities: Some(caps.to_string()),
+          suggested_tier: None,
+        })?;
+        store::link_model(&tx, &Avail {
+          model_id,
+          provider_id: pid.clone(),
+          remote_model_id: mid.clone(),
+          cost_in: per_1k(&m["cost"]["input"]),
+          cost_out: per_1k(&m["cost"]["output"]),
+        })?;
+        stats.models += 1;
+      }
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+  }
+  {
+    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    store::kv_set(&conn, "catalog_synced_at", &now_secs().to_string())?;
+  }
+  Ok(stats) // Sorted
+}
+
 #[tauri::command]
-pub async fn gw_sync_catalog(gw: State<'_, Gateway>) -> Result<usize, String> {
-  let (models, avail) = catalog::sync_openrouter(&gw.http).await?;
-  let conn = gw.conn.lock().map_err(|e| e.to_string())?;
-  for m in &models {
-    store::add_model(&conn, m)?;
+pub async fn gw_sync_providers(gw: State<'_, Gateway>) -> Result<SyncStats, String> {
+  sync_from_models_dev(&gw).await
+}
+
+const CATALOG_TTL_SECS: i64 = 24 * 60 * 60;
+
+fn now_secs() -> i64 {
+  std::time::SystemTime::now()
+    .duration_since(std::time::UNIX_EPOCH)
+    .map(|d| d.as_secs() as i64)
+    .unwrap_or(0)
+}
+
+// Startup path: refetches models.dev only when the DB copy is older than 24h.
+pub async fn maybe_sync_catalog(gw: &Gateway) {
+  let stale = {
+    let conn = match gw.conn.lock() {
+      Ok(c) => c,
+      Err(_) => return,
+    };
+    match store::kv_get(&conn, "catalog_synced_at") {
+      Some(v) => v.parse::<i64>().unwrap_or(0) + CATALOG_TTL_SECS < now_secs(),
+      None => true,
+    }
+  };
+  if !stale {
+    return;
   }
-  for a in &avail {
-    store::link_model(&conn, a)?;
+  if let Err(e) = sync_from_models_dev(gw).await {
+    eprintln!("catalog sync skipped: {e}"); // offline first run still works with ollama
   }
-  Ok(models.len()) // Sorted
+}
+
+fn per_1k(v: &serde_json::Value) -> f64 {
+  let n = v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse().ok())).unwrap_or(0.0);
+  if n < 0.0 {
+    return 0.0;
+  }
+  n * 1000.0
 }
 
 #[tauri::command]

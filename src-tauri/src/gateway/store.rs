@@ -9,8 +9,37 @@ use super::schema::{Avail, ModelEntry, Provider, ReqLog};
 pub fn open(db_path: &Path) -> Result<Connection, String> {
   let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
   conn.execute_batch(super::schema::MIGRATE).map_err(|e| e.to_string())?;
+  ensure_cols(&conn)?;
   seed_chk(&conn)?;
   Ok(conn)
+}
+
+// Dev DBs predate name/connected/logo_url/doc_url; migrate them in place.
+fn ensure_cols(conn: &Connection) -> Result<(), String> {
+  let has = |col: &str| -> bool {
+    conn
+      .query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('providers') WHERE name = ?1",
+        params![col],
+        |r| r.get::<_, i64>(0),
+      )
+      .unwrap_or(1)
+      != 0
+  };
+  if has("enabled") {
+    conn
+      .execute("ALTER TABLE providers RENAME COLUMN enabled TO connected", [])
+      .map_err(|e| e.to_string())?;
+  }
+  for col in ["name TEXT NOT NULL DEFAULT ''", "logo_url TEXT", "doc_url TEXT"] {
+    let name = col.split_whitespace().next().unwrap_or(col);
+    if !has(name) {
+      conn
+        .execute(&format!("ALTER TABLE providers ADD COLUMN {col}"), [])
+        .map_err(|e| e.to_string())?;
+    }
+  }
+  Ok(())
 }
 
 fn seed_chk(conn: &Connection) -> Result<(), String> {
@@ -20,23 +49,42 @@ fn seed_chk(conn: &Connection) -> Result<(), String> {
   for p in catalog::providers() {
     upsert_provider(conn, &p)?;
   }
-  for m in catalog::models() {
-    add_model(conn, &m)?;
-  }
-  for a in catalog::avail() {
-    link_model(conn, &a)?;
-  }
   kv_set(conn, "seeded", "1")?;
   Ok(())
 }
 
+// UI path: full upsert, user owns every field.
 pub fn upsert_provider(conn: &Connection, p: &Provider) -> Result<(), String> {
   conn
     .execute(
-      "INSERT INTO providers (id, compatible, base_url, api_key_ref, enabled, free, priority)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-       ON CONFLICT(id) DO UPDATE SET compatible=?2, base_url=?3, api_key_ref=?4, enabled=?5, free=?6, priority=?7",
-      params![p.id, p.compatible, p.base_url, p.api_key_ref, p.enabled as i64, p.free as i64, p.priority],
+      "INSERT INTO providers (id, name, compatible, base_url, api_key_ref, connected, free, priority, logo_url, doc_url)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+       ON CONFLICT(id) DO UPDATE SET name=?2, compatible=?3, base_url=?4, api_key_ref=?5, connected=?6, free=?7, priority=?8, logo_url=?9, doc_url=?10",
+      params![p.id, p.name, p.compatible, p.base_url, p.api_key_ref, p.connected as i64, p.free as i64, p.priority, p.logo_url, p.doc_url],
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
+// Catalog path: merge remote metadata, never touch the user's key/connected/free/priority.
+pub fn sync_provider(conn: &Connection, p: &Provider) -> Result<(), String> {
+  conn
+    .execute(
+      "INSERT INTO providers (id, name, compatible, base_url, logo_url, doc_url)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+       ON CONFLICT(id) DO UPDATE SET name=?2, compatible=?3, base_url=?4, logo_url=?5, doc_url=?6",
+      params![p.id, p.name, p.compatible, p.base_url, p.logo_url, p.doc_url],
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
+// gw_connect sets this to 1, gw_disconnect to 0.
+pub fn set_connected(conn: &Connection, id: &str, on: bool) -> Result<(), String> {
+  conn
+    .execute(
+      "UPDATE providers SET connected = ?2 WHERE id = ?1",
+      params![id, on as i64],
     )
     .map_err(|e| e.to_string())?;
   Ok(())
@@ -44,18 +92,21 @@ pub fn upsert_provider(conn: &Connection, p: &Provider) -> Result<(), String> {
 
 pub fn list_providers(conn: &Connection) -> Result<Vec<Provider>, String> {
   let mut stmt = conn
-    .prepare("SELECT id, compatible, base_url, api_key_ref, enabled, free, priority FROM providers ORDER BY priority")
+    .prepare("SELECT id, name, compatible, base_url, api_key_ref, connected, free, priority, logo_url, doc_url FROM providers ORDER BY priority")
     .map_err(|e| e.to_string())?;
   let rows = stmt
     .query_map([], |r| {
       Ok(Provider {
         id: r.get(0)?,
-        compatible: r.get(1)?,
-        base_url: r.get(2)?,
-        api_key_ref: r.get(3)?,
-        enabled: r.get::<_, i64>(4)? != 0,
-        free: r.get::<_, i64>(5)? != 0,
-        priority: r.get(6)?,
+        name: r.get(1)?,
+        compatible: r.get(2)?,
+        base_url: r.get(3)?,
+        api_key_ref: r.get(4)?,
+        connected: r.get::<_, i64>(5)? != 0,
+        free: r.get::<_, i64>(6)? != 0,
+        priority: r.get(7)?,
+        logo_url: r.get(8)?,
+        doc_url: r.get(9)?,
       })
     })
     .map_err(|e| e.to_string())?;
@@ -110,7 +161,7 @@ pub fn list_avail(conn: &Connection, model_id: &str) -> Result<Vec<Avail>, Strin
       "SELECT mp.model_id, mp.provider_id, mp.remote_model_id, mp.cost_in, mp.cost_out
        FROM model_providers mp
        JOIN providers p ON p.id = mp.provider_id
-       WHERE mp.model_id = ?1 AND p.enabled = 1",
+       WHERE mp.model_id = ?1 AND p.connected = 1",
     )
     .map_err(|e| e.to_string())?;
   let rows = stmt

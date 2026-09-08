@@ -3,12 +3,14 @@ use serde::{Deserialize, Serialize};
 pub const MIGRATE: &str = r#"
 CREATE TABLE IF NOT EXISTS providers (
   id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL DEFAULT '',
   compatible  TEXT NOT NULL,
   base_url    TEXT NOT NULL,
-  api_key_ref TEXT,
-  enabled     INTEGER NOT NULL DEFAULT 1,
+  connected   INTEGER NOT NULL DEFAULT 0,
   free        INTEGER NOT NULL DEFAULT 0,
-  priority    INTEGER NOT NULL DEFAULT 100
+  priority    INTEGER NOT NULL DEFAULT 100,
+  logo_url    TEXT,
+  doc_url     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS models (
@@ -52,14 +54,32 @@ CREATE TABLE IF NOT EXISTS kv (
 "#;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct Provider {
   pub id: String,
+  #[serde(default)]
+  pub name: String,
   pub compatible: String,
   pub base_url: String,
+  #[serde(default)]
   pub api_key_ref: Option<String>,
-  pub enabled: bool,
+  #[serde(default)]
+  pub connected: bool,
+  #[serde(default)]
   pub free: bool,
+  #[serde(default)]
   pub priority: i64,
+  #[serde(default)]
+  pub logo_url: Option<String>,
+  #[serde(default)]
+  pub doc_url: Option<String>,
+}
+
+#[derive(Serialize, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncStats {
+  pub providers: i64,
+  pub models: i64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

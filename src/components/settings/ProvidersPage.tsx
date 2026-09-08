@@ -5,7 +5,6 @@ import type { Provider } from "../../lib/ipc";
 import ConnectedProviderList from "./ConnectedProviderList";
 import ProviderConnectModal from "./ProviderConnectModal";
 
-const needsKey = (p: Provider) => !p.baseUrl.includes("localhost");
 const isPopular = (p: Provider) => !p.connected && p.priority < 100;
 
 export default function ProvidersPage() {
@@ -22,11 +21,7 @@ export default function ProvidersPage() {
   const handleConnectClick = (id: string) => {
     const p = providers.find((x) => x.id === id);
     if (!p) return;
-    if (needsKey(p)) {
-      setSelected(p);
-    } else {
-      connect(p.id);
-    }
+    setSelected(p);
   };
 
   const handleModalConnect = async (p: Provider, apiKey: string) => {

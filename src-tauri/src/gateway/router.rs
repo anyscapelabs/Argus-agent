@@ -36,6 +36,14 @@ struct Resolved {
   req_json: Option<String>,
 }
 
+pub struct StreamStats {
+  pub text: String,
+  pub model_id: String,
+  pub provider_id: String,
+  pub tok_in: i64,
+  pub tok_out: i64,
+}
+
 fn resolve(gw: &Gateway, req: &ChatReq) -> Result<Resolved, String> {
   let (mode, pinned, provs, avails) = {
     let conn = gw.conn.lock().map_err(|e| e.to_string())?;
@@ -91,6 +99,7 @@ pub async fn run(gw: &Gateway, req: &ChatReq) -> Result<ChatResp, String> {
           err_msg: None,
           req_json: req_json.clone(),
           resp_json: Some(raw),
+          prefix_hash: req.prefix_hash.clone(),
         };
         {
           let conn = gw.conn.lock().map_err(|e| e.to_string())?;
@@ -122,6 +131,7 @@ pub async fn run(gw: &Gateway, req: &ChatReq) -> Result<ChatResp, String> {
           err_msg: Some(e.msg.clone()),
           req_json: req_json.clone(),
           resp_json: None,
+          prefix_hash: req.prefix_hash.clone(),
         };
         {
           let conn = gw.conn.lock().map_err(|e| e.to_string())?;
@@ -140,7 +150,7 @@ pub async fn stream_run(
   gw: &Gateway,
   req: &ChatReq,
   chan: &Channel<StreamEvent>,
-) -> Result<(), String> {
+) -> Result<StreamStats, String> {
   let Resolved { ranked, provs, req_json } = resolve(gw, req)?;
   let mut attempt = 0i64;
   let mut last_err = String::new();
@@ -188,7 +198,8 @@ pub async fn stream_run(
           cost: Some(cost),
           err_msg: None,
           req_json: req_json.clone(),
-          resp_json: Some(done.text),
+          resp_json: Some(done.text.clone()),
+          prefix_hash: req.prefix_hash.clone(),
         };
         {
           let conn = gw.conn.lock().map_err(|e| e.to_string())?;
@@ -204,7 +215,13 @@ pub async fn stream_run(
           cost,
         })
         .map_err(|e| e.to_string())?;
-        return Ok(()); // Sorted
+        return Ok(StreamStats {
+          text: done.text,
+          model_id: req.model.clone(),
+          provider_id: prov.id.clone(),
+          tok_in,
+          tok_out,
+        }); // Sorted
       }
       Err(e) => {
         last_err = e.msg.clone();
@@ -221,6 +238,7 @@ pub async fn stream_run(
           err_msg: Some(e.msg.clone()),
           req_json: req_json.clone(),
           resp_json: None,
+          prefix_hash: req.prefix_hash.clone(),
         };
         {
           let conn = gw.conn.lock().map_err(|e| e.to_string())?;

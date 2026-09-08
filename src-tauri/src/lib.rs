@@ -62,6 +62,7 @@ pub fn run() {
       sessions::sess_supersede_from,
       sessions::sess_create_folder,
       sessions::sess_list_folders,
+      sessions::chat::sess_chat_stream,
       skills::skill_create,
       skills::skill_get,
       skills::skill_list,

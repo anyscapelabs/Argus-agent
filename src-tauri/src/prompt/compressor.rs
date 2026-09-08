@@ -193,6 +193,7 @@ this summary plus the most recent messages. Stay under {budget} tokens.\n\n\
       WireMsg { role: "system".into(), content: SUMMARY_SYS.into() },
       WireMsg { role: "user".into(), content: user },
     ],
+    prefix_hash: None,
   };
   let resp = router::run(gw, &req).await?;
   let summary = resp.content.trim().to_string();

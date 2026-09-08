@@ -4,14 +4,9 @@ use reqwest::Client;
 use super::{sse_events, CallErr, DeltaSink, WireResp};
 use crate::gateway::schema::{StreamDone, WireMsg};
 
-pub async fn stream(
-  http: &Client,
-  base_url: &str,
-  tok: Option<String>,
-  remote_id: &str,
-  msgs: &[WireMsg],
-  on_delta: DeltaSink<'_>,
-) -> Result<StreamDone, CallErr> {
+// System prompt gets one breakpoint; the last three turns get rolling ones so
+// each new turn extends the cached prefix instead of invalidating it.
+fn payload(remote_id: &str, msgs: &[WireMsg], streaming: bool) -> serde_json::Value {
   let mut sys = String::new();
   let mut turns: Vec<serde_json::Value> = vec![];
   for m in msgs {
@@ -22,10 +17,35 @@ pub async fn stream(
       turns.push(serde_json::json!({ "role": m.role, "content": m.content }));
     }
   }
-  let mut pl = serde_json::json!({ "model": remote_id, "max_tokens": 4096, "messages": turns, "stream": true });
+  let mut pl = if streaming {
+    serde_json::json!({ "model": remote_id, "max_tokens": 4096, "messages": turns, "stream": true })
+  } else {
+    serde_json::json!({ "model": remote_id, "max_tokens": 4096, "messages": turns })
+  };
   if !sys.is_empty() {
-    pl["system"] = serde_json::Value::String(sys.trim().into());
+    pl["system"] = serde_json::json!([
+      { "type": "text", "text": sys.trim(), "cache_control": { "type": "ephemeral" } }
+    ]);
   }
+  let n = turns.len();
+  for i in n.saturating_sub(3)..n {
+    let text = turns[i]["content"].as_str().unwrap_or_default().to_string();
+    pl["messages"][i]["content"] = serde_json::json!([
+      { "type": "text", "text": text, "cache_control": { "type": "ephemeral" } }
+    ]);
+  }
+  pl
+}
+
+pub async fn stream(
+  http: &Client,
+  base_url: &str,
+  tok: Option<String>,
+  remote_id: &str,
+  msgs: &[WireMsg],
+  on_delta: DeltaSink<'_>,
+) -> Result<StreamDone, CallErr> {
+  let pl = payload(remote_id, msgs, true);
 
   let url = format!("{base_url}/v1/messages");
   let mut req = http
@@ -90,20 +110,7 @@ pub async fn chat(
   remote_id: &str,
   msgs: &[WireMsg],
 ) -> Result<(WireResp, String), CallErr> {
-  let mut sys = String::new();
-  let mut turns: Vec<serde_json::Value> = vec![];
-  for m in msgs {
-    if m.role == "system" {
-      sys.push_str(&m.content);
-      sys.push('\n');
-    } else {
-      turns.push(serde_json::json!({ "role": m.role, "content": m.content }));
-    }
-  }
-  let mut pl = serde_json::json!({ "model": remote_id, "max_tokens": 4096, "messages": turns });
-  if !sys.is_empty() {
-    pl["system"] = serde_json::Value::String(sys.trim().into());
-  }
+  let pl = payload(remote_id, msgs, false);
 
   let url = format!("{base_url}/v1/messages");
   let mut req = http.post(&url).header("anthropic-version", "2023-06-01").json(&pl);

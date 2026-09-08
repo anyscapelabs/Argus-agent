@@ -123,7 +123,7 @@ pub async fn gw_chat_stream(
   req: ChatReq,
   on_event: tauri::ipc::Channel<schema::StreamEvent>,
 ) -> Result<(), String> {
-  router::stream_run(&gw, &req, &on_event).await
+  router::stream_run(&gw, &req, &on_event).await.map(|_| ())
 }
 
 // models.dev: community catalog of 100+ providers + models. Logos served at

@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS request_log (
   cost            REAL,
   err_msg         TEXT,
   req_json        TEXT,
-  resp_json       TEXT
+  resp_json       TEXT,
+  prefix_hash     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS kv (
@@ -127,6 +128,8 @@ pub struct ReqLog {
   pub err_msg: Option<String>,
   pub req_json: Option<String>,
   pub resp_json: Option<String>,
+  #[serde(default)]
+  pub prefix_hash: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -161,6 +164,8 @@ pub struct WireUsage {
 pub struct ChatReq {
   pub model: String,
   pub msgs: Vec<WireMsg>,
+  #[serde(default)]
+  pub prefix_hash: Option<String>,
 }
 
 #[derive(Serialize, Debug)]

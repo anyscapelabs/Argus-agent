@@ -76,23 +76,31 @@ pub fn is_local(base_url: &str) -> bool {
   host.starts_with("localhost") || host.starts_with("127.0.0.1") || host.starts_with("[::1]")
 }
 
-// 401/403 reject the key; any other outcome (offline, missing endpoint) lets it through.
+// /models is public on some providers (OpenRouter), so a GET there accepts bad
+// keys. An empty chat POST is the cheapest request that servers actually gate:
+// 401/403 with a bad key, 4xx validation with a good one.
 pub async fn verify_key(http: &Client, prov: &Provider, key: &str) -> Result<(), String> {
-  let url = if prov.compatible == "Anthropic" {
-    format!("{}/v1/models", prov.base_url.trim_end_matches('/'))
+  let (url, mut body) = if prov.compatible == "Anthropic" {
+    (
+      format!("{}/v1/messages", prov.base_url.trim_end_matches('/')),
+      serde_json::json!({ "model": "auth-probe", "max_tokens": 1 }),
+    )
   } else {
-    format!("{}/models", prov.base_url.trim_end_matches('/'))
+    (
+      format!("{}/chat/completions", prov.base_url.trim_end_matches('/')),
+      serde_json::json!({ "model": "auth-probe", "messages": [], "max_tokens": 1 }),
+    )
   };
-  let mut req = http.get(&url);
+  let mut req = http.post(&url).json(&body);
   if prov.compatible == "Anthropic" {
     req = req.header("x-api-key", key).header("anthropic-version", "2023-06-01");
   } else {
-    req = req.header("Authorization", format!("Bearer {key}"));
+    req = req.bearer_auth(key);
   }
   match req.send().await {
     Ok(r) if r.status() == reqwest::StatusCode::UNAUTHORIZED || r.status() == reqwest::StatusCode::FORBIDDEN => {
       Err(format!("{} rejected this API key", prov.name))
     }
-    _ => Ok(()),
+    _ => Ok(()), // offline or validation error: auth was not the blocker
   }
 }

@@ -44,6 +44,26 @@ pub struct StreamStats {
   pub tok_out: i64,
 }
 
+// A connected provider without a key is a config error, not a request to send
+// unauthenticated: fail fast instead of surfacing the provider's own 401.
+fn key_for(prov: &Provider) -> Result<Option<String>, String> {
+  match store::secret_get(&prov.id) {
+    Ok(t) => {
+      if t.is_none() && !adapters::is_local(&prov.base_url) {
+        return Err(format!(
+          "no API key stored for {} — reconnect it in Providers settings",
+          prov.name
+        ));
+      }
+      Ok(t)
+    }
+    Err(e) => {
+      eprintln!("keyring read failed for {}: {e}", prov.id);
+      Err(format!("could not read the stored key for {} — reconnect it in Providers settings", prov.name))
+    }
+  }
+}
+
 fn resolve(gw: &Gateway, req: &ChatReq) -> Result<Resolved, String> {
   let (mode, pinned, provs, avails) = {
     let conn = gw.conn.lock().map_err(|e| e.to_string())?;
@@ -70,8 +90,8 @@ pub async fn run(gw: &Gateway, req: &ChatReq) -> Result<ChatResp, String> {
       Some(p) => p,
       None => continue,
     };
+    let tok = key_for(prov)?;
     attempt += 1;
-    let tok = store::secret_get(&prov.id).unwrap_or(None);
     let t0 = Instant::now();
     let res = adapters::dispatch(&gw.http, prov, &av.remote_model_id, tok, &req.msgs).await;
     let latency = t0.elapsed().as_millis() as i64;
@@ -160,10 +180,10 @@ pub async fn stream_run(
       Some(p) => p,
       None => continue,
     };
+    let tok = key_for(prov)?;
     attempt += 1;
     let _ = chan.send(StreamEvent::Status { provider_id: prov.id.clone(), attempt });
 
-    let tok = store::secret_get(&prov.id).unwrap_or(None);
     let t0 = Instant::now();
     let mut chan_err: Option<String> = None;
     let mut sink = |c: &str| -> Result<(), String> {

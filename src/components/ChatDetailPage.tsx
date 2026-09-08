@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import AgentBubble from "./AgentBubble";
 import ChatInput from "./ChatInput";
 import UserBubble from "./UserBubble";
+import { useChatModels } from "../hooks/useChatModels";
 import { sessionStore, useSessions } from "../stores/sessions";
 import type { ChatMessage } from "../types/chat";
 
@@ -11,12 +12,16 @@ const SCROLL_PAGE_RATIO = 0.85;
 type Props = { sessionId: string };
 
 export default function ChatDetailPage({ sessionId }: Props) {
-  const { msgs, turns } = useSessions();
+  const { sessions, msgs, turns } = useSessions();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [draft, setDraft] = useState("");
   const rows = msgs[sessionId] ?? [];
   const turn = turns[sessionId];
   const running = turn !== undefined;
+
+  const { models } = useChatModels();
+  const session = sessions.find((s) => s.id === sessionId);
+  const model = models.find((m) => m.modelId === session?.model_id) ?? null;
 
   const messages: ChatMessage[] = rows.map((m) => ({
     id: m.id,
@@ -118,6 +123,8 @@ export default function ChatDetailPage({ sessionId }: Props) {
           placeholder="Reply to Argus…"
           value={draft}
           onChange={setDraft}
+          model={model}
+          onModelChange={(m) => sessionStore.setModel(sessionId, m.modelId)}
           onSubmit={() => {
             const txt = draft.trim();
             if (txt.length === 0 || running) return;

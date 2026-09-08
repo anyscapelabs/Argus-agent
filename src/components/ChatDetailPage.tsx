@@ -104,6 +104,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
               <AgentBubble
                 key={message.id}
                 text={message.content}
+                caret={running && message.id === "live"}
                 onRetry={() => {
                   const prev = messages[idx - 1];
                   if (prev && prev.role === "user") handleRetry(prev.id);

@@ -122,6 +122,23 @@ class SessionStore {
   async send(sessionId: string, content: string) {
     if (this.state.turns[sessionId] !== undefined) return;
 
+    // Show the user message now; the DB rows replace it when the turn lands.
+    const pending: MsgRow = {
+      id: `pending-${Date.now()}`,
+      session_id: sessionId,
+      seq: 0,
+      role: "user",
+      content,
+      model_id: null,
+      provider_id: null,
+      tok_in: null,
+      tok_out: null,
+      active: true,
+      created_at: "",
+    };
+    const existing = this.state.msgs[sessionId] ?? [];
+    this.set({ msgs: { ...this.state.msgs, [sessionId]: [...existing, pending] } });
+
     const chan = new Channel<StreamEvent>();
     chan.onmessage = (ev) => {
       if (ev.type === "delta") {

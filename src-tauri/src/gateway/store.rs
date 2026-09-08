@@ -4,7 +4,7 @@ use keyring::Entry;
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::catalog;
-use super::schema::{Avail, ModelEntry, Provider, ProviderModel, ReqLog};
+use super::schema::{Avail, ChatModel, ModelEntry, Provider, ProviderModel, ReqLog};
 
 pub fn open(db_path: &Path) -> Result<Connection, String> {
   let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
@@ -223,6 +223,31 @@ pub fn list_provider_models(conn: &Connection) -> Result<Vec<ProviderModel>, Str
         enabled: r.get::<_, i64>(4)? != 0,
         cost_in: r.get(5)?,
         cost_out: r.get(6)?,
+      })
+    })
+    .map_err(|e| e.to_string())?;
+  rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+// Models a chat session can actually use: enabled, on a connected provider.
+pub fn list_chat_models(conn: &Connection) -> Result<Vec<ChatModel>, String> {
+  let mut stmt = conn
+    .prepare(
+      "SELECT m.id, m.display_name, p.id, p.name
+       FROM models m
+       JOIN model_providers mp ON mp.model_id = m.id
+       JOIN providers p ON p.id = mp.provider_id
+       WHERE m.enabled = 1 AND p.connected = 1
+       ORDER BY p.name, m.display_name",
+    )
+    .map_err(|e| e.to_string())?;
+  let rows = stmt
+    .query_map([], |r| {
+      Ok(ChatModel {
+        model_id: r.get(0)?,
+        display_name: r.get(1)?,
+        provider_id: r.get(2)?,
+        provider_name: r.get(3)?,
       })
     })
     .map_err(|e| e.to_string())?;

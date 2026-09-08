@@ -15,9 +15,13 @@ const isPopular = (p: Provider) => !p.connected && p.priority < 100;
 export default function ProvidersPage() {
   const { providers, loading, syncing, err, connect, disconnect, syncCatalog } = useProviders();
   const [selected, setSelected] = useState<Provider | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
   const connected = providers.filter((p) => p.connected);
-  const popular = providers.filter(isPopular);
+  const popular = showAll
+    ? providers.filter((p) => !p.connected)
+    : providers.filter(isPopular);
+  const hasMore = providers.some((p) => !p.connected && p.priority >= 100);
 
   const handleConnectClick = (id: string) => {
     const p = providers.find((x) => x.id === id);
@@ -68,6 +72,15 @@ export default function ProvidersPage() {
         <section className="flex flex-col gap-3">
           <h3 className="text-sm font-medium text-text-primary">Popular Providers</h3>
           <ConnectedProviderList providers={popular} onConnect={handleConnectClick} variant="popular" />
+          {hasMore && (
+            <button
+              type="button"
+              onClick={() => setShowAll((v) => !v)}
+              className="self-center rounded-full px-3 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover-secondary hover:text-text-primary"
+            >
+              {showAll ? "View less" : "View more"}
+            </button>
+          )}
         </section>
       )}
 

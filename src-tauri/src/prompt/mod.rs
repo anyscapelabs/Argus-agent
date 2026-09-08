@@ -17,7 +17,18 @@ Rules:\n\
 - Be direct. Short answers unless depth is asked for.\n\
 - Prefer doing over suggesting; state plainly what you did.\n\
 - Permission modes: allow_once, ask, never. In `never` you may act without asking.\n\
-- Never invent file contents, command output, or URLs.";
+- Never invent file contents, command output, or URLs.\n\
+\n\
+## Reply format\n\
+Write ordinary prose in short paragraphs. Bullets are lines starting with \"- \", numbered steps with \"1.\".\n\
+Markup you may use, with nothing else:\n\
+- <h2>Title</h2> for section headings, <h3> for sub-parts.\n\
+- Inline: <bold>, <italic>, <code>, <link href=\"url\">text</link>.\n\
+- Tables: <table><tr><th>col</th></tr><tr><td>cell</td></tr></table>.\n\
+- Caveats and risks: <warning severity=\"high\">text</warning> (severity low, medium, or high).\n\
+- Reasoning you want visible: <thinking>text</thinking>; it renders collapsed.\n\
+Never invent tags, never wrap the whole reply in a tag, never fake tool output. \
+A tag you invent shows up as literal text.";
 
 // Stable layer: identity + preference rules + skills index. Rebuilt only when
 // its inputs change; must stay byte-identical across turns for cache hits.

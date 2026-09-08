@@ -10,6 +10,8 @@ import {
   LuShieldCheck,
 } from "react-icons/lu";
 import { RiAttachment2 } from "react-icons/ri";
+import { useChatModels } from "../hooks/useChatModels";
+import type { ChatModel } from "../lib/ipc";
 import Dropdown, { type DropdownItem } from "./Dropdown";
 
 const COLLAPSED_HEIGHT = 40;
@@ -20,13 +22,9 @@ type ChatInputProps = {
   onChange: (next: string) => void;
   onSubmit: () => void;
   placeholder?: string;
+  model?: ChatModel | null;
+  onModelChange?: (next: ChatModel) => void;
 };
-
-const MODELS = [
-  { id: "fable-5.1", provider: "Fable", name: "Fable 5.1" },
-  { id: "fable-5.6", provider: "Fable", name: "5.6 Terra" },
-  { id: "fable-4", provider: "Fable", name: "Fable 4" },
-] as const;
 
 type Permission = "Always allow" | "Ask always";
 
@@ -35,10 +33,18 @@ export default function ChatInput({
   onChange,
   onSubmit,
   placeholder = "Work with Argus",
+  model,
+  onModelChange,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const [selectedModel, setSelectedModel] = useState<(typeof MODELS)[number]>(MODELS[0]);
+  const { models, loading } = useChatModels();
+  const [picked, setPicked] = useState<ChatModel | null>(null);
+  const selected = model ?? picked;
   const [permission, setPermission] = useState<Permission>("Always allow");
+
+  useEffect(() => {
+    if (!picked && models.length > 0) setPicked(models[0]);
+  }, [models, picked]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -65,11 +71,17 @@ export default function ChatInput({
     { label: "Ask always", onClick: () => setPermission("Ask always"), active: permission === "Ask always" },
   ];
 
-  const modelItems: DropdownItem[] = MODELS.map((m) => ({
-    label: m.name,
-    onClick: () => setSelectedModel(m),
-    active: selectedModel.id === m.id,
-  }));
+  const modelItems: DropdownItem[] =
+    models.length === 0
+      ? [{ label: loading ? "Loading models…" : "No models enabled", disabled: true }]
+      : models.map((m) => ({
+          label: m.displayName,
+          onClick: () => {
+            setPicked(m);
+            onModelChange?.(m);
+          },
+          active: selected?.modelId === m.modelId,
+        }));
 
   return (
     <div className="flex w-[700px] max-w-full flex-col rounded-2xl bg-bg-secondary border border-border-primary p-3 shadow-4xl">
@@ -143,7 +155,7 @@ export default function ChatInput({
                 aria-expanded={open}
                 className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-transparent px-3 text-sm font-medium text-text-secondary hover:bg-bg-hover-secondary hover:text-text-primary transition-colors"
               >
-                {selectedModel.name}
+                {selected?.displayName ?? "Model"}
                 <FiChevronDown size={12} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
               </button>
             )}

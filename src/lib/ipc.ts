@@ -25,10 +25,19 @@ export type ProviderModel = {
   costOut: number;
 };
 
+export type ChatModel = {
+  modelId: string;
+  displayName: string;
+  providerId: string;
+  providerName: string;
+};
+
 // gateway
 export const gwListProviders = () => invoke<Provider[]>("gw_list_providers");
 
 export const gwProviderModels = () => invoke<ProviderModel[]>("gw_provider_models");
+
+export const gwChatModels = () => invoke<ChatModel[]>("gw_chat_models");
 
 export const gwSetModelEnabled = (modelId: string, enabled: boolean) =>
   invoke<void>("gw_set_model_enabled", { modelId, enabled });

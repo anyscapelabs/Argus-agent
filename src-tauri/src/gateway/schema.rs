@@ -84,6 +84,15 @@ pub struct SyncStats {
   pub models: i64,
 }
 
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatModel {
+  pub model_id: String,
+  pub display_name: String,
+  pub provider_id: String,
+  pub provider_name: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderModel {

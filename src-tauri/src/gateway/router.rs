@@ -84,15 +84,17 @@ fn resolve(gw: &Gateway, req: &ChatReq) -> Result<Resolved, String> {
   Ok(Resolved { provs, av, req_json: serde_json::to_string(req).ok() })
 }
 
-// Long-lived retry: catch transient blips fast, then wait out sustained rate
-// limits. 10 attempts spread over ~3.5 min, +0-25% jitter. Retry-After wins.
-const RETRY_DELAYS_MS: [u64; 9] = [500, 1_000, 2_000, 4_000, 8_000, 15_000, 30_000, 60_000, 90_000];
+// Two ladders: connection blips and 5xx recover in seconds; 429 means the
+// per-minute window is gone, so sub-15s waits only burn attempts.
+const FAST_MS: [u64; 9] = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000, 60_000, 90_000, 120_000];
+const RATE_MS: [u64; 9] = [15_000, 30_000, 60_000, 90_000, 120_000, 120_000, 120_000, 120_000, 120_000];
 
-fn backoff_ms(attempt: i64, retry_after: Option<u64>) -> u64 {
+fn backoff_ms(status: Option<u16>, attempt: i64, retry_after: Option<u64>) -> u64 {
   if let Some(secs) = retry_after {
     return secs.saturating_mul(1000).min(120_000);
   }
-  let base = RETRY_DELAYS_MS[(attempt - 1).clamp(0, 8) as usize];
+  let ladder = if status == Some(429) { RATE_MS } else { FAST_MS };
+  let base = ladder[(attempt - 1).clamp(0, 8) as usize];
   let nanos = std::time::SystemTime::now()
     .duration_since(std::time::UNIX_EPOCH)
     .map(|d| d.subsec_nanos() as u64)
@@ -109,6 +111,8 @@ pub async fn run(gw: &Gateway, req: &ChatReq) -> Result<ChatResp, String> {
   let tok = key_for(prov)?;
 
   let mut attempt = 0i64;
+  let mut rate_body: Option<String> = None;
+  let mut same_429 = 0u32;
   loop {
     attempt += 1;
     let t0 = Instant::now();
@@ -183,7 +187,14 @@ pub async fn run(gw: &Gateway, req: &ChatReq) -> Result<ChatResp, String> {
         if !e.retryable() || attempt >= MAX_ATTEMPTS {
           return Err(msg); // Drop it
         }
-        tokio::time::sleep(Duration::from_millis(backoff_ms(attempt, e.retry_after))).await;
+        if e.status == Some(429) {
+          same_429 = if rate_body.as_deref() == Some(e.msg.as_str()) { same_429 + 1 } else { 1 };
+          rate_body = Some(e.msg.clone());
+          if same_429 >= 3 {
+            return Err("provider keeps returning the same rate limit — likely out of quota; try another model".into());
+          }
+        }
+        tokio::time::sleep(Duration::from_millis(backoff_ms(e.status, attempt, e.retry_after))).await;
       }
     }
   }
@@ -202,6 +213,8 @@ pub async fn stream_run(
   let tok = key_for(prov)?;
 
   let mut attempt = 0i64;
+  let mut rate_body: Option<String> = None;
+  let mut same_429 = 0u32;
   loop {
     attempt += 1;
     let _ = chan.send(StreamEvent::Status { provider_id: prov.id.clone(), attempt });
@@ -298,11 +311,20 @@ pub async fn stream_run(
           let _ = chan.send(StreamEvent::Err { msg: msg.clone() });
           return Err(msg); // Drop it
         }
+        if e.status == Some(429) {
+          same_429 = if rate_body.as_deref() == Some(e.msg.as_str()) { same_429 + 1 } else { 1 };
+          rate_body = Some(e.msg.clone());
+          if same_429 >= 3 {
+            let msg = "provider keeps returning the same rate limit — likely out of quota; try another model".to_string();
+            let _ = chan.send(StreamEvent::Err { msg: msg.clone() });
+            return Err(msg);
+          }
+        }
         // Deltas already reached the UI: wipe them before the retry streams fresh.
         if sent_delta {
           let _ = chan.send(StreamEvent::Reset);
         }
-        tokio::time::sleep(Duration::from_millis(backoff_ms(attempt, e.retry_after))).await;
+        tokio::time::sleep(Duration::from_millis(backoff_ms(e.status, attempt, e.retry_after))).await;
       }
     }
   }

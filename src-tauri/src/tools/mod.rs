@@ -1,4 +1,5 @@
 pub mod fs;
+pub mod grep;
 pub mod shell;
 
 use serde_json::Value;
@@ -13,10 +14,9 @@ pub struct ToolMeta {
 }
 
 const TOOLS: &[ToolMeta] = &[
-  ToolMeta { name: "fs.read", desc: "read a text file", args: "{\"path\":\"~/file.txt\"}", mutating: false },
-  ToolMeta { name: "fs.list", desc: "list a directory", args: "{\"path\":\".\"}", mutating: false },
+  ToolMeta { name: "bash.run", desc: "run a shell command, 30s cap", args: "{\"command\":\"...\",\"cwd\":\".\"}", mutating: true },
+  ToolMeta { name: "grep", desc: "search file contents recursively", args: "{\"pattern\":\"...\",\"path\":\".\",\"ignore_case\":false}", mutating: false },
   ToolMeta { name: "fs.write", desc: "create or overwrite a text file", args: "{\"path\":\"...\",\"content\":\"...\"}", mutating: true },
-  ToolMeta { name: "shell.run", desc: "run a shell command, 30s cap", args: "{\"command\":\"...\",\"cwd\":\".\"}", mutating: true },
 ];
 
 pub struct Action {
@@ -64,10 +64,9 @@ pub async fn exec(name: &str, args_json: &str, permission: &str) -> Result<Strin
   let args: Value = serde_json::from_str(args_json.trim())
     .map_err(|_| "action body is not valid JSON")?;
   match name {
-    "fs.read" => fs::read(&args),
-    "fs.list" => fs::list(&args),
+    "bash.run" => shell::run(&args).await,
+    "grep" => grep::run(&args).await,
     "fs.write" => fs::write(&args),
-    "shell.run" => shell::run(&args).await,
     _ => Err("unknown tool".into()),
   }
 }

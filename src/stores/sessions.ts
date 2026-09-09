@@ -115,26 +115,39 @@ class SessionStore {
     }
   }
 
-  async setPermission(sessionId: string, permission: string) {
+  // Optimistic column update; one retry, revert only if both fail.
+  private async patchColumn(
+    sessionId: string,
+    field: "permission" | "model_id",
+    value: string,
+    apply: () => Promise<void>,
+  ) {
     const row = this.state.sessions.find((s) => s.id === sessionId);
-    if (row === undefined || row.permission === permission) return;
-    this.set({ sessions: this.state.sessions.map((s) => (s.id === sessionId ? { ...s, permission } : s)) });
+    if (row === undefined || row[field] === value) return;
+    this.set({ sessions: this.state.sessions.map((s) => (s.id === sessionId ? { ...s, [field]: value } : s)) });
     try {
-      await sessSetPermission(sessionId, permission);
+      await apply();
     } catch (e) {
-      console.error("setPermission failed", e);
+      console.error("session update failed, retrying", e);
+      try {
+        await apply();
+      } catch (e2) {
+        console.error("session update failed, reverting", e2);
+        this.set({
+          sessions: this.state.sessions.map((s) => (s.id === sessionId ? { ...s, [field]: row[field] } : s)),
+        });
+      }
     }
   }
 
+  async setPermission(sessionId: string, permission: string) {
+    await this.patchColumn(sessionId, "permission", permission, () =>
+      sessSetPermission(sessionId, permission),
+    );
+  }
+
   async setModel(sessionId: string, modelId: string) {
-    const row = this.state.sessions.find((s) => s.id === sessionId);
-    if (row === undefined || row.model_id === modelId) return;
-    this.set({ sessions: this.state.sessions.map((s) => (s.id === sessionId ? { ...s, model_id: modelId } : s)) });
-    try {
-      await sessSetModel(sessionId, modelId);
-    } catch (e) {
-      console.error("setModel failed", e);
-    }
+    await this.patchColumn(sessionId, "model_id", modelId, () => sessSetModel(sessionId, modelId));
   }
 
   async archive(sessionId: string) {

@@ -71,7 +71,9 @@ async fn fallback_title(
 fn clean_title(raw: &str) -> Option<String> {
   let line = raw.lines().next().unwrap_or("").trim();
   let t = line.trim_matches('"').trim_matches('\'').trim();
-  if t.is_empty() {
+  // Models occasionally leak action syntax into utility calls; a title made
+  // of tag junk reads worse than the user-message fallback.
+  if t.is_empty() || t.contains('<') || t.contains('>') {
     return None;
   }
   Some(truncate_chars(t, 60))
@@ -253,4 +255,16 @@ pub async fn sess_chat_stream(
   on_event: Channel<StreamEvent>,
 ) -> Result<(), String> {
   send(&gw, &app, &session_id, &content, &on_event).await
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn rejects_junk_titles() {
+    assert_eq!(clean_title("<tool_call>web_search"), None);
+    assert_eq!(clean_title("  "), None);
+    assert_eq!(clean_title("\"Rust release notes\""), Some("Rust release notes".into()));
+  }
 }

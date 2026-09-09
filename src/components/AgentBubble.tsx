@@ -14,6 +14,7 @@ import {
 } from "react-icons/si";
 import type { BlockNode, InlineNode, XmlTree } from "../lib/agentXml";
 import ActionBlock from "./agent/ActionBlock";
+import WebSearchGroup, { WEB_ACTIONS } from "./agent/WebSearchGroup";
 import AlertBanner from "./agent/AlertBanner";
 import ApprovalBlock from "./agent/ApprovalBlock";
 import BrowserActionCard from "./agent/BrowserActionCard";
@@ -203,8 +204,17 @@ function renderTree(tree: XmlTree, live: boolean): React.ReactNode[] {
   let i = 0;
   let gIdx = 0;
   let pIdx = 0;
+  let wIdx = 0;
   while (i < tree.length) {
     const blk = tree[i];
+    if (blk.tag === "action" && WEB_ACTIONS.has(blk.attrs.tool ?? "")) {
+      const grp: BlockNode[] = [];
+      while (i < tree.length && tree[i].tag === "action" && WEB_ACTIONS.has(tree[i].attrs.tool ?? "")) {
+        grp.push(tree[i++]);
+      }
+      out.push(<WebSearchGroup key={`web-${wIdx++}`} blocks={grp} live={live} />);
+      continue;
+    }
     if (blk.tag === "file") {
       const grp: BlockNode[] = [];
       while (i < tree.length && tree[i].tag === "file") grp.push(tree[i++]);

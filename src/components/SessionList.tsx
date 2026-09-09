@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { FiMoreVertical } from "react-icons/fi";
 import { LuArchive, LuDownload, LuTrash2 } from "react-icons/lu";
+
 import Dropdown, { type DropdownItem } from "./Dropdown";
 
 export type SessionStatus = "live" | "inactive";
@@ -18,11 +19,17 @@ function StatusDot({ status }: { status: SessionStatus }) {
         aria-label="Live session"
         className="relative inline-flex h-2 w-2 shrink-0"
       >
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+        <span
+          className={
+            "absolute inline-flex h-full w-full animate-ping rounded-full " +
+            "bg-emerald-400 opacity-60"
+          }
+        />
         <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
       </span>
     );
   }
+
   return (
     <span
       aria-label="Inactive session"
@@ -40,13 +47,30 @@ type SessionListProps = {
   onDelete: (sessionId: string) => void;
 };
 
-const menuItems = (
+const getMenuItems = (
   sessionId: string,
-  actions: { onArchive: (id: string) => void; onExport: (id: string) => void; onDelete: (id: string) => void },
+  actions: {
+    onArchive: (id: string) => void;
+    onExport: (id: string) => void;
+    onDelete: (id: string) => void;
+  },
 ): DropdownItem[] => [
-  { label: "Archive", Icon: LuArchive, onClick: () => actions.onArchive(sessionId) },
-  { label: "Export", Icon: LuDownload, onClick: () => actions.onExport(sessionId) },
-  { label: "Delete", Icon: LuTrash2, danger: true, onClick: () => actions.onDelete(sessionId) },
+  {
+    label: "Archive",
+    Icon: LuArchive,
+    onClick: () => actions.onArchive(sessionId),
+  },
+  {
+    label: "Export",
+    Icon: LuDownload,
+    onClick: () => actions.onExport(sessionId),
+  },
+  {
+    label: "Delete",
+    Icon: LuTrash2,
+    danger: true,
+    onClick: () => actions.onDelete(sessionId),
+  },
 ];
 
 export default function SessionList({
@@ -64,7 +88,12 @@ export default function SessionList({
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="mx-2 flex items-center rounded-md px-2 py-1 text-text-secondary transition-colors hover:bg-bg-hover-primary focus:bg-bg-hover-primary focus-visible:bg-bg-hover-primary"
+        className={
+          "mx-2 flex items-center rounded-md px-2 py-1 " +
+          "text-text-secondary transition-colors " +
+          "hover:bg-bg-hover-primary focus:bg-bg-hover-primary " +
+          "focus-visible:bg-bg-hover-primary"
+        }
         aria-expanded={open}
         aria-controls="session-list-panel"
       >
@@ -77,14 +106,19 @@ export default function SessionList({
         >
           {sessions.map(({ id, title, status }) => {
             const isActive = id === activeSessionId;
+
             return (
               <div
                 key={id}
-                className={`group flex items-center gap-2 rounded-md px-2 py-1 transition-colors ${
-                  isActive
-                    ? "bg-bg-hover-primary text-text-primary"
-                    : "text-text-secondary hover:bg-bg-hover-primary"
-                }`}
+                className={
+                  "group flex items-center gap-2 rounded-md px-2 py-1 " +
+                  "transition-colors " +
+                  `${
+                    isActive
+                      ? "bg-bg-hover-primary text-text-primary"
+                      : "text-text-secondary hover:bg-bg-hover-primary"
+                  }`
+                }
               >
                 <StatusDot status={status} />
                 <button
@@ -95,7 +129,11 @@ export default function SessionList({
                   {title}
                 </button>
                 <Dropdown
-                  items={menuItems(id, { onArchive, onExport, onDelete })}
+                  items={getMenuItems(id, {
+                    onArchive,
+                    onExport,
+                    onDelete,
+                  })}
                   align="right"
                   side="bottom"
                   trigger={({ open: isOpen, toggle }) => (
@@ -108,11 +146,18 @@ export default function SessionList({
                       aria-label={`Session menu for ${title}`}
                       aria-haspopup="menu"
                       aria-expanded={isOpen}
-                      className={`flex h-6 w-6 items-center justify-center rounded-md transition-opacity focus:outline-none ${
-                        isOpen
-                          ? "bg-bg-secondary text-text-primary opacity-100"
-                          : "text-text-secondary opacity-0 hover:text-text-primary focus:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
-                      }`}
+                      className={
+                        "flex h-6 w-6 items-center justify-center " +
+                        "rounded-md transition-opacity focus:outline-none " +
+                        `${
+                          isOpen
+                            ? "bg-bg-secondary text-text-primary opacity-100"
+                            : "text-text-secondary opacity-0 " +
+                              "hover:text-text-primary focus:opacity-100 " +
+                              "group-hover:opacity-100 " +
+                              "group-focus-within:opacity-100"
+                        }`
+                      }
                     >
                       <FiMoreVertical size={14} />
                     </button>

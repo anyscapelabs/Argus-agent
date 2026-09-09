@@ -8,9 +8,15 @@ type SettingsSidebarProps = {
   onTabChange: (tab: SettingsTab) => void;
 };
 
-export default function SettingsSidebar({ activeTab, onTabChange }: SettingsSidebarProps) {
+export default function SettingsSidebar({
+  activeTab,
+  onTabChange,
+}: SettingsSidebarProps) {
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r border-border-primary bg-bg-secondary" aria-label="Settings sidebar">
+    <aside
+      className="flex w-56 shrink-0 flex-col border-r border-border-primary bg-bg-secondary"
+      aria-label="Settings sidebar"
+    >
       <nav className="flex flex-col gap-0.5 p-2">
         <button
           type="button"
@@ -22,9 +28,17 @@ export default function SettingsSidebar({ activeTab, onTabChange }: SettingsSide
               : "text-text-secondary hover:bg-bg-hover-secondary hover:text-text-primary"
           }`}
         >
-          <IoSparklesOutline size={16} className={activeTab === "models" ? "text-text-primary" : "text-text-secondary"} />
+          <IoSparklesOutline
+            size={16}
+            className={
+              activeTab === "models"
+                ? "text-text-primary"
+                : "text-text-secondary"
+            }
+          />
           <span>Models</span>
         </button>
+
         <button
           type="button"
           onClick={() => onTabChange("providers")}
@@ -35,7 +49,14 @@ export default function SettingsSidebar({ activeTab, onTabChange }: SettingsSide
               : "text-text-secondary hover:bg-bg-hover-secondary hover:text-text-primary"
           }`}
         >
-          <LuServer size={16} className={activeTab === "providers" ? "text-text-primary" : "text-text-secondary"} />
+          <LuServer
+            size={16}
+            className={
+              activeTab === "providers"
+                ? "text-text-primary"
+                : "text-text-secondary"
+            }
+          />
           <span>Providers</span>
         </button>
       </nav>

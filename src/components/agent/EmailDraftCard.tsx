@@ -1,4 +1,5 @@
 import { FiMail } from "react-icons/fi";
+
 import type { BlockNode } from "../../lib/agentXml";
 
 type Props = { block: BlockNode };
@@ -35,13 +36,22 @@ export default function EmailDraftCard({ block }: Props) {
       <div className="flex items-center gap-1">
         <button
           type="button"
-          className="rounded-md bg-white px-2.5 py-1 text-xs font-medium text-bg-primary transition-opacity hover:opacity-90 focus:outline-none"
+          className={
+            "rounded-md bg-white px-2.5 py-1 text-xs font-medium " +
+            "text-bg-primary transition-opacity hover:opacity-90 " +
+            "focus:outline-none"
+          }
         >
           Send
         </button>
         <button
           type="button"
-          className="rounded-md border border-border-primary px-2.5 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover-primary hover:text-text-primary focus:outline-none focus-visible:bg-bg-hover-primary"
+          className={
+            "rounded-md border border-border-primary px-2.5 py-1 text-xs " +
+            "font-medium text-text-secondary transition-colors " +
+            "hover:bg-bg-hover-primary hover:text-text-primary " +
+            "focus:outline-none focus-visible:bg-bg-hover-primary"
+          }
         >
           Edit
         </button>

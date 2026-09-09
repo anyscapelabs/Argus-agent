@@ -13,7 +13,10 @@ export type Provider = {
   docUrl: string | null;
 };
 
-export type SyncStats = { providers: number; models: number };
+export type SyncStats = {
+  providers: number;
+  models: number;
+};
 
 export type ProviderModel = {
   providerId: string;
@@ -32,15 +35,19 @@ export type ChatModel = {
   providerName: string;
 };
 
-// gateway
-export const gwListProviders = () => invoke<Provider[]>("gw_list_providers");
+export const gwListProviders = () =>
+  invoke<Provider[]>("gw_list_providers");
 
-export const gwProviderModels = () => invoke<ProviderModel[]>("gw_provider_models");
+export const gwProviderModels = () =>
+  invoke<ProviderModel[]>("gw_provider_models");
 
-export const gwChatModels = () => invoke<ChatModel[]>("gw_chat_models");
+export const gwChatModels = () =>
+  invoke<ChatModel[]>("gw_chat_models");
 
-export const gwSetModelEnabled = (modelId: string, enabled: boolean) =>
-  invoke<void>("gw_set_model_enabled", { modelId, enabled });
+export const gwSetModelEnabled = (
+  modelId: string,
+  enabled: boolean,
+) => invoke<void>("gw_set_model_enabled", { modelId, enabled });
 
 export const gwConnect = (providerId: string, tok?: string) =>
   invoke<void>("gw_connect", { providerId, tok: tok ?? null });
@@ -48,14 +55,15 @@ export const gwConnect = (providerId: string, tok?: string) =>
 export const gwDisconnect = (providerId: string) =>
   invoke<void>("gw_disconnect", { providerId });
 
-export const gwSyncProviders = () => invoke<SyncStats>("gw_sync_providers");
+export const gwSyncProviders = () =>
+  invoke<SyncStats>("gw_sync_providers");
 
-export const gwLogo = (providerId: string) => invoke<string | null>("gw_logo", { providerId });
+export const gwLogo = (providerId: string) =>
+  invoke<string | null>("gw_logo", { providerId });
 
 export const gwSetRouting = (mode: string, pinned: string) =>
   invoke<void>("gw_set_routing", { mode, pinned });
 
-// sessions — wire structs are snake_case (no serde rename on the Rust side)
 export type SessionRow = {
   id: string;
   title: string;
@@ -110,10 +118,17 @@ export const sessCreateSession = (
   webSearch: boolean = false,
 ) =>
   invoke<SessionRow>("sess_create_session", {
-    req: { title, model_id: modelId, permission, folder_id: null, web_search: webSearch },
+    req: {
+      title,
+      model_id: modelId,
+      permission,
+      folder_id: null,
+      web_search: webSearch,
+    },
   });
 
-export const sessListSessions = () => invoke<SessionRow[]>("sess_list_sessions");
+export const sessListSessions = () =>
+  invoke<SessionRow[]>("sess_list_sessions");
 
 export const sessDeleteSession = (sessionId: string) =>
   invoke<void>("sess_delete_session", { sessionId });
@@ -121,11 +136,15 @@ export const sessDeleteSession = (sessionId: string) =>
 export const sessSaveSession = (session: SessionRow) =>
   invoke<void>("sess_save_session", { session });
 
-export const sessSetPermission = (sessionId: string, permission: string) =>
-  invoke<void>("sess_set_permission", { sessionId, permission });
+export const sessSetPermission = (
+  sessionId: string,
+  permission: string,
+) => invoke<void>("sess_set_permission", { sessionId, permission });
 
-export const sessSetModel = (sessionId: string, modelId: string | null) =>
-  invoke<void>("sess_set_model", { sessionId, modelId });
+export const sessSetModel = (
+  sessionId: string,
+  modelId: string | null,
+) => invoke<void>("sess_set_model", { sessionId, modelId });
 
 export const sessSetWebSearch = (sessionId: string, on: boolean) =>
   invoke<void>("sess_set_web_search", { sessionId, on });
@@ -136,11 +155,16 @@ export const sessExportJson = (sessionId: string) =>
 export const sessListMessages = (sessionId: string) =>
   invoke<MsgRow[]>("sess_list_messages", { sessionId });
 
-export const sessSetVote = (sessionId: string, msgId: string, vote: "up" | "down" | null) =>
-  invoke<void>("sess_set_vote", { sessionId, msgId, vote });
+export const sessSetVote = (
+  sessionId: string,
+  msgId: string,
+  vote: "up" | "down" | null,
+) => invoke<void>("sess_set_vote", { sessionId, msgId, vote });
 
-export const sessSupersedeFrom = (sessionId: string, seq: number) =>
-  invoke<void>("sess_supersede_from", { sessionId, seq });
+export const sessSupersedeFrom = (
+  sessionId: string,
+  seq: number,
+) => invoke<void>("sess_supersede_from", { sessionId, seq });
 
 export const sessCleanDangling = (sessionId: string) =>
   invoke<number>("sess_clean_dangling", { sessionId });

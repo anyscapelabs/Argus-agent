@@ -1,5 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
+
 import ChatDetailPage from "./components/ChatDetailPage";
 import ConnectorsPage from "./components/ConnectorsPage";
 import LibraryPage from "./components/LibraryPage";
@@ -31,9 +32,11 @@ function App() {
 
   useEffect(() => {
     sessionStore.loadSessions();
+
     const un = listen("sessions-changed", () => {
       sessionStore.loadSessions();
     });
+
     return () => {
       void un.then((f) => f());
     };
@@ -51,23 +54,34 @@ function App() {
     setView("chat");
   };
 
-  const startNew = async (text: string, model: ChatModel | null, permission: string, webSearch: boolean) => {
-    const row = await sessionStore.create("New chat", model?.modelId ?? null, permission, webSearch);
+  const startNew = async (
+    text: string,
+    model: ChatModel | null,
+    permission: string,
+    webSearch: boolean,
+  ) => {
+    const row = await sessionStore.create(
+      "New chat",
+      model?.modelId ?? null,
+      permission,
+      webSearch,
+    );
     await sessionStore.select(row.id);
     setView("chat");
     sessionStore.send(row.id, text);
   };
 
-  const activeSession = activeId !== null ? sessions.find((s) => s.id === activeId) : undefined;
+  const activeSession =
+    activeId !== null ? sessions.find((s) => s.id === activeId) : undefined;
   const chatTitle = view === "chat" ? activeSession?.title ?? "New chat" : null;
 
   const exportSession = async (sessionId: string) => {
     const json = await sessExportJson(sessionId);
+
     try {
       await navigator.clipboard.writeText(json);
-    } catch {
-      // clipboard can be blocked; the download below still runs
-    }
+    } catch {}
+
     const title = sessions.find((s) => s.id === sessionId)?.title ?? "session";
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -125,10 +139,7 @@ function App() {
           </div>
         </div>
       </div>
-      <SettingsModal
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-      />
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }

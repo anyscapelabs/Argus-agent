@@ -9,7 +9,12 @@ export default function DiffBlock({ block }: Props) {
   const lines = raw.split("\n");
 
   return (
-    <div className="mt-4 overflow-hidden rounded-lg border border-border-primary bg-bg-secondary font-sans first:mt-0">
+    <div
+      className={
+        "mt-4 overflow-hidden rounded-lg border border-border-primary " +
+        "bg-bg-secondary font-sans first:mt-0"
+      }
+    >
       <div className="flex items-center gap-2 border-b border-border-primary px-3 py-1.5 text-xs text-text-secondary">
         <span className="font-mono">{file}</span>
         {language && (
@@ -27,6 +32,7 @@ export default function DiffBlock({ block }: Props) {
             : isRemove
               ? "text-red-300"
               : "text-text-primary";
+
           return (
             <div key={index} className={`whitespace-pre ${className}`}>
               {line || " "}

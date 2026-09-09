@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { FiChevronDown, FiTerminal } from "react-icons/fi";
+
 import type { BlockNode } from "../../lib/agentXml";
 
 type Props = { block: BlockNode };
@@ -17,7 +18,12 @@ export default function TerminalBlock({ block }: Props) {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center gap-2 border-b border-border-primary px-3 py-1.5 text-xs text-text-secondary transition-colors hover:bg-bg-hover-primary focus:outline-none focus-visible:bg-bg-hover-primary"
+        className={
+          "flex w-full items-center gap-2 border-b border-border-primary " +
+          "px-3 py-1.5 text-xs text-text-secondary transition-colors " +
+          "hover:bg-bg-hover-primary focus:outline-none " +
+          "focus-visible:bg-bg-hover-primary"
+        }
         aria-expanded={open}
       >
         <FiTerminal size={12} />

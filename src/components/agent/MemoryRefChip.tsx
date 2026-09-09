@@ -1,5 +1,6 @@
-import { FiBookmark } from "react-icons/fi";
 import { FaGithub } from "react-icons/fa";
+import { FiBookmark } from "react-icons/fi";
+
 import type { BlockNode } from "../../lib/agentXml";
 
 type Props = { block: BlockNode };
@@ -9,6 +10,7 @@ export default function MemoryRefChip({ block }: Props) {
   const date = block.attrs.date;
   const body = block.children.map((child) => child.value).join("").trim();
   if (!body && !source) return null;
+
   const isCommit = source === "commit";
 
   return (
@@ -18,7 +20,9 @@ export default function MemoryRefChip({ block }: Props) {
         <span className="text-xs font-medium">
           {isCommit ? "Commit" : source}
         </span>
-        {date && <span className="text-xs text-text-secondary/60">· {date}</span>}
+        {date && (
+          <span className="text-xs text-text-secondary/60">· {date}</span>
+        )}
       </div>
       {body && <div className="text-sm text-text-primary">{body}</div>}
     </div>

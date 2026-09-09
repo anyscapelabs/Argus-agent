@@ -1,5 +1,6 @@
 import { Channel } from "@tauri-apps/api/core";
 import { useSyncExternalStore } from "react";
+
 import {
   sessChatStream,
   sessCleanDangling,
@@ -18,7 +19,10 @@ import {
   type StreamEvent,
 } from "../lib/ipc";
 
-export type Turn = { text: string; err: string | null };
+export type Turn = {
+  text: string;
+  err: string | null;
+};
 
 type State = {
   sessions: SessionRow[];
@@ -28,9 +32,15 @@ type State = {
   turns: Record<string, Turn>;
 };
 
-
 class SessionStore {
-  private state: State = { sessions: [], loading: true, activeId: null, msgs: {}, turns: {} };
+  private state: State = {
+    sessions: [],
+    loading: true,
+    activeId: null,
+    msgs: {},
+    turns: {},
+  };
+
   private listeners = new Set<() => void>();
 
   subscribe = (fn: () => void) => {
@@ -54,6 +64,7 @@ class SessionStore {
     } catch {
       this.set({ sessions: [] });
     }
+
     this.set({ loading: false });
   }
 
@@ -68,15 +79,16 @@ class SessionStore {
 
   async select(sessionId: string | null) {
     this.set({ activeId: sessionId });
+
     if (sessionId === null) return;
+
     const t = this.state.turns[sessionId];
     if (t === undefined || t.err !== null) {
       try {
         await sessCleanDangling(sessionId);
-      } catch {
-        // Drop it
-      }
+      } catch {}
     }
+
     await this.loadMsgs(sessionId);
   }
 
@@ -93,10 +105,12 @@ class SessionStore {
 
   async remove(sessionId: string) {
     await sessDeleteSession(sessionId);
+
     const msgs = { ...this.state.msgs };
     const turns = { ...this.state.turns };
     delete msgs[sessionId];
     delete turns[sessionId];
+
     this.set({
       msgs,
       turns,
@@ -108,12 +122,14 @@ class SessionStore {
   async setVote(sessionId: string, msgId: string, vote: "up" | "down" | null) {
     const rows = this.state.msgs[sessionId] ?? [];
     if (!rows.some((m) => m.id === msgId)) return;
+
     this.set({
       msgs: {
         ...this.state.msgs,
         [sessionId]: rows.map((m) => (m.id === msgId ? { ...m, vote } : m)),
       },
     });
+
     try {
       await sessSetVote(sessionId, msgId, vote);
     } catch {
@@ -121,7 +137,6 @@ class SessionStore {
     }
   }
 
-  // Optimistic column update; one retry, revert only if both fail.
   private async patchColumn(
     sessionId: string,
     field: "permission" | "model_id" | "web_search",
@@ -130,17 +145,26 @@ class SessionStore {
   ) {
     const row = this.state.sessions.find((s) => s.id === sessionId);
     if (row === undefined || row[field] === value) return;
-    this.set({ sessions: this.state.sessions.map((s) => (s.id === sessionId ? { ...s, [field]: value } : s)) });
+
+    this.set({
+      sessions: this.state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, [field]: value } : s,
+      ),
+    });
+
     try {
       await apply();
     } catch (e) {
       console.error("session update failed, retrying", e);
+
       try {
         await apply();
       } catch (e2) {
         console.error("session update failed, reverting", e2);
         this.set({
-          sessions: this.state.sessions.map((s) => (s.id === sessionId ? { ...s, [field]: row[field] } : s)),
+          sessions: this.state.sessions.map((s) =>
+            s.id === sessionId ? { ...s, [field]: row[field] } : s,
+          ),
         });
       }
     }
@@ -153,16 +177,21 @@ class SessionStore {
   }
 
   async setModel(sessionId: string, modelId: string) {
-    await this.patchColumn(sessionId, "model_id", modelId, () => sessSetModel(sessionId, modelId));
+    await this.patchColumn(sessionId, "model_id", modelId, () =>
+      sessSetModel(sessionId, modelId),
+    );
   }
 
   async setWebSearch(sessionId: string, on: boolean) {
-    await this.patchColumn(sessionId, "web_search", on, () => sessSetWebSearch(sessionId, on));
+    await this.patchColumn(sessionId, "web_search", on, () =>
+      sessSetWebSearch(sessionId, on),
+    );
   }
 
   async archive(sessionId: string) {
     const row = this.state.sessions.find((s) => s.id === sessionId);
     if (row === undefined) return;
+
     await sessSaveSession({ ...row, status: "archived" });
     await this.loadSessions();
   }
@@ -170,11 +199,13 @@ class SessionStore {
   private patchTurn(sessionId: string, patch: (prev: Turn) => Turn) {
     const prev = this.state.turns[sessionId];
     if (prev === undefined) return;
+
     this.set({ turns: { ...this.state.turns, [sessionId]: patch(prev) } });
   }
 
   private clearTurn(sessionId: string) {
     if (this.state.turns[sessionId] === undefined) return;
+
     const turns = { ...this.state.turns };
     delete turns[sessionId];
     this.set({ turns });
@@ -198,8 +229,11 @@ class SessionStore {
       vote: null,
       created_at: "",
     };
+
     const existing = this.state.msgs[sessionId] ?? [];
-    this.set({ msgs: { ...this.state.msgs, [sessionId]: [...existing, pending] } });
+    this.set({
+      msgs: { ...this.state.msgs, [sessionId]: [...existing, pending] },
+    });
 
     const row = this.state.sessions.find((s) => s.id === sessionId);
     if (row !== undefined && row.title === "New chat") {
@@ -214,19 +248,37 @@ class SessionStore {
     }
 
     const chan = new Channel<StreamEvent>();
+
     chan.onmessage = (ev) => {
       if (ev.type === "delta") {
-        this.patchTurn(sessionId, (prev) => ({ text: prev.text + ev.text, err: null }));
-      } else if (ev.type === "reset") {
+        this.patchTurn(sessionId, (prev) => ({
+          text: prev.text + ev.text,
+          err: null,
+        }));
+        return;
+      }
+
+      if (ev.type === "reset") {
         this.patchTurn(sessionId, (prev) => ({ text: "", err: prev.err }));
-      } else if (ev.type === "step") {
-        this.set({ turns: { ...this.state.turns, [sessionId]: { text: "", err: null } } });
+        return;
+      }
+
+      if (ev.type === "step") {
+        this.set({
+          turns: { ...this.state.turns, [sessionId]: { text: "", err: null } },
+        });
         void this.loadMsgs(sessionId);
-      } else if (ev.type === "err") {
+        return;
+      }
+
+      if (ev.type === "err") {
         this.patchTurn(sessionId, (prev) => ({ text: prev.text, err: ev.msg }));
       }
     };
-    this.set({ turns: { ...this.state.turns, [sessionId]: { text: "", err: null } } });
+
+    this.set({
+      turns: { ...this.state.turns, [sessionId]: { text: "", err: null } },
+    });
 
     try {
       await sessChatStream(sessionId, content, chan);
@@ -235,19 +287,20 @@ class SessionStore {
       await this.loadSessions();
     } catch (e) {
       await this.loadMsgs(sessionId);
-      this.set({ turns: { ...this.state.turns, [sessionId]: { text: "", err: String(e) } } });
+      this.set({
+        turns: { ...this.state.turns, [sessionId]: { text: "", err: String(e) } },
+      });
     }
   }
 
-  
   async retry(sessionId: string, userSeq: number, content: string) {
     const t = this.state.turns[sessionId];
     if (t !== undefined && t.err === null) return;
+
     try {
       await sessSupersedeFrom(sessionId, userSeq);
-    } catch {
-      // DB dead, resend still proceeds
-    }
+    } catch {}
+
     await this.send(sessionId, content);
   }
 

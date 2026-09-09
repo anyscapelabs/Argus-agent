@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
+
 import { gwChatModels, type ChatModel } from "../lib/ipc";
 
-// Enabled models on connected providers — the set the chat selector offers.
 export function useChatModels() {
   const [models, setModels] = useState<ChatModel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -12,6 +12,7 @@ export function useChatModels() {
     } catch {
       setModels([]);
     }
+
     setLoading(false);
   }, []);
 

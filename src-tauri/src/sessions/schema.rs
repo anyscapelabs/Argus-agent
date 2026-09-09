@@ -47,91 +47,89 @@ CREATE TABLE IF NOT EXISTS summaries (
 );
 "#;
 
-// permission: allow_once | ask | never
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Session {
-  pub id: String,
-  pub title: String,
-  pub status: String,
-  pub model_id: Option<String>,
-  pub permission: String,
-  pub folder_id: Option<String>,
-  pub created_at: String,
-  pub updated_at: String,
-  pub ctx_tokens: i64,
-  pub compact_seq: i64,
-  pub compactions: i64,
-  #[serde(default)]
-  pub web_search: bool,
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    pub model_id: Option<String>,
+    pub permission: String,
+    pub folder_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub ctx_tokens: i64,
+    pub compact_seq: i64,
+    pub compactions: i64,
+    #[serde(default)]
+    pub web_search: bool,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct NewSession {
-  pub title: String,
-  pub model_id: Option<String>,
-  pub permission: Option<String>,
-  pub folder_id: Option<String>,
-  #[serde(default)]
-  pub web_search: bool,
+    pub title: String,
+    pub model_id: Option<String>,
+    pub permission: Option<String>,
+    pub folder_id: Option<String>,
+    #[serde(default)]
+    pub web_search: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Folder {
-  pub id: String,
-  pub name: String,
-  pub created_at: String,
+    pub id: String,
+    pub name: String,
+    pub created_at: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Msg {
-  pub id: String,
-  pub session_id: String,
-  pub seq: i64,
-  pub role: String,
-  pub content: String,
-  pub model_id: Option<String>,
-  pub provider_id: Option<String>,
-  pub tok_in: Option<i64>,
-  pub tok_out: Option<i64>,
-  pub active: bool,
-  #[serde(default)]
-  pub vote: Option<String>,
-  pub created_at: String,
+    pub id: String,
+    pub session_id: String,
+    pub seq: i64,
+    pub role: String,
+    pub content: String,
+    pub model_id: Option<String>,
+    pub provider_id: Option<String>,
+    pub tok_in: Option<i64>,
+    pub tok_out: Option<i64>,
+    pub active: bool,
+    #[serde(default)]
+    pub vote: Option<String>,
+    pub created_at: String,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct NewMsg {
-  pub session_id: String,
-  pub role: String,
-  pub content: String,
-  pub model_id: Option<String>,
-  pub provider_id: Option<String>,
-  pub tok_in: Option<i64>,
-  pub tok_out: Option<i64>,
+    pub session_id: String,
+    pub role: String,
+    pub content: String,
+    pub model_id: Option<String>,
+    pub provider_id: Option<String>,
+    pub tok_in: Option<i64>,
+    pub tok_out: Option<i64>,
 }
 
 #[cfg(test)]
 mod tests {
-  use super::*;
+    use super::*;
 
-  // The UI round-trips the whole SessionRow through sess_save_session; a
-  // serde mismatch there silently reverts every edit (permission, model).
-  #[test]
-  fn session_deserializes_from_ui_row() {
-    let js = serde_json::json!({
-      "id": "628a",
-      "title": "t",
-      "status": "live",
-      "model_id": null,
-      "permission": "never",
-      "folder_id": null,
-      "created_at": "2026-09-09 06:21:23",
-      "updated_at": "2026-09-09 06:21:23",
-      "ctx_tokens": 0,
-      "compact_seq": 0,
-      "compactions": 0
-    });
-    let s: Result<Session, _> = serde_json::from_value(js);
-    assert!(s.is_ok(), "{s:?}");
-  }
+    #[test]
+    fn session_deserializes_from_ui_row() {
+        let js = serde_json::json!({
+            "id": "628a",
+            "title": "t",
+            "status": "live",
+            "model_id": null,
+            "permission": "never",
+            "folder_id": null,
+            "created_at": "2026-09-09 06:21:23",
+            "updated_at": "2026-09-09 06:21:23",
+            "ctx_tokens": 0,
+            "compact_seq": 0,
+            "compactions": 0
+        });
+
+        let s: Result<Session, _> = serde_json::from_value(js);
+        assert!(s.is_ok(), "{s:?}");
+    }
 }

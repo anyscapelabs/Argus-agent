@@ -1,4 +1,6 @@
-export function formatRelativeTime(input: Date | string | number): string {
+export function formatRelativeTime(
+  input: Date | string | number,
+): string {
   const date = input instanceof Date ? input : new Date(input);
   const now = Date.now();
   const diffMs = now - date.getTime();
@@ -12,7 +14,6 @@ export function formatRelativeTime(input: Date | string | number): string {
   if (diffDays === 1) return "yesterday";
   if (diffDays < 7) return `${diffDays} days ago`;
 
-  // 7+ days: show the date itself, e.g. "Sep 3"
   return date.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",

@@ -1,6 +1,7 @@
 pub mod fs;
 pub mod grep;
 pub mod shell;
+pub mod web;
 
 use serde_json::Value;
 
@@ -17,6 +18,12 @@ const TOOLS: &[ToolMeta] = &[
   ToolMeta { name: "bash.run", desc: "run a shell command, 30s cap", args: "{\"command\":\"...\",\"cwd\":\".\"}", mutating: true },
   ToolMeta { name: "grep", desc: "search file contents recursively", args: "{\"pattern\":\"...\",\"path\":\".\",\"ignore_case\":false}", mutating: false },
   ToolMeta { name: "fs.write", desc: "create or overwrite a text file", args: "{\"path\":\"...\",\"content\":\"...\"}", mutating: true },
+];
+
+// Only offered when the session has web search on (the + menu toggle).
+const WEB_TOOLS: &[ToolMeta] = &[
+  ToolMeta { name: "web.search", desc: "search the web, returns numbered results with title, url and snippet", args: "{\"query\":\"...\"}", mutating: false },
+  ToolMeta { name: "web.read", desc: "fetch a web page as plain text", args: "{\"url\":\"https://...\"}", mutating: false },
 ];
 
 pub struct Action {
@@ -53,11 +60,15 @@ pub fn parse_actions(text: &str) -> Vec<Action> {
   out
 }
 
-pub async fn exec(name: &str, args_json: &str, permission: &str) -> Result<String, String> {
+pub async fn exec(name: &str, args_json: &str, permission: &str, web: bool) -> Result<String, String> {
   let meta = TOOLS
     .iter()
+    .chain(WEB_TOOLS.iter())
     .find(|t| t.name == name)
     .ok_or_else(|| format!("unknown tool {name}"))?;
+  if name.starts_with("web.") && !web {
+    return Err("web search is off for this session; the user can enable it from the + menu".into());
+  }
   if meta.mutating && permission == "ask" {
     return Err("blocked: this session asks before acting; switch its permission to never to allow writes".into());
   }
@@ -67,12 +78,14 @@ pub async fn exec(name: &str, args_json: &str, permission: &str) -> Result<Strin
     "bash.run" => shell::run(&args).await,
     "grep" => grep::run(&args).await,
     "fs.write" => fs::write(&args),
+    "web.search" => web::search(&args).await,
+    "web.read" => web::read(&args).await,
     _ => Err("unknown tool".into()),
   }
 }
 
 // Prompt section: the XML-only tool dialect, byte-stable across turns.
-pub fn section() -> String {
+pub fn section(web: bool) -> String {
   let mut s = String::from(
     "\n\n## Tools\n\
 You work in steps. To run a tool, end your reply with an action block:\n\
@@ -88,6 +101,15 @@ Available tools:\n",
   );
   for t in TOOLS {
     s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));
+  }
+  if web {
+    s.push_str("Web tools:\n");
+    for t in WEB_TOOLS {
+      s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));
+    }
+    s.push_str(
+      "Cite what you used: after web.search or web.read, mention the source url in the reply.\n",
+    );
   }
   s
 }

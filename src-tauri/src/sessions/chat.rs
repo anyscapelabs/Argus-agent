@@ -103,13 +103,15 @@ pub async fn send(
     )?;
   }
 
-  let perm = {
+  let (perm, web) = {
     let conn = gw.conn.lock().map_err(|e| e.to_string())?;
     conn
-      .query_row("SELECT permission FROM sessions WHERE id = ?1", params![session_id], |r| {
-        r.get::<_, String>(0)
-      })
-      .unwrap_or_else(|_| "ask".into())
+      .query_row(
+        "SELECT permission, web_search FROM sessions WHERE id = ?1",
+        params![session_id],
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? != 0)),
+      )
+      .unwrap_or_else(|_| ("ask".into(), false))
   };
 
   let mut tok_in_sum = 0i64;
@@ -164,7 +166,7 @@ pub async fn send(
     let _ = chan.send(StreamEvent::Step);
 
     for a in &actions {
-      let (status, body) = match tools::exec(&a.tool, &a.args, &perm).await {
+      let (status, body) = match tools::exec(&a.tool, &a.args, &perm, web).await {
         Ok(t) => ("ok", t),
         Err(e) => ("err", e),
       };

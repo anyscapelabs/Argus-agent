@@ -40,9 +40,9 @@ A tag you invent shows up as literal text.
 ";
 
 
-fn stable_layer(conn: &Connection) -> Result<String, String> {
+fn stable_layer(conn: &Connection, web: bool) -> Result<String, String> {
   let mut s = String::from(BASE);
-  s.push_str(&crate::tools::section());
+  s.push_str(&crate::tools::section(web));
   if let Some(rules) = gw_store::kv_get(conn, "preference_rules") {
     if !rules.trim().is_empty() {
       s.push_str("\n\n## User preferences\n");
@@ -67,21 +67,22 @@ fn stable_layer(conn: &Connection) -> Result<String, String> {
 
 
 pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String> {
-  let (model_id, compact_seq, ctx_tokens) = conn
+  let (model_id, compact_seq, ctx_tokens, web_search) = conn
     .query_row(
-      "SELECT model_id, compact_seq, ctx_tokens FROM sessions WHERE id = ?1",
+      "SELECT model_id, compact_seq, ctx_tokens, web_search FROM sessions WHERE id = ?1",
       params![session_id],
       |r| {
         Ok((
           r.get::<_, Option<String>>(0)?,
           r.get::<_, i64>(1)?,
           r.get::<_, i64>(2)?,
+          r.get::<_, i64>(3)? != 0,
         ))
       },
     )
     .map_err(|_| format!("session {session_id} not found"))?; // Drop it
 
-  let stable = stable_layer(conn)?;
+  let stable = stable_layer(conn, web_search)?;
 
   let summary: Option<String> = conn
     .query_row(

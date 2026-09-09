@@ -18,6 +18,22 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
       .execute("ALTER TABLE messages ADD COLUMN vote TEXT", [])
       .map_err(|e| e.to_string())?;
   }
+  let has_web: bool = conn
+    .query_row(
+      "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'web_search'",
+      [],
+      |r| r.get::<_, i64>(0),
+    )
+    .map(|n| n > 0)
+    .map_err(|e| e.to_string())?;
+  if !has_web {
+    conn
+      .execute(
+        "ALTER TABLE sessions ADD COLUMN web_search INTEGER NOT NULL DEFAULT 0",
+        [],
+      )
+      .map_err(|e| e.to_string())?;
+  }
   conn.pragma_update(None, "foreign_keys", true).map_err(|e| e.to_string())?;
   Ok(())
 }
@@ -25,7 +41,7 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
 // ---- sessions ----
 
 const SESSION_COLS: &str =
-  "id, title, status, model_id, permission, folder_id, created_at, updated_at, ctx_tokens, compact_seq, compactions";
+  "id, title, status, model_id, permission, folder_id, created_at, updated_at, ctx_tokens, compact_seq, compactions, web_search";
 
 fn row_session(r: &rusqlite::Row) -> rusqlite::Result<Session> {
   Ok(Session {
@@ -40,6 +56,7 @@ fn row_session(r: &rusqlite::Row) -> rusqlite::Result<Session> {
     ctx_tokens: r.get(8)?,
     compact_seq: r.get(9)?,
     compactions: r.get(10)?,
+    web_search: r.get::<_, i64>(11)? != 0,
   })
 }
 
@@ -48,8 +65,8 @@ pub fn create_session(conn: &Connection, req: &NewSession) -> Result<Session, St
   let perm = req.permission.clone().unwrap_or_else(|| "ask".into());
   conn
     .execute(
-      "INSERT INTO sessions (id, title, model_id, permission, folder_id) VALUES (?1, ?2, ?3, ?4, ?5)",
-      params![id, req.title, req.model_id, perm, req.folder_id],
+      "INSERT INTO sessions (id, title, model_id, permission, folder_id, web_search) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+      params![id, req.title, req.model_id, perm, req.folder_id, req.web_search],
     )
     .map_err(|e| e.to_string())?;
   get_session(conn, &id)
@@ -86,8 +103,8 @@ pub fn save_session(conn: &Connection, s: &Session) -> Result<(), String> {
   conn
     .execute(
       "UPDATE sessions SET title=?2, status=?3, model_id=?4, permission=?5, folder_id=?6,
-       ctx_tokens=?7, compact_seq=?8, compactions=?9, updated_at=datetime('now') WHERE id=?1",
-      params![s.id, s.title, s.status, s.model_id, s.permission, s.folder_id, s.ctx_tokens, s.compact_seq, s.compactions],
+       ctx_tokens=?7, compact_seq=?8, compactions=?9, web_search=?10, updated_at=datetime('now') WHERE id=?1",
+      params![s.id, s.title, s.status, s.model_id, s.permission, s.folder_id, s.ctx_tokens, s.compact_seq, s.compactions, s.web_search],
     )
     .map_err(|e| e.to_string())?;
   Ok(())
@@ -121,6 +138,16 @@ pub fn set_model(conn: &Connection, id: &str, model_id: Option<&str>) -> Result<
     .execute(
       "UPDATE sessions SET model_id=?2, updated_at=datetime('now') WHERE id=?1",
       params![id, model_id],
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
+pub fn set_web_search(conn: &Connection, id: &str, on: bool) -> Result<(), String> {
+  conn
+    .execute(
+      "UPDATE sessions SET web_search=?2, updated_at=datetime('now') WHERE id=?1",
+      params![id, on],
     )
     .map_err(|e| e.to_string())?;
   Ok(())

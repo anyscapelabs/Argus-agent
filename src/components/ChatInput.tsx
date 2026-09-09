@@ -26,6 +26,8 @@ type ChatInputProps = {
   onModelChange?: (next: ChatModel) => void;
   permission?: string;
   onPermissionChange?: (next: string) => void;
+  webSearch?: boolean;
+  onWebSearchChange?: (next: boolean) => void;
 };
 
 const PERM_LABEL: Record<string, string> = {
@@ -42,6 +44,8 @@ export default function ChatInput({
   onModelChange,
   permission = "ask",
   onPermissionChange,
+  webSearch = false,
+  onWebSearchChange,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const { models, loading } = useChatModels();
@@ -73,7 +77,13 @@ export default function ChatInput({
     { label: "Add from library", Icon: LuLibrary, hasSubmenu: true, onClick: () => console.log("library") },
     { label: "Add project", Icon: LuFolderOpen, hasSubmenu: true, onClick: () => console.log("project") },
     { label: "Connector", Icon: LuPlug, hasSubmenu: true, onClick: () => console.log("connector") },
-    { label: "Web search", Icon: LuGlobe, toggleable: true, onClick: () => console.log("web") },
+    {
+      label: "Web search",
+      Icon: LuGlobe,
+      toggleable: true,
+      active: webSearch,
+      onClick: () => onWebSearchChange?.(!webSearch),
+    },
   ];
 
   const permissionItems: DropdownItem[] = [

@@ -60,6 +60,7 @@ pub fn run() {
       sessions::sess_save_session,
       sessions::sess_set_permission,
       sessions::sess_set_model,
+      sessions::sess_set_web_search,
       sessions::sess_delete_session,
       sessions::sess_export_json,
       sessions::sess_list_messages,

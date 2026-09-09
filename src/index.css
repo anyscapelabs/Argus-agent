@@ -105,13 +105,12 @@ button:focus-visible {
 
 /* Menus keep a scrollbar so long lists stay reachable by drag. */
 .menu-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: #3f3f3f transparent;
+  scrollbar-width: none;
 }
 
 .menu-scroll::-webkit-scrollbar {
   display: block;
-  width: 8px;
+  width: 6px;
 }
 
 .menu-scroll::-webkit-scrollbar-track {
@@ -120,7 +119,7 @@ button:focus-visible {
 
 .menu-scroll::-webkit-scrollbar-thumb {
   background: #3f3f3f;
-  border-radius: 4px;
+  border-radius: 3px;
 }
 
 /* Streaming caret: a thick accent block after the last streamed block, and

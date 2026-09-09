@@ -78,7 +78,7 @@ export default function Dropdown({
         >
           {header !== undefined && <div className="px-2">{header}</div>}
           <div
-            className="overflow-y-auto overscroll-contain"
+            className="menu-scroll overflow-y-auto overscroll-contain"
             style={maxH !== undefined ? { maxHeight: maxH } : undefined}
           >
             {items.map((it, i) => {

@@ -191,12 +191,12 @@ class SessionStore {
 
     try {
       await sessChatStream(sessionId, content, chan);
+      this.clearTurn(sessionId);
       await this.loadMsgs(sessionId);
       await this.loadSessions();
-      this.clearTurn(sessionId);
     } catch (e) {
       await this.loadMsgs(sessionId);
-      this.patchTurn(sessionId, (prev) => ({ text: prev.text, err: String(e) }));
+      this.set({ turns: { ...this.state.turns, [sessionId]: { text: "", err: String(e) } } });
     }
   }
 

@@ -1,43 +1,26 @@
-import { useState } from "react";
-import { FiAlertTriangle, FiCheck, FiChevronDown, FiChevronRight, FiLoader } from "react-icons/fi";
+import { FiTerminal } from "react-icons/fi";
 import type { BlockNode } from "../../lib/agentXml";
 
 type Props = { block: BlockNode; live?: boolean };
 
-type Status = "running" | "success" | "error";
+const VERB: Record<string, string> = {
+  "bash.run": "command",
+  grep: "search",
+  "fs.write": "file write",
+};
 
 export default function ActionBlock({ block, live = false }: Props) {
-  const tool = block.attrs.tool ?? "action";
-  const status = (block.attrs.status ?? (live ? "running" : "success")) as Status;
-  const body = block.children.map((child) => child.value).join("").trim();
-  const [open, setOpen] = useState(false);
-
-  const mark =
-    status === "running" ? (
-      <FiLoader size={11} className="animate-spin text-text-secondary" />
-    ) : status === "error" ? (
-      <FiAlertTriangle size={11} className="text-red-400" />
-    ) : (
-      <FiCheck size={11} className="text-text-secondary" />
-    );
+  const tool = block.attrs.tool ?? "";
+  const verb = VERB[tool] ?? (tool || "command");
 
   return (
-    <div className="my-1 font-sans first:mt-0">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="group flex w-full items-center gap-1.5 rounded-md text-left text-xs text-text-secondary transition-colors hover:text-text-primary focus:outline-none"
-      >
-        {open ? <FiChevronDown size={11} /> : <FiChevronRight size={11} />}
-        {mark}
-        <span className="font-mono">{tool}</span>
-        <span className="truncate font-mono opacity-60">{body.split("\n")[0]}</span>
-      </button>
-      {open && body && (
-        <pre className="mt-1 max-h-[280px] overflow-auto whitespace-pre-wrap break-words border-l border-border-primary pl-3 font-mono text-xs text-text-secondary">
-          {body}
-        </pre>
-      )}
+    <div className="my-2 flex items-center gap-2.5 font-sans">
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-border-primary bg-bg-secondary text-text-secondary">
+        <FiTerminal size={11} />
+      </span>
+      <span className={`text-[13px] ${live ? "shimmer-text" : "text-text-secondary"}`}>
+        {live ? "Running" : "Ran"} {verb}
+      </span>
     </div>
   );
 }

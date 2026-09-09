@@ -82,6 +82,8 @@ message wrapped in <tool-result tool=\"...\" status=\"ok|err\">output</tool-resu
 Then continue: act again or write the final answer with no action block.\n\
 Never invent tool output, never claim a tool ran without an action block, never \
 wrap an action block inside another tag.\n\
+If a tool result has status err, never run the same action again. Tell the user \
+what failed in plain words and what would fix it.\n\
 Available tools:\n",
   );
   for t in TOOLS {

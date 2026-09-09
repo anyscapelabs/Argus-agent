@@ -1,5 +1,5 @@
-import type { Provider } from "../../lib/ipc";
 import { useProviderLogo } from "../../hooks/useProviderLogo";
+import type { Provider } from "../../lib/ipc";
 
 type ConnectedProviderRowProps = {
   provider: Provider;
@@ -8,11 +8,30 @@ type ConnectedProviderRowProps = {
   variant?: "connected" | "popular";
 };
 
-function ProviderLogo({ id, name }: { id: string; name: string }) {
+type ConnectedProviderListProps = {
+  providers: Provider[];
+  onDisconnect?: (id: string) => void;
+  onConnect?: (id: string) => void;
+  variant?: "connected" | "popular";
+};
+
+function ProviderLogo({
+  id,
+  name,
+}: {
+  id: string;
+  name: string;
+}) {
   const uri = useProviderLogo(id);
 
   if (uri) {
-    return <img src={uri} alt="" className="h-8 w-8 shrink-0 rounded-lg object-contain p-1 invert" />;
+    return (
+      <img
+        src={uri}
+        alt=""
+        className="h-8 w-8 shrink-0 rounded-lg object-contain p-1 invert"
+      />
+    );
   }
 
   const initials = name
@@ -29,7 +48,12 @@ function ProviderLogo({ id, name }: { id: string; name: string }) {
   );
 }
 
-function ConnectedProviderRow({ provider, onDisconnect, onConnect, variant = "connected" }: ConnectedProviderRowProps) {
+function ConnectedProviderRow({
+  provider,
+  onDisconnect,
+  onConnect,
+  variant = "connected",
+}: ConnectedProviderRowProps) {
   const isPopular = variant === "popular";
 
   return (
@@ -67,13 +91,6 @@ function ConnectedProviderRow({ provider, onDisconnect, onConnect, variant = "co
   );
 }
 
-type ConnectedProviderListProps = {
-  providers: Provider[];
-  onDisconnect?: (id: string) => void;
-  onConnect?: (id: string) => void;
-  variant?: "connected" | "popular";
-};
-
 export default function ConnectedProviderList({
   providers,
   onDisconnect,
@@ -81,11 +98,12 @@ export default function ConnectedProviderList({
   variant = "connected",
 }: ConnectedProviderListProps) {
   if (providers.length === 0) {
-    return (
-      <p className="text-sm text-text-secondary">
-        {variant === "popular" ? "No popular providers." : "No connected providers."}
-      </p>
-    );
+    const msg =
+      variant === "popular"
+        ? "No popular providers."
+        : "No connected providers.";
+
+    return <p className="text-sm text-text-secondary">{msg}</p>;
   }
 
   return (

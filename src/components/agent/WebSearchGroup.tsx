@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { FiChevronDown, FiGlobe } from "react-icons/fi";
+
 import type { BlockNode } from "../../lib/agentXml";
 
 export const WEB_ACTIONS = new Set(["web.search", "web.read"]);
 
-// The action body is the model's JSON args; mid-stream it is still partial,
-// so a failed parse falls back to the raw text.
 function targetOf(tool: string, body: string): string {
   try {
     const args = JSON.parse(body) as { query?: string; url?: string };
@@ -22,8 +21,6 @@ function verbOf(tool: string, live: boolean): string {
 
 type Props = { blocks: BlockNode[]; live?: boolean };
 
-// Consecutive web actions collapse under one header (Claude-style, no
-// borders): open while the step streams, closed once it lands.
 export default function WebSearchGroup({ blocks, live = false }: Props) {
   const [open, setOpen] = useState(live);
 
@@ -39,10 +36,17 @@ export default function WebSearchGroup({ blocks, live = false }: Props) {
         className="group/web flex items-center gap-2.5 text-left"
         aria-expanded={open}
       >
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-border-primary bg-bg-secondary text-text-secondary">
+        <span
+          className={
+            "flex h-5 w-5 shrink-0 items-center justify-center rounded-md " +
+            "border border-border-primary bg-bg-secondary text-text-secondary"
+          }
+        >
           <FiGlobe size={11} />
         </span>
-        <span className={`text-[13px] ${live ? "shimmer-text" : "text-text-secondary"}`}>
+        <span
+          className={`text-[13px] ${live ? "shimmer-text" : "text-text-secondary"}`}
+        >
           {live ? "Searching the web" : "Searched the web"}
         </span>
         <FiChevronDown
@@ -56,13 +60,26 @@ export default function WebSearchGroup({ blocks, live = false }: Props) {
             const tool = blk.attrs.tool ?? "";
             const body = blk.children.map((c) => c.value).join("").trim();
             const itemLive = live && idx === blocks.length - 1;
+
             return (
-              <div key={`web-${idx}`} className="flex items-center gap-2.5 py-1 font-sans">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-border-primary bg-bg-secondary text-text-secondary">
+              <div
+                key={`web-${idx}`}
+                className="flex items-center gap-2.5 py-1 font-sans"
+              >
+                <span
+                  className={
+                    "flex h-5 w-5 shrink-0 items-center justify-center " +
+                    "rounded-md border border-border-primary bg-bg-secondary " +
+                    "text-text-secondary"
+                  }
+                >
                   <FiGlobe size={11} />
                 </span>
                 <span
-                  className={`min-w-0 max-w-[440px] truncate text-[13px] ${itemLive ? "shimmer-text" : "text-text-secondary"}`}
+                  className={
+                    "min-w-0 max-w-[440px] truncate text-[13px] " +
+                    `${itemLive ? "shimmer-text" : "text-text-secondary"}`
+                  }
                 >
                   {verbOf(tool, itemLive)} {targetOf(tool, body)}
                 </span>

@@ -8,7 +8,9 @@ export default function FileChip({ block }: Props) {
 
   return (
     <div className="flex items-center justify-between gap-3 py-0.5 font-sans text-sm">
-      <span className="truncate font-mono text-text-secondary">{fileName}</span>
+      <span className="truncate font-mono text-text-secondary">
+        {fileName}
+      </span>
     </div>
   );
 }

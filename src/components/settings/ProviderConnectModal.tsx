@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { LuArrowLeft, LuX } from "react-icons/lu";
+
 import { useProviderLogo } from "../../hooks/useProviderLogo";
 import type { Provider } from "../../lib/ipc";
 
@@ -10,32 +11,44 @@ type ProviderConnectModalProps = {
   onConnect: (provider: Provider, apiKey: string) => Promise<void>;
 };
 
-export default function ProviderConnectModal({ open, provider, onClose, onConnect }: ProviderConnectModalProps) {
+export default function ProviderConnectModal({
+  open,
+  provider,
+  onClose,
+  onConnect,
+}: ProviderConnectModalProps) {
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const logoUri = useProviderLogo(provider?.id ?? "");
 
   useEffect(() => {
-    if (open) {
-      setApiKey("");
-      setErr(null);
-      setSaving(false);
-      const onKey = (e: KeyboardEvent) => {
-        if (e.key === "Escape") onClose();
-      };
-      document.addEventListener("keydown", onKey);
-      return () => document.removeEventListener("keydown", onKey);
+    if (!open) return;
+
+    setApiKey("");
+    setErr(null);
+    setSaving(false);
+
+    function onKey(event: KeyboardEvent): void {
+      if (event.key === "Escape") onClose();
     }
+
+    document.addEventListener("keydown", onKey);
+
+    return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
   if (!open || !provider) return null;
 
-  const handleConnect = async () => {
+  async function handleConnect(): Promise<void> {
+    if (!provider) return;
+
     const key = apiKey.trim();
     if (!key || saving) return;
+
     setSaving(true);
     setErr(null);
+
     try {
       await onConnect(provider, key);
     } catch (e) {
@@ -43,10 +56,11 @@ export default function ProviderConnectModal({ open, provider, onClose, onConnec
       setSaving(false);
       return;
     }
+
     setApiKey("");
     setSaving(false);
     onClose();
-  };
+  }
 
   const initials = provider.name
     .split(/[\s-]+/)
@@ -67,7 +81,6 @@ export default function ProviderConnectModal({ open, provider, onClose, onConnec
         className="flex w-full max-w-[560px] min-h-[520px] flex-col rounded-xl border border-border-primary bg-bg-secondary p-6 shadow-4xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header: back + close */}
         <div className="flex items-center justify-between">
           <button
             type="button"
@@ -87,7 +100,6 @@ export default function ProviderConnectModal({ open, provider, onClose, onConnec
           </button>
         </div>
 
-        {/* Title with logo */}
         <div className="mt-3 flex items-center gap-2">
           {logoUri ? (
             <img
@@ -100,7 +112,9 @@ export default function ProviderConnectModal({ open, provider, onClose, onConnec
               {initials}
             </div>
           )}
-          <h3 className="text-sm font-medium text-text-primary">Connect {provider.name}</h3>
+          <h3 className="text-sm font-medium text-text-primary">
+            Connect {provider.name}
+          </h3>
         </div>
 
         <p className="mt-3 text-sm leading-relaxed text-text-secondary">
@@ -108,7 +122,10 @@ export default function ProviderConnectModal({ open, provider, onClose, onConnec
         </p>
 
         <div className="mt-4 flex flex-col gap-1.5">
-          <label htmlFor="provider-api-key" className="text-sm text-text-secondary">
+          <label
+            htmlFor="provider-api-key"
+            className="text-sm text-text-secondary"
+          >
             {provider.name} API key
           </label>
           <input

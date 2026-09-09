@@ -1,7 +1,11 @@
 export type TagSchema = {
   tag: string;
   selfClosing: boolean;
-  attributes: { name: string; required?: boolean; values?: readonly string[] }[];
+  attributes: {
+    name: string;
+    required?: boolean;
+    values?: readonly string[];
+  }[];
 };
 
 export const TAG_SCHEMA: readonly TagSchema[] = [
@@ -44,10 +48,17 @@ export const TAG_SCHEMA: readonly TagSchema[] = [
     selfClosing: false,
     attributes: [
       { name: "id" },
-      { name: "type", values: ["git_push", "payment", "send_email", "delete", "login", "force_push"] },
+      {
+        name: "type",
+        values: ["git_push", "payment", "send_email", "delete", "login", "force_push"],
+      },
     ],
   },
-  { tag: "diff", selfClosing: false, attributes: [{ name: "file" }, { name: "language" }] },
+  {
+    tag: "diff",
+    selfClosing: false,
+    attributes: [{ name: "file" }, { name: "language" }],
+  },
   {
     tag: "file",
     selfClosing: true,
@@ -77,21 +88,47 @@ export const TAG_SCHEMA: readonly TagSchema[] = [
       { name: "status", values: ["running", "success", "error"] },
     ],
   },
-  { tag: "email-draft", selfClosing: false, attributes: [{ name: "id" }, { name: "to" }, { name: "subject" }] },
-  { tag: "browser-action", selfClosing: false, attributes: [{ name: "id" }, { name: "url" }, { name: "action" }] },
-  { tag: "memory-ref", selfClosing: false, attributes: [{ name: "source" }, { name: "date" }] },
-  { tag: "warning", selfClosing: false, attributes: [{ name: "severity", values: ["low", "medium", "high"] }] },
-  { tag: "error", selfClosing: false, attributes: [{ name: "severity", values: ["low", "medium", "high"] }] },
+  {
+    tag: "email-draft",
+    selfClosing: false,
+    attributes: [{ name: "id" }, { name: "to" }, { name: "subject" }],
+  },
+  {
+    tag: "browser-action",
+    selfClosing: false,
+    attributes: [{ name: "id" }, { name: "url" }, { name: "action" }],
+  },
+  {
+    tag: "memory-ref",
+    selfClosing: false,
+    attributes: [{ name: "source" }, { name: "date" }],
+  },
+  {
+    tag: "warning",
+    selfClosing: false,
+    attributes: [
+      { name: "severity", values: ["low", "medium", "high"] },
+    ],
+  },
+  {
+    tag: "error",
+    selfClosing: false,
+    attributes: [
+      { name: "severity", values: ["low", "medium", "high"] },
+    ],
+  },
 ] as const;
 
-const tagMap: Map<string, TagSchema> = new Map(TAG_SCHEMA.map((s) => [s.tag, s]));
+const TAG_MAP: Map<string, TagSchema> = new Map(
+  TAG_SCHEMA.map((s) => [s.tag, s]),
+);
 
 export function isKnownTag(tag: string): boolean {
-  return tagMap.has(tag);
+  return TAG_MAP.has(tag);
 }
 
 export function getTagSchema(tag: string): TagSchema | undefined {
-  return tagMap.get(tag);
+  return TAG_MAP.get(tag);
 }
 
 export type Token =
@@ -113,13 +150,16 @@ function decodeEntities(str: string): string {
 
 function parseAttributes(raw: string): Record<string, string> {
   const out: Record<string, string> = {};
-  const re = /([a-zA-Z_][a-zA-Z0-9_:-]*)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'<>`]+))/gs;
+  const re =
+    /([a-zA-Z_][a-zA-Z0-9_:-]*)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'<>`]+))/gs;
   let m: RegExpExecArray | null;
+
   while ((m = re.exec(raw)) !== null) {
     const k = m[1];
     const v = m[3] ?? m[4] ?? m[5] ?? "";
     out[k] = decodeEntities(v);
   }
+
   return out;
 }
 
@@ -211,32 +251,52 @@ export function buildTree(toks: Token[]): XmlTree {
   const blks: BlockNode[] = [];
   let buf = "";
   let cur: BlockNode | null = null;
-  const inline = new Set(["bold", "italic", "underline", "strikethrough", "code", "link"]);
+  const inline = new Set([
+    "bold",
+    "italic",
+    "underline",
+    "strikethrough",
+    "code",
+    "link",
+  ]);
   const tableInner = new Set(["tr", "th", "td"]);
 
   const flush = () => {
     const v = buf.trim();
     buf = "";
     if (v.length === 0) return;
-    // Each line is its own paragraph; consecutive list lines stay grouped so
-    // the renderer can build ul/ol out of them.
+
     const isList = (l: string) => /^(?:[-•*]|\d+\.)\s+/.test(l);
     let group: string[] = [];
+
     const pushGroup = () => {
       if (group.length === 0) return;
-      blks.push({ kind: "paragraph", tag: "p", attrs: {}, children: [{ kind: "text", value: group.join("\n") }] });
+      blks.push({
+        kind: "paragraph",
+        tag: "p",
+        attrs: {},
+        children: [{ kind: "text", value: group.join("\n") }],
+      });
       group = [];
     };
+
     for (const raw of v.split("\n")) {
       const line = raw.trim();
       if (line.length === 0) continue;
+
       if (isList(line)) {
         group.push(line);
       } else {
         pushGroup();
-        blks.push({ kind: "paragraph", tag: "p", attrs: {}, children: [{ kind: "text", value: line }] });
+        blks.push({
+          kind: "paragraph",
+          tag: "p",
+          attrs: {},
+          children: [{ kind: "text", value: line }],
+        });
       }
     }
+
     pushGroup();
   };
 
@@ -252,33 +312,44 @@ export function buildTree(toks: Token[]): XmlTree {
 
     if (tok.kind === "open") {
       const tag = tok.tag;
+
       if (inline.has(tag)) {
         let raw = `<${tag}>`;
+
         if (tag === "link") {
           const href = tok.attrs.href ?? "";
           raw = href ? `<link href="${href}">` : "<link>";
         }
+
         if (cur) {
           cur.children.push({ kind: "text", value: raw });
           continue;
         }
+
         buf += raw;
         continue;
       }
+
       if (cur && (cur.tag === "table" || cur.tag === "tr") && tableInner.has(tag)) {
         const raw = `<${tag}>`;
         cur.children.push({ kind: "text", value: raw });
         continue;
       }
+
       flush();
+
       const kind: BlockNode["kind"] =
-        tag === "h1" || tag === "h2" || tag === "h3" || tag === "h4" ? "heading" : "component";
+        tag === "h1" || tag === "h2" || tag === "h3" || tag === "h4"
+          ? "heading"
+          : "component";
+
       cur = { kind, tag, attrs: tok.attrs, children: [] };
       blks.push(cur);
       continue;
     }
 
     const tag = tok.tag;
+
     if (inline.has(tag)) {
       const raw = `</${tag}>`;
       if (cur) {
@@ -288,6 +359,7 @@ export function buildTree(toks: Token[]): XmlTree {
       buf += raw;
       continue;
     }
+
     if (cur && (cur.tag === "table" || cur.tag === "tr") && tableInner.has(tag)) {
       const raw = `</${tag}>`;
       cur.children.push({ kind: "text", value: raw });
@@ -296,6 +368,7 @@ export function buildTree(toks: Token[]): XmlTree {
 
     if (!cur) continue;
     if (cur.tag !== tag) continue;
+
     buf = "";
     cur = null;
   }
@@ -308,17 +381,23 @@ export function buildTree(toks: Token[]): XmlTree {
   });
 }
 
-// Markdown leaks from every model sooner or later; convert the common cases
-// to the dialect instead of showing literal ** junk. Fence content passes
-// through untouched.
 function inlineMd(s: string): string {
   let t = s;
   t = t.replace(/\*\*([^*]+)\*\*/g, "<bold>$1</bold>");
   t = t.replace(/__([^_]+)__/g, "<bold>$1</bold>");
-  t = t.replace(/(^|[\s(])\*([^*\s][^*]*?)\*(?=[\s).,!?;:]|$)/g, "$1<italic>$2</italic>");
-  t = t.replace(/(^|[\s(])_([^_\s][^_]*?)_(?=[\s).,!?;:]|$)/g, "$1<italic>$2</italic>");
+  t = t.replace(
+    /(^|[\s(])\*([^*\s][^*]*?)\*(?=[\s).,!?;:]|$)/g,
+    "$1<italic>$2</italic>",
+  );
+  t = t.replace(
+    /(^|[\s(])_([^_\s][^_]*?)_(?=[\s).,!?;:]|$)/g,
+    "$1<italic>$2</italic>",
+  );
   t = t.replace(/`([^`]+)`/g, "<code>$1</code>");
-  t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<link href="$2">$1</link>');
+  t = t.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+    '<link href="$2">$1</link>',
+  );
   return t;
 }
 
@@ -328,15 +407,18 @@ function normalizeMdLine(line: string): string {
     const tag = h[1].length <= 2 ? "h2" : "h3";
     return `<${tag}>${inlineMd(h[2])}</${tag}>`;
   }
-  if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) return ""; // hr junk, drop it
+
+  if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) return "";
+
   return inlineMd(line.replace(/^\s*>\s?/, ""));
 }
 
 function normalizeMd(src: string): string {
   const parts = src.split(/```[a-zA-Z0-9_-]*[^\S\n]*\n?/);
+
   return parts
     .map((seg, i) => {
-      if (i % 2 === 1) return seg; // fence content: leave as-is
+      if (i % 2 === 1) return seg;
       return seg.split("\n").map(normalizeMdLine).join("\n");
     })
     .join("\n");

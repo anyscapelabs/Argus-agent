@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { FiShield } from "react-icons/fi";
 import { FaGithub } from "react-icons/fa";
+import { FiShield } from "react-icons/fi";
+
 import type { BlockNode } from "../../lib/agentXml";
 
 type Props = { block: BlockNode };
@@ -25,7 +26,10 @@ export default function ApprovalBlock({ block }: Props) {
   return (
     <div
       data-component-id={block.attrs.id}
-      className="flex flex-col gap-2 rounded-lg border border-border-primary bg-bg-secondary p-3 font-sans"
+      className={
+        "flex flex-col gap-2 rounded-lg border border-border-primary " +
+        "bg-bg-secondary p-3 font-sans"
+      }
     >
       <div className="flex items-center gap-2 text-text-secondary">
         {isGithub ? <FaGithub size={14} /> : <FiShield size={12} />}
@@ -41,21 +45,37 @@ export default function ApprovalBlock({ block }: Props) {
               <button
                 type="button"
                 onClick={() => setDecision("allowed_always")}
-                className="rounded-md bg-white px-2.5 py-1 text-xs font-medium text-bg-primary transition-opacity hover:opacity-90 focus:outline-none"
+                className={
+                  "rounded-md bg-white px-2.5 py-1 text-xs font-medium " +
+                  "text-bg-primary transition-opacity hover:opacity-90 " +
+                  "focus:outline-none"
+                }
               >
                 Allow always
               </button>
               <button
                 type="button"
                 onClick={() => setDecision("allowed_once")}
-                className="rounded-md border border-border-primary bg-transparent px-2.5 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover-primary hover:text-text-primary focus:outline-none focus-visible:bg-bg-hover-primary"
+                className={
+                  "rounded-md border border-border-primary bg-transparent " +
+                  "px-2.5 py-1 text-xs font-medium text-text-secondary " +
+                  "transition-colors hover:bg-bg-hover-primary " +
+                  "hover:text-text-primary focus:outline-none " +
+                  "focus-visible:bg-bg-hover-primary"
+                }
               >
                 Allow once
               </button>
               <button
                 type="button"
                 onClick={() => setDecision("rejected")}
-                className="rounded-md border border-border-primary px-2.5 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover-primary hover:text-text-primary focus:outline-none focus-visible:bg-bg-hover-primary"
+                className={
+                  "rounded-md border border-border-primary px-2.5 py-1 " +
+                  "text-xs font-medium text-text-secondary " +
+                  "transition-colors hover:bg-bg-hover-primary " +
+                  "hover:text-text-primary focus:outline-none " +
+                  "focus-visible:bg-bg-hover-primary"
+                }
               >
                 Reject
               </button>
@@ -65,14 +85,24 @@ export default function ApprovalBlock({ block }: Props) {
               <button
                 type="button"
                 onClick={() => setDecision("approved")}
-                className="rounded-md bg-white px-2.5 py-1 text-xs font-medium text-bg-primary transition-opacity hover:opacity-90 focus:outline-none"
+                className={
+                  "rounded-md bg-white px-2.5 py-1 text-xs font-medium " +
+                  "text-bg-primary transition-opacity hover:opacity-90 " +
+                  "focus:outline-none"
+                }
               >
                 Approve
               </button>
               <button
                 type="button"
                 onClick={() => setDecision("rejected")}
-                className="rounded-md border border-border-primary px-2.5 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover-primary hover:text-text-primary focus:outline-none focus-visible:bg-bg-hover-primary"
+                className={
+                  "rounded-md border border-border-primary px-2.5 py-1 " +
+                  "text-xs font-medium text-text-secondary " +
+                  "transition-colors hover:bg-bg-hover-primary " +
+                  "hover:text-text-primary focus:outline-none " +
+                  "focus-visible:bg-bg-hover-primary"
+                }
               >
                 Reject
               </button>

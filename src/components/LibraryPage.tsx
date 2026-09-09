@@ -1,9 +1,15 @@
-import { LuFileText, LuImage, LuPresentation, LuSheet, LuVideo } from "react-icons/lu";
-import { LuSearch } from "react-icons/lu";
+import {
+  LuFileText,
+  LuImage,
+  LuPresentation,
+  LuSearch,
+  LuSheet,
+  LuVideo,
+} from "react-icons/lu";
 
 import LibraryCard, { type LibraryItem } from "./LibraryCard";
 
-const libraryItems: LibraryItem[] = [
+const LIBRARY_ITEMS: LibraryItem[] = [
   {
     id: "report-q4",
     name: "Q4 Report.pdf",
@@ -45,22 +51,30 @@ const libraryItems: LibraryItem[] = [
 export default function LibraryPage() {
   return (
     <div className="mx-auto w-full max-w-2xl py-4">
-      <h1 className="text-2xl text-text-primary font-medium mb-1">Library</h1>
-      <p className="text-sm text-text-secondary font-medium mb-5">
+      <h1 className="mb-1 text-2xl font-medium text-text-primary">
+        Library
+      </h1>
+      <p className="mb-5 text-sm font-medium text-text-secondary">
         All documents and images created by your agent.
       </p>
-
-      <div className="flex items-center w-full h-10 px-4 bg-bg-secondary border border-border-primary rounded-full">
-        <LuSearch size={18} className="text-text-secondary shrink-0" />
+      <div
+        className={
+          "flex h-10 w-full items-center rounded-full border " +
+          "border-border-primary bg-bg-secondary px-4"
+        }
+      >
+        <LuSearch size={18} className="shrink-0 text-text-secondary" />
         <input
           type="text"
           placeholder="Search library..."
-          className="flex-1 ml-2 bg-transparent outline-none text-sm text-text-primary placeholder:text-text-secondary"
+          className={
+            "ml-2 flex-1 bg-transparent text-sm text-text-primary " +
+            "outline-none placeholder:text-text-secondary"
+          }
         />
       </div>
-
       <div className="mt-6 grid grid-cols-2 gap-4">
-        {libraryItems.map((item) => (
+        {LIBRARY_ITEMS.map((item) => (
           <LibraryCard key={item.id} item={item} />
         ))}
       </div>

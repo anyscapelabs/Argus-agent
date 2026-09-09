@@ -35,19 +35,19 @@ END;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct LibItem {
-  pub id: String,
-  pub name: String,
-  pub kind: String, // doc | image | presentation | sheet | video | file
-  pub ext: String,
-  pub path: String, // relative to library dir
-  pub session_id: Option<String>,
-  pub sz: i64,
-  pub created_at: String,
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub ext: String,
+    pub path: String,
+    pub session_id: Option<String>,
+    pub sz: i64,
+    pub created_at: String,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct NewLibItem {
-  pub source_path: String, // file the agent just generated
-  pub name: String,
-  pub session_id: Option<String>,
+    pub source_path: String,
+    pub name: String,
+    pub session_id: Option<String>,
 }

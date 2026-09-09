@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { gwConnect, gwDisconnect, gwListProviders, gwSyncProviders, type Provider } from "../lib/ipc";
+
+import {
+  gwConnect,
+  gwDisconnect,
+  gwListProviders,
+  gwSyncProviders,
+  type Provider,
+} from "../lib/ipc";
 
 export function useProviders() {
   const [providers, setProviders] = useState<Provider[]>([]);
@@ -14,6 +21,7 @@ export function useProviders() {
     } catch (e) {
       setErr(String(e));
     }
+
     setLoading(false);
   }, []);
 
@@ -39,12 +47,14 @@ export function useProviders() {
 
   const syncCatalog = useCallback(async () => {
     setSyncing(true);
+
     try {
       await gwSyncProviders();
       await refresh();
     } catch (e) {
       setErr(String(e));
     }
+
     setSyncing(false);
   }, [refresh]);
 

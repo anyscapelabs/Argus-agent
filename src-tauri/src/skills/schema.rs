@@ -4,8 +4,6 @@ pub const NAME_MAX: usize = 64;
 pub const DESC_MAX: usize = 512;
 pub const BODY_MAX: usize = 65_536;
 
-// skills table mirrors the .md files on disk (index only, files are the truth).
-// skill_stats holds runtime usage data that never belongs in a user-editable file.
 pub const MIGRATE: &str = r#"
 CREATE TABLE IF NOT EXISTS skills (
   name        TEXT PRIMARY KEY,
@@ -48,28 +46,28 @@ CREATE TABLE IF NOT EXISTS skill_stats (
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Skill {
-  pub name: String,
-  pub description: String,
-  pub body: String,
-  pub source: String,
-  pub origin: Option<String>,
-  pub use_count: i64,
-  pub last_used_at: Option<String>,
-  pub created_at: String,
-  pub file_mtime: i64,
+    pub name: String,
+    pub description: String,
+    pub body: String,
+    pub source: String,
+    pub origin: Option<String>,
+    pub use_count: i64,
+    pub last_used_at: Option<String>,
+    pub created_at: String,
+    pub file_mtime: i64,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct NewSkill {
-  pub name: String,
-  pub description: String,
-  pub body: String,
-  pub source: Option<String>, // 'agent' | 'user'
-  pub origin: Option<String>, // session_id that produced it
+    pub name: String,
+    pub description: String,
+    pub body: String,
+    pub source: Option<String>,
+    pub origin: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Default)]
 pub struct UpdSkill {
-  pub description: Option<String>,
-  pub body: Option<String>,
+    pub description: Option<String>,
+    pub body: Option<String>,
 }

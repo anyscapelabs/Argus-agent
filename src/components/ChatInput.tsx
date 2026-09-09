@@ -10,6 +10,7 @@ import {
   LuShieldCheck,
 } from "react-icons/lu";
 import { RiAttachment2 } from "react-icons/ri";
+
 import { useChatModels } from "../hooks/useChatModels";
 import type { ChatModel } from "../lib/ipc";
 import Dropdown, { type DropdownItem } from "./Dropdown";
@@ -53,7 +54,10 @@ export default function ChatInput({
   const selected = model ?? picked;
 
   useEffect(() => {
-    if (model !== undefined && model !== null) return; // parent pinned a model
+    if (model !== undefined && model !== null) {
+      return;
+    }
+
     if (!picked && models.length > 0) {
       setPicked(models[0]);
       onModelChange?.(models[0]);
@@ -62,21 +66,43 @@ export default function ChatInput({
 
   useEffect(() => {
     const textarea = textareaRef.current;
-    if (!textarea) return;
+    if (!textarea) {
+      return;
+    }
 
     textarea.style.height = "auto";
     const next = Math.min(textarea.scrollHeight, MAX_HEIGHT);
     textarea.style.height = `${next}px`;
-    textarea.style.overflowY = textarea.scrollHeight > MAX_HEIGHT ? "auto" : "hidden";
+    textarea.style.overflowY =
+      textarea.scrollHeight > MAX_HEIGHT ? "auto" : "hidden";
   }, [value]);
 
   const empty = value.trim().length === 0;
 
   const addItems: DropdownItem[] = [
-    { label: "Add files or photos", Icon: RiAttachment2, onClick: () => console.log("attach") },
-    { label: "Add from library", Icon: LuLibrary, hasSubmenu: true, onClick: () => console.log("library") },
-    { label: "Add project", Icon: LuFolderOpen, hasSubmenu: true, onClick: () => console.log("project") },
-    { label: "Connector", Icon: LuPlug, hasSubmenu: true, onClick: () => console.log("connector") },
+    {
+      label: "Add files or photos",
+      Icon: RiAttachment2,
+      onClick: () => console.log("attach"),
+    },
+    {
+      label: "Add from library",
+      Icon: LuLibrary,
+      hasSubmenu: true,
+      onClick: () => console.log("library"),
+    },
+    {
+      label: "Add project",
+      Icon: LuFolderOpen,
+      hasSubmenu: true,
+      onClick: () => console.log("project"),
+    },
+    {
+      label: "Connector",
+      Icon: LuPlug,
+      hasSubmenu: true,
+      onClick: () => console.log("connector"),
+    },
     {
       label: "Web search",
       Icon: LuGlobe,
@@ -87,13 +113,26 @@ export default function ChatInput({
   ];
 
   const permissionItems: DropdownItem[] = [
-    { label: PERM_LABEL.never, onClick: () => onPermissionChange?.("never"), active: permission === "never" },
-    { label: PERM_LABEL.ask, onClick: () => onPermissionChange?.("ask"), active: permission === "ask" },
+    {
+      label: PERM_LABEL.never,
+      onClick: () => onPermissionChange?.("never"),
+      active: permission === "never",
+    },
+    {
+      label: PERM_LABEL.ask,
+      onClick: () => onPermissionChange?.("ask"),
+      active: permission === "ask",
+    },
   ];
 
   const modelItems: DropdownItem[] =
     models.length === 0
-      ? [{ label: loading ? "Loading models…" : "No models enabled", disabled: true }]
+      ? [
+          {
+            label: loading ? "Loading models…" : "No models enabled",
+            disabled: true,
+          },
+        ]
       : models.map((m) => ({
           label: m.displayName,
           onClick: () => {
@@ -104,21 +143,25 @@ export default function ChatInput({
         }));
 
   return (
-    <div className="flex w-[700px] max-w-full flex-col rounded-2xl bg-bg-secondary border border-border-primary p-3 shadow-4xl">
+    <div className="flex w-[700px] max-w-full flex-col rounded-2xl border border-border-primary bg-bg-secondary p-3 shadow-4xl">
       <textarea
         ref={textareaRef}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault();
-            if (!empty) onSubmit();
+          if (event.key !== "Enter" || event.shiftKey) {
+            return;
+          }
+
+          event.preventDefault();
+          if (!empty) {
+            onSubmit();
           }
         }}
         placeholder={placeholder}
         rows={1}
         style={{ height: COLLAPSED_HEIGHT, lineHeight: "20px" }}
-        className="min-h-[44px] w-full resize-none bg-transparent px-2 text-sm font-medium text-text-primary placeholder:text-text-secondary placeholder:font-normal focus:outline-none"
+        className="min-h-[44px] w-full resize-none bg-transparent px-2 text-sm font-medium text-text-primary placeholder:font-normal placeholder:text-text-secondary focus:outline-none"
       />
 
       <div className="mt-2 flex items-center justify-between gap-2">
@@ -153,11 +196,14 @@ export default function ChatInput({
                 type="button"
                 onClick={toggle}
                 aria-expanded={open}
-                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-transparent px-3 text-sm font-medium text-text-secondary hover:bg-bg-hover-secondary hover:text-text-primary transition-colors"
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-transparent px-3 text-sm font-medium text-text-secondary transition-colors hover:bg-bg-hover-secondary hover:text-text-primary"
               >
                 <LuShieldCheck size={14} className="shrink-0" />
                 {PERM_LABEL[permission] ?? permission}
-                <FiChevronDown size={12} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+                <FiChevronDown
+                  size={12}
+                  className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+                />
               </button>
             )}
           />
@@ -173,10 +219,13 @@ export default function ChatInput({
                 type="button"
                 onClick={toggle}
                 aria-expanded={open}
-                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-transparent px-3 text-sm font-medium text-text-secondary hover:bg-bg-hover-secondary hover:text-text-primary transition-colors"
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-transparent px-3 text-sm font-medium text-text-secondary transition-colors hover:bg-bg-hover-secondary hover:text-text-primary"
               >
                 {selected?.displayName ?? "Model"}
-                <FiChevronDown size={12} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+                <FiChevronDown
+                  size={12}
+                  className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+                />
               </button>
             )}
           />
@@ -185,7 +234,7 @@ export default function ChatInput({
             type="button"
             aria-label="Voice input"
             onClick={() => console.log("mic")}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-secondary hover:bg-bg-hover-primary hover:text-text-primary transition-colors"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-bg-hover-primary hover:text-text-primary"
           >
             <LuMic size={16} />
           </button>
@@ -195,7 +244,10 @@ export default function ChatInput({
             aria-label="Send"
             disabled={empty}
             onClick={() => {
-              if (empty) return;
+              if (empty) {
+                return;
+              }
+
               onSubmit();
             }}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-bg-hover-secondary text-text-secondary transition-colors hover:bg-bg-hover-primary focus:outline-none focus-visible:bg-bg-hover-primary disabled:bg-bg-hover-secondary disabled:text-text-secondary enabled:bg-white enabled:text-bg-primary enabled:hover:opacity-90"
@@ -204,8 +256,6 @@ export default function ChatInput({
           </button>
         </div>
       </div>
-
-
     </div>
   );
 }

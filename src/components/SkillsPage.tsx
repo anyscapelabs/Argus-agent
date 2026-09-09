@@ -3,7 +3,7 @@ import { LuSearch } from "react-icons/lu";
 
 import SkillCard, { type Skill } from "./SkillCard";
 
-const skills: Skill[] = [
+const SKILLS: Skill[] = [
   {
     id: "email-triage",
     name: "Email Triage",
@@ -43,33 +43,43 @@ type SkillsPageProps = {
 export default function SkillsPage({ onAddSkill }: SkillsPageProps) {
   return (
     <div className="mx-auto w-full max-w-2xl py-4">
-      <div className="flex items-center justify-between mb-1">
-        <h1 className="text-2xl text-text-primary font-medium">Skills</h1>
+      <div className="mb-1 flex items-center justify-between">
+        <h1 className="text-2xl font-medium text-text-primary">Skills</h1>
         <button
           type="button"
           onClick={onAddSkill ?? (() => console.log("add skill"))}
-          className="inline-flex items-center justify-center gap-1 rounded-lg bg-accent px-2 py-1 text-xs font-medium text-bg-primary hover:opacity-90 transition-opacity cursor-pointer"
+          className={
+            "inline-flex items-center justify-center gap-1 rounded-lg " +
+            "bg-accent px-2 py-1 text-xs font-medium text-bg-primary " +
+            "transition-opacity hover:opacity-90 cursor-pointer"
+          }
           aria-label="Add skill"
         >
           Add
           <FiChevronDown size={16} />
         </button>
       </div>
-      <p className="text-sm text-text-secondary font-medium mb-5">
+      <p className="mb-5 text-sm font-medium text-text-secondary">
         Equip Argus with specialized capabilities.
       </p>
-
-      <div className="flex items-center w-full h-10 px-4 bg-bg-secondary border border-border-primary rounded-full">
-        <LuSearch size={18} className="text-text-secondary shrink-0" />
+      <div
+        className={
+          "flex h-10 w-full items-center rounded-full border " +
+          "border-border-primary bg-bg-secondary px-4"
+        }
+      >
+        <LuSearch size={18} className="shrink-0 text-text-secondary" />
         <input
           type="text"
           placeholder="Search skills..."
-          className="flex-1 ml-2 bg-transparent outline-none text-sm text-text-primary placeholder:text-text-secondary"
+          className={
+            "ml-2 flex-1 bg-transparent text-sm text-text-primary " +
+            "outline-none placeholder:text-text-secondary"
+          }
         />
       </div>
-
       <div className="mt-6 grid grid-cols-2 gap-4">
-        {skills.map((skill) => (
+        {SKILLS.map((skill) => (
           <SkillCard key={skill.id} skill={skill} />
         ))}
       </div>

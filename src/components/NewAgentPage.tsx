@@ -1,9 +1,15 @@
 import { useState } from "react";
+
 import type { ChatModel } from "../lib/ipc";
 import ChatInput from "./ChatInput";
 
 type NewAgentPageProps = {
-  onSend: (text: string, model: ChatModel | null, permission: string, webSearch: boolean) => void;
+  onSend: (
+    text: string,
+    model: ChatModel | null,
+    permission: string,
+    webSearch: boolean,
+  ) => void;
 };
 
 export default function NewAgentPage({ onSend }: NewAgentPageProps) {

@@ -19,6 +19,7 @@ type Props = {
   side?: "top" | "bottom";
   panelClassName?: string;
   header?: ReactNode;
+  dividers?: boolean;
 };
 
 export default function Dropdown({
@@ -28,6 +29,7 @@ export default function Dropdown({
   side = "top",
   panelClassName,
   header,
+  dividers = true,
 }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -72,7 +74,7 @@ export default function Dropdown({
             `${panelClassName ?? ""}`
           }
         >
-          {header !== undefined && <div className="px-2 pt-1.5">{header}</div>}
+          {header !== undefined && <div className="px-2">{header}</div>}
           {items.map((it, i) => {
             const Icon = it.Icon;
             const isActive =
@@ -81,7 +83,9 @@ export default function Dropdown({
 
             return (
               <div key={`${it.label}-${i}`}>
-                {i > 0 && <div className="my-1 h-px bg-border-primary" />}
+                {dividers && i > 0 && (
+                  <div className="my-1 h-px bg-border-primary" />
+                )}
                 <button
                   type="button"
                   role="menuitem"

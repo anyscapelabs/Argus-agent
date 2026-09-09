@@ -234,6 +234,16 @@ export default function ChatDetailPage({ sessionId }: Props) {
                 <AgentBubble
                   text={text}
                   caret={live}
+                  liveTerm={
+                    live
+                      ? {
+                          term: turn?.term ?? {},
+                          termCode: turn?.termCode ?? {},
+                          approval: turn?.approval ?? null,
+                          sessionId,
+                        }
+                      : undefined
+                  }
                   vote={live ? null : voteOf(last?.id ?? "")}
                   onVote={(v) => {
                     if (last === undefined) {

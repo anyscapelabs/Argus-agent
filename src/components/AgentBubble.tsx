@@ -21,6 +21,7 @@ import {
 
 import type { BlockNode, InlineNode, XmlTree } from "../lib/agentXml";
 import { parse } from "../lib/agentXml";
+import { type PendingApproval } from "../stores/sessions";
 import ActionBlock from "./agent/ActionBlock";
 import AlertBanner from "./agent/AlertBanner";
 import ApprovalBlock from "./agent/ApprovalBlock";
@@ -36,6 +37,13 @@ import TerminalBlock from "./agent/TerminalBlock";
 import ThinkingBlock from "./agent/ThinkingBlock";
 import WebSearchGroup, { WEB_ACTIONS } from "./agent/WebSearchGroup";
 
+type LiveTerm = {
+  term: Record<number, string>;
+  termCode: Record<number, number>;
+  approval: PendingApproval | null;
+  sessionId: string;
+};
+
 type Props = {
   children?: React.ReactNode;
   text?: string;
@@ -43,6 +51,7 @@ type Props = {
   vote?: string | null;
   onVote?: (next: "up" | "down" | null) => void;
   onRetry?: () => void;
+  liveTerm?: LiveTerm;
 };
 
 const HEADING_CLS: Record<string, string> = {
@@ -269,10 +278,19 @@ function diffStats(blk: BlockNode): { added: number; removed: number } {
   return { added, removed };
 }
 
+type LiveAction = {
+  idx: number;
+  output: string;
+  code: number | undefined;
+  approval: PendingApproval | null;
+  sessionId: string;
+};
+
 function renderBlk(
   blk: BlockNode,
   key: string,
   live: boolean,
+  act?: LiveAction,
 ): React.ReactNode {
   if (blk.kind === "paragraph") {
     const raw = blk.children.map((c) => c.value).join("");
@@ -361,7 +379,17 @@ function renderBlk(
     case "plan":
       return <PlanBlock key={key} block={blk} />;
     case "action":
-      return <ActionBlock key={key} block={blk} live={live} />;
+      return (
+        <ActionBlock
+          key={key}
+          block={blk}
+          live={live}
+          output={act?.output}
+          code={act?.code}
+          approval={act?.approval}
+          sessionId={act?.sessionId}
+        />
+      );
     case "approval":
       return <ApprovalBlock key={key} block={blk} />;
     case "diff":
@@ -386,7 +414,11 @@ function renderBlk(
   }
 }
 
-function renderTree(tree: XmlTree, live: boolean): React.ReactNode[] {
+function renderTree(
+  tree: XmlTree,
+  live: boolean,
+  liveTerm?: LiveTerm,
+): React.ReactNode[] {
   const diffs = new Map<string, { added: number; removed: number }>();
   const paths = new Set<string>();
 
@@ -405,6 +437,18 @@ function renderTree(tree: XmlTree, live: boolean): React.ReactNode[] {
   let gIdx = 0;
   let pIdx = 0;
   let wIdx = 0;
+  let aIdx = 0;
+
+  const actFor = (idx: number): LiveAction | undefined =>
+    liveTerm === undefined
+      ? undefined
+      : {
+          idx,
+          output: liveTerm.term[idx] ?? "",
+          code: liveTerm.termCode[idx],
+          approval: liveTerm.approval?.idx === idx ? liveTerm.approval : null,
+          sessionId: liveTerm.sessionId,
+        };
 
   while (i < tree.length) {
     const blk = tree[i];
@@ -417,6 +461,7 @@ function renderTree(tree: XmlTree, live: boolean): React.ReactNode[] {
         WEB_ACTIONS.has(tree[i].attrs.tool ?? "")
       ) {
         grp.push(tree[i++]);
+        aIdx++;
       }
 
       out.push(<WebSearchGroup key={`web-${wIdx++}`} blocks={grp} live={live} />);
@@ -491,6 +536,14 @@ function renderTree(tree: XmlTree, live: boolean): React.ReactNode[] {
       blk.attrs.tool === "filesystem.edit" &&
       paths.size > 0
     ) {
+      aIdx++;
+      i++;
+      continue;
+    }
+
+    if (blk.tag === "action") {
+      out.push(renderBlk(blk, `b-${i}`, live, actFor(aIdx)));
+      aIdx++;
       i++;
       continue;
     }
@@ -509,6 +562,7 @@ export default function AgentBubble({
   vote,
   onVote,
   onRetry,
+  liveTerm,
 }: Props) {
   const tree: XmlTree | null = useMemo(
     () => (text !== undefined ? parse(text) : null),
@@ -537,7 +591,7 @@ export default function AgentBubble({
       }`}
     >
       {tree ? (
-        renderTree(tree, !!caret)
+        renderTree(tree, !!caret, caret ? liveTerm : undefined)
       ) : (
         <div className="font-sans text-[16px] font-light">{children}</div>
       )}

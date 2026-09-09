@@ -109,7 +109,10 @@ export type StreamEvent =
       tok_out: number;
       cost: number;
     }
-  | { type: "err"; msg: string };
+  | { type: "err"; msg: string }
+  | { type: "term"; idx: number; chunk: string }
+  | { type: "term_end"; idx: number; code: number }
+  | { type: "approval"; id: string; idx: number; command: string };
 
 export const sessCreateSession = (
   title: string,
@@ -168,6 +171,11 @@ export const sessSupersedeFrom = (
 
 export const sessCleanDangling = (sessionId: string) =>
   invoke<number>("sess_clean_dangling", { sessionId });
+
+export const sessResolveApproval = (
+  approvalId: string,
+  allow: boolean,
+) => invoke<void>("sess_resolve_approval", { approvalId, allow });
 
 export const sessChatStream = (
   sessionId: string,

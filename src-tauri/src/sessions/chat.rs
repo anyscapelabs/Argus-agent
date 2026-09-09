@@ -1,3 +1,6 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
+
 use rusqlite::{Connection, params};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -15,6 +18,10 @@ use super::store;
 const DEFAULT_TITLE: &str = "New chat";
 const MAX_STEPS: usize = 8;
 const RESULT_CLIP: usize = 4000;
+const TERM_TIMEOUT: u64 = 300;
+const DENIED_CODE: i64 = -2;
+
+static APPROVAL_SEQ: AtomicU64 = AtomicU64::new(0);
 
 const TITLE_SYS: &str =
     "You are the title generator for Argus, a personal AI agent the user chats with. \
@@ -110,6 +117,71 @@ fn auto_model(conn: &Connection) -> Result<String, String> {
         .ok_or("auto mode: no enabled models".into())
 }
 
+fn approval_id() -> String {
+    let n = APPROVAL_SEQ.fetch_add(1, Ordering::Relaxed);
+    let t = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+
+    format!("ap{t}-{n}")
+}
+
+async fn ask_approval(
+    gw: &Gateway,
+    chan: &Channel<StreamEvent>,
+    id: &str,
+    idx: u32,
+    cmd: &str,
+) -> bool {
+    let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
+
+    if let Ok(mut map) = gw.approvals.lock() {
+        map.insert(id.into(), tx);
+    }
+
+    let _ = chan.send(StreamEvent::Approval {
+        id: id.into(),
+        idx,
+        command: cmd.into(),
+    });
+
+    let allow = matches!(
+        tokio::time::timeout(Duration::from_secs(TERM_TIMEOUT), rx).await,
+        Ok(Ok(true))
+    );
+
+    if let Ok(mut map) = gw.approvals.lock() {
+        map.remove(id);
+    }
+
+    allow
+}
+
+fn esc_attr(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+}
+
+fn terminal_block(idx: usize, cmd: &str, code: i64, out: &str) -> String {
+    let status = if code == 0 { "ok" } else { "error" };
+    let body = out.replace('&', "&amp;").replace('<', "&lt;");
+
+    format!(
+        "<terminal id=\"a{idx}\" command=\"{}\" status=\"{status}\">{}</terminal>",
+        esc_attr(cmd),
+        body.trim()
+    )
+}
+
+fn exit_of(body: &str) -> i64 {
+    body.strip_prefix("exit ")
+        .and_then(|r| r.split_once('\n'))
+        .and_then(|(c, _)| c.parse::<i64>().ok())
+        .unwrap_or(-1)
+}
+
 fn sanitize_tags(s: &str) -> String {
     let mut t = s.to_string();
     t = t
@@ -171,6 +243,7 @@ pub async fn send(
     };
 
     let mut tok_in_sum = 0i64;
+    let mut act_base = 0usize;
 
     for _step in 0..MAX_STEPS {
         let mut req = {
@@ -197,21 +270,21 @@ pub async fn send(
         let actions = tools::parse_actions(&text);
         let done = actions.is_empty();
 
-        {
+        let asst = {
             let conn = gw.conn.lock().map_err(|e| e.to_string())?;
             store::add_msg(
                 &conn,
                 &NewMsg {
                     session_id: session_id.into(),
                     role: "assistant".into(),
-                    content: text,
+                    content: text.clone(),
                     model_id: Some(stats.model_id),
                     provider_id: Some(stats.provider_id),
                     tok_in: Some(stats.tok_in),
                     tok_out: Some(stats.tok_out),
                 },
-            )?;
-        }
+            )?
+        };
 
         if done {
             break;
@@ -219,10 +292,55 @@ pub async fn send(
 
         let _ = chan.send(StreamEvent::Step);
 
-        for a in &actions {
-            let (status, body) = match tools::exec(&a.tool, &a.args, &perm, web).await {
-                Ok(t) => ("ok", t),
-                Err(e) => ("err", e),
+        let mut edits: Vec<(usize, usize, String)> = vec![];
+
+        for (i, a) in actions.iter().enumerate() {
+            let idx = act_base + i;
+            let is_term = a.tool == "terminal" || a.tool == "bash.run";
+
+            let cmd = if is_term {
+                serde_json::from_str::<serde_json::Value>(&a.args)
+                    .ok()
+                    .and_then(|v| v["command"].as_str().map(Into::into))
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+
+            let mut allow = perm != "ask";
+            let mut denied = false;
+
+            if !allow && is_term && tools::is_mutating(&a.tool) {
+                allow = ask_approval(gw, &chan, &approval_id(), idx as u32, &cmd).await;
+                denied = !allow;
+
+                if denied {
+                    let _ = chan.send(StreamEvent::TermEnd {
+                        idx: idx as u32,
+                        code: DENIED_CODE,
+                    });
+                }
+            }
+
+            let (status, body, code) = if denied {
+                ("err", "command denied by user".to_string(), DENIED_CODE)
+            } else {
+                match tools::exec(
+                    &a.tool,
+                    &a.args,
+                    &perm,
+                    web,
+                    allow,
+                    Some((&chan, idx as u32)),
+                )
+                .await
+                {
+                    Ok(t) => {
+                        let code = exit_of(&t);
+                        ("ok", t, code)
+                    }
+                    Err(e) => ("err", e, -1),
+                }
             };
 
             let msg = format!(
@@ -232,20 +350,60 @@ pub async fn send(
                 truncate_chars(&body, RESULT_CLIP)
             );
 
-            let conn = gw.conn.lock().map_err(|e| e.to_string())?;
-            store::add_msg(
-                &conn,
-                &NewMsg {
-                    session_id: session_id.into(),
-                    role: "user".into(),
-                    content: msg,
-                    model_id: None,
-                    provider_id: None,
-                    tok_in: None,
-                    tok_out: None,
-                },
-            )?;
+            {
+                let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+                store::add_msg(
+                    &conn,
+                    &NewMsg {
+                        session_id: session_id.into(),
+                        role: "user".into(),
+                        content: msg,
+                        model_id: None,
+                        provider_id: None,
+                        tok_in: None,
+                        tok_out: None,
+                    },
+                )?;
+            }
+
+            if is_term {
+                if status == "ok" {
+                    let _ = chan.send(StreamEvent::TermEnd {
+                        idx: idx as u32,
+                        code,
+                    });
+                }
+
+                let out = if denied {
+                    "command denied by user".to_string()
+                } else {
+                    body
+                        .strip_prefix("exit ")
+                        .and_then(|r| r.split_once('\n'))
+                        .map(|(_, o)| o.to_string())
+                        .unwrap_or_else(|| body.clone())
+                };
+
+                edits.push((a.start, a.end, terminal_block(idx, &cmd, code, &out)));
+            }
         }
+
+        if !edits.is_empty() {
+            let mut updated = text;
+
+            for (s, e, blk) in edits.into_iter().rev() {
+                updated.replace_range(s..e, &blk);
+            }
+
+            let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+            conn.execute(
+                "UPDATE messages SET content = ?2 WHERE id = ?1",
+                params![&asst.id, &updated],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+
+        act_base += actions.len();
     }
 
     {
@@ -314,6 +472,27 @@ pub async fn sess_chat_stream(
     on_event: Channel<StreamEvent>,
 ) -> Result<(), String> {
     send(&gw, &app, &session_id, &content, &on_event).await
+}
+
+#[tauri::command]
+pub fn sess_resolve_approval(
+    gw: State<'_, Gateway>,
+    approval_id: String,
+    allow: bool,
+) -> Result<(), String> {
+    let tx = gw
+        .approvals
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove(&approval_id);
+
+    match tx {
+        Some(tx) => {
+            let _ = tx.send(allow);
+            Ok(())
+        }
+        None => Err("unknown approval".into()),
+    }
 }
 
 #[cfg(test)]

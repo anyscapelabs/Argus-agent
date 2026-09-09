@@ -74,7 +74,7 @@ export default function Dropdown({
     const el = listRef.current;
 
     if (!el || maxH === undefined || el.scrollHeight <= el.clientHeight) {
-      setBar(null);
+      setBar((prev) => (prev === null ? prev : null));
       return;
     }
 
@@ -82,12 +82,14 @@ export default function Dropdown({
     const h = Math.max((vis / el.scrollHeight) * vis, THUMB_MIN);
     const top = (el.scrollTop / el.scrollHeight) * vis;
 
-    setBar({ top, h });
+    setBar((prev) =>
+      prev !== null && prev.top === top && prev.h === h ? prev : { top, h },
+    );
   };
 
   useLayoutEffect(() => {
     syncBar();
-  });
+  }, [open, items, maxH]);
 
   const onThumbDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const el = listRef.current;

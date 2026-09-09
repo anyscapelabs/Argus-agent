@@ -1,4 +1,4 @@
-use rusqlite::params;
+use rusqlite::{Connection, params};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -175,9 +175,9 @@ pub async fn send(
     for _step in 0..MAX_STEPS {
         let mut req = {
             let conn = gw.conn.lock().map_err(|e| e.to_string())?;
-            let p = project(&conn, session_id)?;
+            let mut p = project(&conn, session_id)?;
             if p.model_id.is_none() {
-                return Err("session has no model set".into());
+                p.model_id = Some(auto_model(&conn)?);
             }
 
             let mut r = p.chat_req();

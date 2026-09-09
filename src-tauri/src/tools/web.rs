@@ -37,7 +37,10 @@ pub async fn search(args: &Value) -> Result<String, String> {
         .map_err(|e| format!("search request failed: {e}"))?;
 
     let status = resp.status();
-    let html = resp.text().await.map_err(|e| format!("search read failed: {e}"))?;
+    let html = resp
+        .text()
+        .await
+        .map_err(|e| format!("search read failed: {e}"))?;
 
     if !status.is_success() {
         return Err(format!("search engine answered {status} — try again later"));
@@ -101,7 +104,9 @@ fn parse_results(html: &str) -> Vec<(String, String, String)> {
         h.snippet = s;
     }
 
-    hits.into_iter().map(|h| (h.title, h.url, h.snippet)).collect()
+    hits.into_iter()
+        .map(|h| (h.title, h.url, h.snippet))
+        .collect()
 }
 
 fn clean_url(href: &str) -> String {
@@ -185,11 +190,17 @@ pub async fn read(args: &Value) -> Result<String, String> {
         return Err("url must start with http:// or https://".into());
     }
 
-    let via_jina = client().get(format!("https://r.jina.ai/{url}")).send().await;
+    let via_jina = client()
+        .get(format!("https://r.jina.ai/{url}"))
+        .send()
+        .await;
 
     if let Ok(resp) = via_jina {
         if resp.status().is_success() {
-            let body = resp.text().await.map_err(|e| format!("page read failed: {e}"))?;
+            let body = resp
+                .text()
+                .await
+                .map_err(|e| format!("page read failed: {e}"))?;
             let body = body.trim().to_string();
             if !body.is_empty() {
                 return Ok(crate::tools::clip(body));
@@ -211,7 +222,10 @@ pub async fn read(args: &Value) -> Result<String, String> {
         .to_string();
 
     let status = resp.status();
-    let body = resp.text().await.map_err(|e| format!("page read failed: {e}"))?;
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("page read failed: {e}"))?;
 
     if !status.is_success() {
         return Err(format!("page answered {status}"));

@@ -22,7 +22,14 @@ impl CallErr {
 }
 
 pub(crate) fn retry_after_secs(resp: &reqwest::Response) -> Option<u64> {
-    let v = resp.headers().get(reqwest::header::RETRY_AFTER)?.to_str().ok()?.trim().parse().ok()?;
+    let v = resp
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
     Some(v)
 }
 
@@ -49,8 +56,12 @@ pub async fn dispatch_stream(
     let lc = prov.compatible.to_lowercase();
 
     match lc.as_str() {
-        "openai" => openai_compat::stream(http, &prov.base_url, tok, remote_id, msgs, on_delta).await,
-        "anthropic" => anthropic::stream(http, &prov.base_url, tok, remote_id, msgs, on_delta).await,
+        "openai" => {
+            openai_compat::stream(http, &prov.base_url, tok, remote_id, msgs, on_delta).await
+        }
+        "anthropic" => {
+            anthropic::stream(http, &prov.base_url, tok, remote_id, msgs, on_delta).await
+        }
         _ => Err(CallErr {
             status: None,
             msg: format!("unknown compatible dialect {}", prov.compatible),
@@ -84,9 +95,7 @@ pub fn is_local(base_url: &str) -> bool {
         .trim_start_matches("http://")
         .trim_start_matches("https://");
 
-    host.starts_with("localhost")
-        || host.starts_with("127.0.0.1")
-        || host.starts_with("[::1]")
+    host.starts_with("localhost") || host.starts_with("127.0.0.1") || host.starts_with("[::1]")
 }
 
 pub async fn verify_key(http: &Client, prov: &Provider, key: &str) -> Result<(), String> {
@@ -105,7 +114,9 @@ pub async fn verify_key(http: &Client, prov: &Provider, key: &str) -> Result<(),
     let mut req = http.post(&url).json(&body);
 
     if prov.compatible == "Anthropic" {
-        req = req.header("x-api-key", key).header("anthropic-version", "2023-06-01");
+        req = req
+            .header("x-api-key", key)
+            .header("anthropic-version", "2023-06-01");
     } else {
         req = req.bearer_auth(key);
     }

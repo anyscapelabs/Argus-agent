@@ -104,7 +104,8 @@ pub fn list_sessions(conn: &Connection, folder_id: Option<&str>) -> Result<Vec<S
     }
     .map_err(|e| e.to_string())?;
 
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 pub fn save_session(conn: &Connection, s: &Session) -> Result<(), String> {
@@ -253,7 +254,8 @@ pub fn list_msgs(conn: &Connection, session_id: &str) -> Result<Vec<Msg>, String
         .query_map(params![session_id], row_msg)
         .map_err(|e| e.to_string())?;
 
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 pub fn set_vote(
@@ -297,13 +299,22 @@ pub fn clean_dangling(conn: &Connection, session_id: &str) -> Result<usize, Stri
 pub fn create_folder(conn: &Connection, name: &str) -> Result<Folder, String> {
     let id = Uuid::new_v4().to_string();
 
-    conn.execute("INSERT INTO folders (id, name) VALUES (?1, ?2)", params![id, name])
-        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO folders (id, name) VALUES (?1, ?2)",
+        params![id, name],
+    )
+    .map_err(|e| e.to_string())?;
 
     conn.query_row(
         "SELECT id, name, created_at FROM folders WHERE id = ?1",
         params![id],
-        |r| Ok(Folder { id: r.get(0)?, name: r.get(1)?, created_at: r.get(2)? }),
+        |r| {
+            Ok(Folder {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                created_at: r.get(2)?,
+            })
+        },
     )
     .map_err(|e| e.to_string())
 }
@@ -315,25 +326,36 @@ pub fn list_folders(conn: &Connection) -> Result<Vec<Folder>, String> {
 
     let rows = stmt
         .query_map([], |r| {
-            Ok(Folder { id: r.get(0)?, name: r.get(1)?, created_at: r.get(2)? })
+            Ok(Folder {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                created_at: r.get(2)?,
+            })
         })
         .map_err(|e| e.to_string())?;
 
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 pub fn export_json(conn: &Connection, id: &str) -> Result<String, String> {
     let session = get_session(conn, id)?;
 
     let mut stmt = conn
-        .prepare("SELECT role, content FROM messages WHERE session_id = ?1 AND active = 1 ORDER BY seq")
+        .prepare(
+            "SELECT role, content FROM messages WHERE session_id = ?1 AND active = 1 ORDER BY seq",
+        )
         .map_err(|e| e.to_string())?;
 
     let rows = stmt
-        .query_map(params![id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .query_map(params![id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })
         .map_err(|e| e.to_string())?;
 
-    let msgs = rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    let msgs = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
 
     let messages: Vec<serde_json::Value> = msgs
         .into_iter()

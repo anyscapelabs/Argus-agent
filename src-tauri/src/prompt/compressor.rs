@@ -114,11 +114,17 @@ pub async fn compact(gw: &Gateway, session_id: &str) -> Result<Option<Compaction
 
         let rows = stmt
             .query_map(params![session_id, compact_seq], |r| {
-                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
             })
             .map_err(|e| e.to_string())?;
 
-        let window = rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+        let window = rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
         (cfg, model_id, compact_seq, prev_summary, window)
     };
 
@@ -138,8 +144,9 @@ pub async fn compact(gw: &Gateway, session_id: &str) -> Result<Option<Compaction
         return Ok(None);
     }
 
-    let tail_budget =
-        (context as f64 * cfg.threshold_for(model_id.as_deref().unwrap_or("")) * cfg.target_ratio) as i64;
+    let tail_budget = (context as f64
+        * cfg.threshold_for(model_id.as_deref().unwrap_or(""))
+        * cfg.target_ratio) as i64;
 
     let mut acc = 0i64;
     let mut tail_start = window.len();
@@ -180,7 +187,10 @@ pub async fn compact(gw: &Gateway, session_id: &str) -> Result<Option<Compaction
 
     let mut transcript = String::new();
     for (seq, role, content) in middle {
-        transcript.push_str(&format!("[{seq}] {role}: {}\n", truncate_chars(content, 1000)));
+        transcript.push_str(&format!(
+            "[{seq}] {role}: {}\n",
+            truncate_chars(content, 1000)
+        ));
     }
 
     let user = match &prev_summary {

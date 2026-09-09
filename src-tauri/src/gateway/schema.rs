@@ -193,8 +193,13 @@ pub struct ChatResp {
 #[derive(Serialize, Clone, Debug)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StreamEvent {
-    Status { provider_id: String, attempt: i64 },
-    Delta { text: String },
+    Status {
+        provider_id: String,
+        attempt: i64,
+    },
+    Delta {
+        text: String,
+    },
     Reset,
     Step,
     Done {
@@ -206,7 +211,9 @@ pub enum StreamEvent {
         tok_out: i64,
         cost: f64,
     },
-    Err { msg: String },
+    Err {
+        msg: String,
+    },
 }
 
 #[derive(Debug, Default)]

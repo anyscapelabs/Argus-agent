@@ -49,7 +49,11 @@ pub fn sess_set_model(
 }
 
 #[tauri::command]
-pub fn sess_set_web_search(gw: State<'_, Gateway>, session_id: String, on: bool) -> Result<(), String> {
+pub fn sess_set_web_search(
+    gw: State<'_, Gateway>,
+    session_id: String,
+    on: bool,
+) -> Result<(), String> {
     let conn = gw.conn.lock().map_err(|e| e.to_string())?;
     store::set_web_search(&conn, &session_id, on)
 }

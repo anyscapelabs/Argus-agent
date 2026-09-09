@@ -152,7 +152,8 @@ pub fn list(conn: &Connection, kind: Option<&str>) -> Result<Vec<LibItem>, Strin
     }
     .map_err(|e| e.to_string())?;
 
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 pub fn get(conn: &Connection, dir: &Path, id: &str) -> Result<LibItem, String> {
@@ -177,7 +178,9 @@ pub fn get(conn: &Connection, dir: &Path, id: &str) -> Result<LibItem, String> {
 
 pub fn delete(conn: &Connection, dir: &Path, id: &str) -> Result<(), String> {
     let row: Option<String> = conn
-        .query_row("SELECT path FROM library WHERE id = ?1", params![id], |r| r.get(0))
+        .query_row("SELECT path FROM library WHERE id = ?1", params![id], |r| {
+            r.get(0)
+        })
         .optional()
         .map_err(|e| e.to_string())?;
 
@@ -219,7 +222,8 @@ pub fn search(conn: &Connection, query: &str, limit: i64) -> Result<Vec<LibItem>
         .query_map(params![fts_q, limit], row_item)
         .map_err(|e| e.to_string())?;
 
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 pub fn sync(conn: &Connection, dir: &Path) -> Result<(), String> {
@@ -228,9 +232,14 @@ pub fn sync(conn: &Connection, dir: &Path) -> Result<(), String> {
     }
 
     let known: Vec<String> = {
-        let mut stmt = conn.prepare("SELECT path FROM library").map_err(|e| e.to_string())?;
-        let rows = stmt.query_map([], |r| r.get(0)).map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+        let mut stmt = conn
+            .prepare("SELECT path FROM library")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| r.get(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?
     };
 
     let known: std::collections::HashSet<String> = known.into_iter().collect();

@@ -25,7 +25,8 @@ fn reconcile_connected(conn: &Connection) -> Result<(), String> {
         let map = stmt
             .query_map([], |r| r.get::<_, String>(0))
             .map_err(|e| e.to_string())?;
-        map.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+        map.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?
     };
 
     for id in &unnamed {
@@ -43,9 +44,12 @@ fn reconcile_connected(conn: &Connection) -> Result<(), String> {
             .prepare("SELECT id, connected FROM providers")
             .map_err(|e| e.to_string())?;
         let map = stmt
-            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? != 0)))
+            .query_map([], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? != 0))
+            })
             .map_err(|e| e.to_string())?;
-        map.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+        map.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?
     };
 
     for (id, connected) in rows {
@@ -99,11 +103,8 @@ fn ensure_cols(conn: &Connection) -> Result<(), String> {
     }
 
     if !has("request_log", "prefix_hash") {
-        conn.execute(
-            "ALTER TABLE request_log ADD COLUMN prefix_hash TEXT",
-            [],
-        )
-        .map_err(|e| e.to_string())?;
+        conn.execute("ALTER TABLE request_log ADD COLUMN prefix_hash TEXT", [])
+            .map_err(|e| e.to_string())?;
     }
 
     Ok(())
@@ -189,7 +190,8 @@ pub fn list_providers(conn: &Connection) -> Result<Vec<Provider>, String> {
         })
         .map_err(|e| e.to_string())?;
 
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 pub fn add_model(conn: &Connection, m: &ModelEntry) -> Result<(), String> {
@@ -221,7 +223,8 @@ pub fn list_models(conn: &Connection) -> Result<Vec<ModelEntry>, String> {
         })
         .map_err(|e| e.to_string())?;
 
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 pub fn link_model(conn: &Connection, a: &Avail) -> Result<(), String> {
@@ -266,7 +269,8 @@ pub fn list_provider_models(conn: &Connection) -> Result<Vec<ProviderModel>, Str
         })
         .map_err(|e| e.to_string())?;
 
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 pub fn list_chat_models(conn: &Connection) -> Result<Vec<ChatModel>, String> {
@@ -292,7 +296,8 @@ pub fn list_chat_models(conn: &Connection) -> Result<Vec<ChatModel>, String> {
         })
         .map_err(|e| e.to_string())?;
 
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 pub fn set_model_enabled(conn: &Connection, model_id: &str, on: bool) -> Result<(), String> {
@@ -328,7 +333,8 @@ pub fn list_avail(conn: &Connection, model_id: &str) -> Result<Vec<Avail>, Strin
         })
         .map_err(|e| e.to_string())?;
 
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 pub fn log_req(conn: &Connection, l: &ReqLog) -> Result<(), String> {
@@ -384,7 +390,8 @@ pub fn list_logs(conn: &Connection, limit: i64) -> Result<Vec<ReqLog>, String> {
         })
         .map_err(|e| e.to_string())?;
 
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 pub fn kv_get(conn: &Connection, k: &str) -> Option<String> {

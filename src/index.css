@@ -103,6 +103,26 @@ button:focus-visible {
   display: none;
 }
 
+/* Menus keep a scrollbar so long lists stay reachable by drag. */
+.menu-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f3f transparent;
+}
+
+.menu-scroll::-webkit-scrollbar {
+  display: block;
+  width: 8px;
+}
+
+.menu-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.menu-scroll::-webkit-scrollbar-thumb {
+  background: #3f3f3f;
+  border-radius: 4px;
+}
+
 /* Streaming caret: a thick accent block after the last streamed block, and
    standalone while the first token has not arrived. */
 .stream-caret,

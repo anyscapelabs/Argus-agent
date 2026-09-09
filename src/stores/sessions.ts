@@ -8,6 +8,8 @@ import {
   sessListMessages,
   sessListSessions,
   sessSaveSession,
+  sessSetModel,
+  sessSetPermission,
   sessSetVote,
   sessSupersedeFrom,
   type MsgRow,
@@ -77,8 +79,8 @@ class SessionStore {
     await this.loadMsgs(sessionId);
   }
 
-  async create(title: string, modelId: string | null): Promise<SessionRow> {
-    const row = await sessCreateSession(title, modelId);
+  async create(title: string, modelId: string | null, permission: string = "ask"): Promise<SessionRow> {
+    const row = await sessCreateSession(title, modelId, permission);
     await this.loadSessions();
     return row;
   }
@@ -116,23 +118,22 @@ class SessionStore {
   async setPermission(sessionId: string, permission: string) {
     const row = this.state.sessions.find((s) => s.id === sessionId);
     if (row === undefined || row.permission === permission) return;
-    const next = { ...row, permission };
-    this.set({ sessions: this.state.sessions.map((s) => (s.id === sessionId ? next : s)) });
+    this.set({ sessions: this.state.sessions.map((s) => (s.id === sessionId ? { ...s, permission } : s)) });
     try {
-      await sessSaveSession(next);
-    } catch {
-      await this.loadSessions();
+      await sessSetPermission(sessionId, permission);
+    } catch (e) {
+      console.error("setPermission failed", e);
     }
   }
 
-  async setModel(sessionId: string, modelId: string) {    const row = this.state.sessions.find((s) => s.id === sessionId);
+  async setModel(sessionId: string, modelId: string) {
+    const row = this.state.sessions.find((s) => s.id === sessionId);
     if (row === undefined || row.model_id === modelId) return;
-    const next = { ...row, model_id: modelId };
-    this.set({ sessions: this.state.sessions.map((s) => (s.id === sessionId ? next : s)) });
+    this.set({ sessions: this.state.sessions.map((s) => (s.id === sessionId ? { ...s, model_id: modelId } : s)) });
     try {
-      await sessSaveSession(next);
-    } catch {
-      await this.loadSessions();
+      await sessSetModel(sessionId, modelId);
+    } catch (e) {
+      console.error("setModel failed", e);
     }
   }
 

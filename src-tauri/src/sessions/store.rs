@@ -104,6 +104,28 @@ pub fn touch_session(conn: &Connection, id: &str, ctx_tokens: i64) -> Result<(),
   Ok(())
 }
 
+// Permission and model are edited from the UI one column at a time; a
+// full-row save from a stale frontend row would clobber the other field.
+pub fn set_permission(conn: &Connection, id: &str, permission: &str) -> Result<(), String> {
+  conn
+    .execute(
+      "UPDATE sessions SET permission=?2, updated_at=datetime('now') WHERE id=?1",
+      params![id, permission],
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
+pub fn set_model(conn: &Connection, id: &str, model_id: Option<&str>) -> Result<(), String> {
+  conn
+    .execute(
+      "UPDATE sessions SET model_id=?2, updated_at=datetime('now') WHERE id=?1",
+      params![id, model_id],
+    )
+    .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
 pub fn delete_session(conn: &Connection, id: &str) -> Result<(), String> {
   for sql in [
     "DELETE FROM messages WHERE session_id = ?1",

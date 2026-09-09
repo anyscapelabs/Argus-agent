@@ -144,6 +144,8 @@ export default function ChatDetailPage({ sessionId }: Props) {
           onChange={setDraft}
           model={model}
           onModelChange={(m) => sessionStore.setModel(sessionId, m.modelId)}
+          permission={session?.permission ?? "ask"}
+          onPermissionChange={(p) => sessionStore.setPermission(sessionId, p)}
           onSubmit={() => {
             const txt = draft.trim();
             if (txt.length === 0 || running) return;

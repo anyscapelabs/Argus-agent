@@ -44,9 +44,10 @@ export default function Dropdown({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const thumbRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ y: number; st: number } | null>(null);
   const [activeMap, setActiveMap] = useState<Record<number, boolean>>({});
-  const [bar, setBar] = useState<{ top: number; h: number } | null>(null);
+  const [barOn, setBarOn] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -72,19 +73,20 @@ export default function Dropdown({
 
   const syncBar = () => {
     const el = listRef.current;
+    if (!el || maxH === undefined) return;
 
-    if (!el || maxH === undefined || el.scrollHeight <= el.clientHeight) {
-      setBar((prev) => (prev === null ? prev : null));
-      return;
-    }
+    const overflow = el.scrollHeight > el.clientHeight;
+    setBarOn((prev) => (prev === overflow ? prev : overflow));
+
+    const thumb = thumbRef.current;
+    if (!thumb || !overflow) return;
 
     const vis = el.clientHeight;
     const h = Math.max((vis / el.scrollHeight) * vis, THUMB_MIN);
     const top = (el.scrollTop / el.scrollHeight) * vis;
 
-    setBar((prev) =>
-      prev !== null && prev.top === top && prev.h === h ? prev : { top, h },
-    );
+    thumb.style.height = `${h}px`;
+    thumb.style.top = `${top + 2}px`;
   };
 
   useLayoutEffect(() => {
@@ -121,7 +123,7 @@ export default function Dropdown({
         <div
           role="menu"
           className={
-            "absolute z-50 min-w-[220px] overflow-hidden rounded-2xl " +
+            "absolute z-50 min-w-[220px] select-none overflow-hidden rounded-2xl " +
             "border border-border-primary bg-bg-secondary p-1 shadow-4xl " +
             `${side === "top" ? "bottom-full mb-2" : "top-full mt-2"} ` +
             `${align === "right" ? "right-0" : "left-0"} ` +
@@ -196,13 +198,13 @@ export default function Dropdown({
                 );
               })}
             </div>
-            {bar !== null && (
+            {barOn && (
               <div
+                ref={thumbRef}
                 onPointerDown={onThumbDown}
                 onPointerMove={onThumbMove}
                 onPointerUp={onThumbUp}
-                style={{ top: bar.top + 2, height: bar.h }}
-                className="absolute right-[3px] w-[5px] cursor-default rounded-full bg-[#3f3f3f]"
+                className="absolute right-[3px] top-2 h-6 w-[5px] cursor-default rounded-full bg-[#3f3f3f]"
               />
             )}
           </div>

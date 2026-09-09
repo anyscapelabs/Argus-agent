@@ -18,6 +18,7 @@ type Props = {
   align?: "left" | "right";
   side?: "top" | "bottom";
   panelClassName?: string;
+  header?: ReactNode;
 };
 
 export default function Dropdown({
@@ -26,6 +27,7 @@ export default function Dropdown({
   align = "left",
   side = "top",
   panelClassName,
+  header,
 }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -70,6 +72,7 @@ export default function Dropdown({
             `${panelClassName ?? ""}`
           }
         >
+          {header !== undefined && <div className="px-2 pt-1.5">{header}</div>}
           {items.map((it, i) => {
             const Icon = it.Icon;
             const isActive =

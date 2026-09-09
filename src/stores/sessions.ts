@@ -140,7 +140,7 @@ class SessionStore {
   private async patchColumn(
     sessionId: string,
     field: "permission" | "model_id" | "web_search",
-    value: string | boolean,
+    value: string | boolean | null,
     apply: () => Promise<void>,
   ) {
     const row = this.state.sessions.find((s) => s.id === sessionId);
@@ -176,7 +176,7 @@ class SessionStore {
     );
   }
 
-  async setModel(sessionId: string, modelId: string) {
+  async setModel(sessionId: string, modelId: string | null) {
     await this.patchColumn(sessionId, "model_id", modelId, () =>
       sessSetModel(sessionId, modelId),
     );

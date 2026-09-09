@@ -24,7 +24,7 @@ type ChatInputProps = {
   onSubmit: () => void;
   placeholder?: string;
   model?: ChatModel | null;
-  onModelChange?: (next: ChatModel) => void;
+  onModelChange?: (next: ChatModel | null) => void;
   permission?: string;
   onPermissionChange?: (next: string) => void;
   webSearch?: boolean;
@@ -52,17 +52,6 @@ export default function ChatInput({
   const { models, loading } = useChatModels();
   const [picked, setPicked] = useState<ChatModel | null>(null);
   const selected = model ?? picked;
-
-  useEffect(() => {
-    if (model !== undefined && model !== null) {
-      return;
-    }
-
-    if (!picked && models.length > 0) {
-      setPicked(models[0]);
-      onModelChange?.(models[0]);
-    }
-  }, [models, picked, model, onModelChange]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -125,22 +114,35 @@ export default function ChatInput({
     },
   ];
 
+  const autoItem: DropdownItem = {
+    label: "Auto",
+    onClick: () => {
+      setPicked(null);
+      onModelChange?.(null);
+    },
+    active: selected === null,
+  };
+
   const modelItems: DropdownItem[] =
     models.length === 0
       ? [
+          autoItem,
           {
             label: loading ? "Loading models…" : "No models enabled",
             disabled: true,
           },
         ]
-      : models.map((m) => ({
-          label: m.displayName,
-          onClick: () => {
-            setPicked(m);
-            onModelChange?.(m);
-          },
-          active: selected?.modelId === m.modelId,
-        }));
+      : [
+          autoItem,
+          ...models.map((m) => ({
+            label: m.displayName,
+            onClick: () => {
+              setPicked(m);
+              onModelChange?.(m);
+            },
+            active: selected?.modelId === m.modelId,
+          })),
+        ];
 
   return (
     <div className="flex w-[700px] max-w-full flex-col rounded-2xl border border-border-primary bg-bg-secondary p-3 shadow-4xl">
@@ -214,6 +216,12 @@ export default function ChatInput({
             items={modelItems}
             side="top"
             align="right"
+            panelClassName="max-h-[320px] overflow-y-auto"
+            header={
+              <span className="text-xs font-medium text-text-secondary">
+                Models
+              </span>
+            }
             trigger={({ open, toggle }) => (
               <button
                 type="button"
@@ -221,7 +229,7 @@ export default function ChatInput({
                 aria-expanded={open}
                 className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-transparent px-3 text-sm font-medium text-text-secondary transition-colors hover:bg-bg-hover-secondary hover:text-text-primary"
               >
-                {selected?.displayName ?? "Model"}
+                {selected?.displayName ?? "Auto"}
                 <FiChevronDown
                   size={12}
                   className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}

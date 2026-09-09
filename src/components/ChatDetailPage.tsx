@@ -275,7 +275,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
           onChange={setDraft}
           model={model}
           onModelChange={(m) =>
-            sessionStore.setModel(sessionId, m.modelId)
+            sessionStore.setModel(sessionId, m?.modelId ?? null)
           }
           permission={session?.permission ?? "ask"}
           onPermissionChange={(p) =>

@@ -24,9 +24,14 @@ type ChatInputProps = {
   placeholder?: string;
   model?: ChatModel | null;
   onModelChange?: (next: ChatModel) => void;
+  permission?: string;
+  onPermissionChange?: (next: string) => void;
 };
 
-type Permission = "Always allow" | "Ask always";
+const PERM_LABEL: Record<string, string> = {
+  never: "Approve for me",
+  ask: "Ask always",
+};
 
 export default function ChatInput({
   value,
@@ -35,12 +40,13 @@ export default function ChatInput({
   placeholder = "Work with Argus",
   model,
   onModelChange,
+  permission = "ask",
+  onPermissionChange,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const { models, loading } = useChatModels();
   const [picked, setPicked] = useState<ChatModel | null>(null);
   const selected = model ?? picked;
-  const [permission, setPermission] = useState<Permission>("Always allow");
 
   useEffect(() => {
     if (model !== undefined && model !== null) return; // parent pinned a model
@@ -71,8 +77,8 @@ export default function ChatInput({
   ];
 
   const permissionItems: DropdownItem[] = [
-    { label: "Always allow", onClick: () => setPermission("Always allow"), active: permission === "Always allow" },
-    { label: "Ask always", onClick: () => setPermission("Ask always"), active: permission === "Ask always" },
+    { label: PERM_LABEL.never, onClick: () => onPermissionChange?.("never"), active: permission === "never" },
+    { label: PERM_LABEL.ask, onClick: () => onPermissionChange?.("ask"), active: permission === "ask" },
   ];
 
   const modelItems: DropdownItem[] =
@@ -140,7 +146,7 @@ export default function ChatInput({
                 className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-transparent px-3 text-sm font-medium text-text-secondary hover:bg-bg-hover-secondary hover:text-text-primary transition-colors"
               >
                 <LuShieldCheck size={14} className="shrink-0" />
-                {permission === "Always allow" ? "Approve for me" : permission}
+                {PERM_LABEL[permission] ?? permission}
                 <FiChevronDown size={12} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
               </button>
             )}

@@ -113,6 +113,18 @@ class SessionStore {
     }
   }
 
+  async setPermission(sessionId: string, permission: string) {
+    const row = this.state.sessions.find((s) => s.id === sessionId);
+    if (row === undefined || row.permission === permission) return;
+    const next = { ...row, permission };
+    this.set({ sessions: this.state.sessions.map((s) => (s.id === sessionId ? next : s)) });
+    try {
+      await sessSaveSession(next);
+    } catch {
+      await this.loadSessions();
+    }
+  }
+
   async setModel(sessionId: string, modelId: string) {    const row = this.state.sessions.find((s) => s.id === sessionId);
     if (row === undefined || row.model_id === modelId) return;
     const next = { ...row, model_id: modelId };

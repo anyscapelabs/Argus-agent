@@ -11,6 +11,7 @@ import {
   sessSetModel,
   sessSetPermission,
   sessSetVote,
+  sessSetWebSearch,
   sessSupersedeFrom,
   type MsgRow,
   type SessionRow,
@@ -79,8 +80,13 @@ class SessionStore {
     await this.loadMsgs(sessionId);
   }
 
-  async create(title: string, modelId: string | null, permission: string = "ask"): Promise<SessionRow> {
-    const row = await sessCreateSession(title, modelId, permission);
+  async create(
+    title: string,
+    modelId: string | null,
+    permission: string = "ask",
+    webSearch: boolean = false,
+  ): Promise<SessionRow> {
+    const row = await sessCreateSession(title, modelId, permission, webSearch);
     await this.loadSessions();
     return row;
   }
@@ -118,8 +124,8 @@ class SessionStore {
   // Optimistic column update; one retry, revert only if both fail.
   private async patchColumn(
     sessionId: string,
-    field: "permission" | "model_id",
-    value: string,
+    field: "permission" | "model_id" | "web_search",
+    value: string | boolean,
     apply: () => Promise<void>,
   ) {
     const row = this.state.sessions.find((s) => s.id === sessionId);
@@ -148,6 +154,10 @@ class SessionStore {
 
   async setModel(sessionId: string, modelId: string) {
     await this.patchColumn(sessionId, "model_id", modelId, () => sessSetModel(sessionId, modelId));
+  }
+
+  async setWebSearch(sessionId: string, on: boolean) {
+    await this.patchColumn(sessionId, "web_search", on, () => sessSetWebSearch(sessionId, on));
   }
 
   async archive(sessionId: string) {

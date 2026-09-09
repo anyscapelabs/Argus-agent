@@ -51,8 +51,8 @@ function App() {
     setView("chat");
   };
 
-  const startNew = async (text: string, model: ChatModel | null, permission: string) => {
-    const row = await sessionStore.create("New chat", model?.modelId ?? null, permission);
+  const startNew = async (text: string, model: ChatModel | null, permission: string, webSearch: boolean) => {
+    const row = await sessionStore.create("New chat", model?.modelId ?? null, permission, webSearch);
     await sessionStore.select(row.id);
     setView("chat");
     sessionStore.send(row.id, text);

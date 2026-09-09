@@ -61,6 +61,8 @@ pub struct Session {
   pub ctx_tokens: i64,
   pub compact_seq: i64,
   pub compactions: i64,
+  #[serde(default)]
+  pub web_search: bool,
 }
 
 #[derive(Deserialize, Debug)]
@@ -69,6 +71,8 @@ pub struct NewSession {
   pub model_id: Option<String>,
   pub permission: Option<String>,
   pub folder_id: Option<String>,
+  #[serde(default)]
+  pub web_search: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

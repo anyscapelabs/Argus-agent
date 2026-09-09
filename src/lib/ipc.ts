@@ -68,6 +68,7 @@ export type SessionRow = {
   ctx_tokens: number;
   compact_seq: number;
   compactions: number;
+  web_search: boolean;
 };
 
 export type MsgRow = {
@@ -102,9 +103,14 @@ export type StreamEvent =
     }
   | { type: "err"; msg: string };
 
-export const sessCreateSession = (title: string, modelId: string | null, permission: string = "ask") =>
+export const sessCreateSession = (
+  title: string,
+  modelId: string | null,
+  permission: string = "ask",
+  webSearch: boolean = false,
+) =>
   invoke<SessionRow>("sess_create_session", {
-    req: { title, model_id: modelId, permission, folder_id: null },
+    req: { title, model_id: modelId, permission, folder_id: null, web_search: webSearch },
   });
 
 export const sessListSessions = () => invoke<SessionRow[]>("sess_list_sessions");
@@ -120,6 +126,9 @@ export const sessSetPermission = (sessionId: string, permission: string) =>
 
 export const sessSetModel = (sessionId: string, modelId: string | null) =>
   invoke<void>("sess_set_model", { sessionId, modelId });
+
+export const sessSetWebSearch = (sessionId: string, on: boolean) =>
+  invoke<void>("sess_set_web_search", { sessionId, on });
 
 export const sessExportJson = (sessionId: string) =>
   invoke<string>("sess_export_json", { sessionId });

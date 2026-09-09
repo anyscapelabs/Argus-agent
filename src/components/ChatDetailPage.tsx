@@ -195,6 +195,8 @@ export default function ChatDetailPage({ sessionId }: Props) {
           onModelChange={(m) => sessionStore.setModel(sessionId, m.modelId)}
           permission={session?.permission ?? "ask"}
           onPermissionChange={(p) => sessionStore.setPermission(sessionId, p)}
+          webSearch={session?.web_search ?? false}
+          onWebSearchChange={(v) => sessionStore.setWebSearch(sessionId, v)}
           onSubmit={() => {
             const txt = draft.trim();
             if (txt.length === 0 || running) return;

@@ -20,6 +20,7 @@ type Props = {
   panelClassName?: string;
   header?: ReactNode;
   dividers?: boolean;
+  maxH?: string;
 };
 
 export default function Dropdown({
@@ -30,6 +31,7 @@ export default function Dropdown({
   panelClassName,
   header,
   dividers = true,
+  maxH,
 }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -67,7 +69,7 @@ export default function Dropdown({
         <div
           role="menu"
           className={
-            "absolute z-50 min-w-[220px] overflow-y-auto rounded-2xl " +
+            "absolute z-50 min-w-[220px] overflow-hidden rounded-2xl " +
             "border border-border-primary bg-bg-secondary p-1 shadow-4xl " +
             `${side === "top" ? "bottom-full mb-2" : "top-full mt-2"} ` +
             `${align === "right" ? "right-0" : "left-0"} ` +
@@ -75,7 +77,11 @@ export default function Dropdown({
           }
         >
           {header !== undefined && <div className="px-2">{header}</div>}
-          {items.map((it, i) => {
+          <div
+            className="overflow-y-auto overscroll-contain"
+            style={maxH !== undefined ? { maxHeight: maxH } : undefined}
+          >
+            {items.map((it, i) => {
             const Icon = it.Icon;
             const isActive =
               it.active === true ||
@@ -129,7 +135,8 @@ export default function Dropdown({
                 </button>
               </div>
             );
-          })}
+            })}
+          </div>
         </div>
       )}
     </div>

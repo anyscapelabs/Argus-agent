@@ -4,6 +4,9 @@ pub mod shell;
 pub mod web;
 
 use serde_json::Value;
+use tauri::ipc::Channel;
+
+use crate::gateway::schema::StreamEvent;
 
 const MAX_OUT: usize = 6000;
 
@@ -16,8 +19,14 @@ pub struct ToolMeta {
 
 const TOOLS: &[ToolMeta] = &[
     ToolMeta {
+        name: "terminal",
+        desc: "run a shell command; output streams live to the user, 120s cap",
+        args: "{\"command\":\"...\",\"cwd\":\".\"}",
+        mutating: true,
+    },
+    ToolMeta {
         name: "bash.run",
-        desc: "run a shell command, 30s cap",
+        desc: "legacy alias of terminal",
         args: "{\"command\":\"...\",\"cwd\":\".\"}",
         mutating: true,
     },
@@ -53,11 +62,14 @@ const WEB_TOOLS: &[ToolMeta] = &[
 pub struct Action {
     pub tool: String,
     pub args: String,
+    pub start: usize,
+    pub end: usize,
 }
 
 pub fn parse_actions(text: &str) -> Vec<Action> {
     let mut out = vec![];
     let mut rest = text;
+    let mut off = 0usize;
 
     while let Some(start) = rest.find("<action") {
         let tail = &rest[start..];
@@ -80,9 +92,15 @@ pub fn parse_actions(text: &str) -> Vec<Action> {
         };
 
         if !tool.is_empty() {
-            out.push(Action { tool, args });
+            out.push(Action {
+                tool,
+                args,
+                start: off + start,
+                end: off + start + end + 9,
+            });
         }
 
+        off += start + end + 9;
         rest = &tail[end + 9..];
     }
 
@@ -223,6 +241,8 @@ pub async fn exec(
     args_json: &str,
     permission: &str,
     web: bool,
+    approved: bool,
+    on_term: Option<(&Channel<StreamEvent>, u32)>,
 ) -> Result<String, String> {
     let meta = TOOLS
         .iter()
@@ -236,7 +256,7 @@ pub async fn exec(
         );
     }
 
-    if meta.mutating && permission == "ask" {
+    if meta.mutating && permission == "ask" && !approved {
         return Err("blocked: this session asks before acting; switch its permission to never to allow writes".into());
     }
 
@@ -244,13 +264,30 @@ pub async fn exec(
         serde_json::from_str(args_json.trim()).map_err(|_| "action body is not valid JSON")?;
 
     match name {
-        "bash.run" => shell::run(&args).await,
+        "terminal" | "bash.run" => {
+            let (idx, chan) = match on_term {
+                Some((c, i)) => (i, Some(c)),
+                None => (0, None),
+            };
+
+            let (out, code) = shell::run_stream(&args, idx, chan).await?;
+            Ok(format!("exit {code}\n{out}"))
+        }
         "grep" => grep::run(&args).await,
         "fs.write" => fs::write(&args),
         "web.search" => web::search(&args).await,
         "web.read" => web::read(&args).await,
         _ => Err("unknown tool".into()),
     }
+}
+
+pub fn is_mutating(name: &str) -> bool {
+    TOOLS
+        .iter()
+        .chain(WEB_TOOLS.iter())
+        .find(|t| t.name == name)
+        .map(|t| t.mutating)
+        .unwrap_or(false)
 }
 
 pub fn section(web: bool) -> String {
@@ -266,6 +303,7 @@ wrap an action block inside another tag. Never use <tool_call> or any other tool
 format — the action block is the only way to run a tool.\n\
 If a tool result has status err, never run the same action again. Tell the user \
 what failed in plain words and what would fix it.\n\
+Terminal commands may need the user's approval; if one is denied, never retry it.\n\
 Available tools:\n",
     );
 
@@ -306,4 +344,18 @@ pub fn clip(s: String) -> String {
 
     let cut: String = s.chars().take(MAX_OUT).collect();
     format!("{cut}\n...[truncated]")
+}
+
+pub fn clip_ends(s: String) -> String {
+    let n = s.chars().count();
+
+    if n <= MAX_OUT {
+        return s;
+    }
+
+    let half = MAX_OUT / 2;
+    let head: String = s.chars().take(half).collect();
+    let tail: String = s.chars().skip(n - half).collect();
+
+    format!("{head}\n...[truncated]...\n{tail}")
 }

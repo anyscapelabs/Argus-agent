@@ -8,6 +8,7 @@ import {
   sessDeleteSession,
   sessListMessages,
   sessListSessions,
+  sessResolveApproval,
   sessSaveSession,
   sessSetModel,
   sessSetPermission,
@@ -19,10 +20,27 @@ import {
   type StreamEvent,
 } from "../lib/ipc";
 
+export type PendingApproval = {
+  id: string;
+  idx: number;
+  command: string;
+};
+
 export type Turn = {
   text: string;
   err: string | null;
+  term: Record<number, string>;
+  termCode: Record<number, number>;
+  approval: PendingApproval | null;
 };
+
+const blankTurn = (err: string | null = null): Turn => ({
+  text: "",
+  err,
+  term: {},
+  termCode: {},
+  approval: null,
+});
 
 type State = {
   sessions: SessionRow[];
@@ -252,6 +270,7 @@ class SessionStore {
     chan.onmessage = (ev) => {
       if (ev.type === "delta") {
         this.patchTurn(sessionId, (prev) => ({
+          ...prev,
           text: prev.text + ev.text,
           err: null,
         }));
@@ -259,25 +278,53 @@ class SessionStore {
       }
 
       if (ev.type === "reset") {
-        this.patchTurn(sessionId, (prev) => ({ text: "", err: prev.err }));
+        this.patchTurn(sessionId, (prev) => ({ ...blankTurn(), err: prev.err }));
         return;
       }
 
       if (ev.type === "step") {
         this.set({
-          turns: { ...this.state.turns, [sessionId]: { text: "", err: null } },
+          turns: { ...this.state.turns, [sessionId]: blankTurn() },
         });
         void this.loadMsgs(sessionId);
         return;
       }
 
+      if (ev.type === "term") {
+        this.patchTurn(sessionId, (prev) => ({
+          ...prev,
+          term: {
+            ...prev.term,
+            [ev.idx]: (prev.term[ev.idx] ?? "") + ev.chunk,
+          },
+        }));
+        return;
+      }
+
+      if (ev.type === "term_end") {
+        this.patchTurn(sessionId, (prev) => ({
+          ...prev,
+          termCode: { ...prev.termCode, [ev.idx]: ev.code },
+          approval: prev.approval?.idx === ev.idx ? null : prev.approval,
+        }));
+        return;
+      }
+
+      if (ev.type === "approval") {
+        this.patchTurn(sessionId, (prev) => ({
+          ...prev,
+          approval: { id: ev.id, idx: ev.idx, command: ev.command },
+        }));
+        return;
+      }
+
       if (ev.type === "err") {
-        this.patchTurn(sessionId, (prev) => ({ text: prev.text, err: ev.msg }));
+        this.patchTurn(sessionId, (prev) => ({ ...prev, err: ev.msg }));
       }
     };
 
     this.set({
-      turns: { ...this.state.turns, [sessionId]: { text: "", err: null } },
+      turns: { ...this.state.turns, [sessionId]: blankTurn() },
     });
 
     try {
@@ -288,9 +335,21 @@ class SessionStore {
     } catch (e) {
       await this.loadMsgs(sessionId);
       this.set({
-        turns: { ...this.state.turns, [sessionId]: { text: "", err: String(e) } },
+        turns: { ...this.state.turns, [sessionId]: blankTurn(String(e)) },
       });
     }
+  }
+
+  async resolveApproval(sessionId: string, allow: boolean) {
+    const t = this.state.turns[sessionId];
+    if (t === undefined || t.approval === null) return;
+
+    const { id } = t.approval;
+    this.patchTurn(sessionId, (prev) => ({ ...prev, approval: null }));
+
+    try {
+      await sessResolveApproval(id, allow);
+    } catch {}
   }
 
   async retry(sessionId: string, userSeq: number, content: string) {

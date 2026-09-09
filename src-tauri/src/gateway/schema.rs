@@ -214,6 +214,19 @@ pub enum StreamEvent {
     Err {
         msg: String,
     },
+    Term {
+        idx: u32,
+        chunk: String,
+    },
+    TermEnd {
+        idx: u32,
+        code: i64,
+    },
+    Approval {
+        id: String,
+        idx: u32,
+        command: String,
+    },
 }
 
 #[derive(Debug, Default)]

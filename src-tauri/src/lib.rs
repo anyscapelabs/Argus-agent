@@ -5,6 +5,7 @@ mod sessions;
 mod skills;
 mod tools;
 
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 use tauri::Manager;
@@ -43,6 +44,7 @@ pub fn run() {
                 skills_dir,
                 library_dir,
                 logos_dir,
+                approvals: Mutex::new(HashMap::new()),
             });
 
             let handle = app.handle().clone();
@@ -85,6 +87,7 @@ pub fn run() {
             sessions::sess_create_folder,
             sessions::sess_list_folders,
             sessions::chat::sess_chat_stream,
+            sessions::chat::sess_resolve_approval,
             skills::skill_create,
             skills::skill_get,
             skills::skill_list,

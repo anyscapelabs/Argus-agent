@@ -4,12 +4,14 @@ pub mod router;
 pub mod schema;
 pub mod store;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 use reqwest::Client;
 use rusqlite::Connection;
 use tauri::State;
+use tokio::sync::oneshot;
 
 use schema::{Avail, ChatModel, ChatReq, ChatResp, ModelEntry, Provider, ProviderModel, SyncStats};
 
@@ -19,6 +21,7 @@ pub struct Gateway {
     pub skills_dir: PathBuf,
     pub library_dir: PathBuf,
     pub logos_dir: PathBuf,
+    pub approvals: Mutex<HashMap<String, oneshot::Sender<bool>>>,
 }
 
 #[tauri::command]

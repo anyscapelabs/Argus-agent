@@ -196,8 +196,32 @@ export function tokenize(buf: string): Token[] {
     const isSelf = raw.endsWith("/");
     const body = isClose ? raw.slice(1) : isSelf ? raw.slice(0, -1) : raw;
     const sp = body.search(/\s/);
-    const tag = (sp === -1 ? body : body.slice(0, sp)).toLowerCase();
+    let tag = (sp === -1 ? body : body.slice(0, sp)).toLowerCase();
     const attrStr = sp === -1 ? "" : body.slice(sp + 1);
+
+    const ALIAS: Record<string, string> = {
+      strong: "bold",
+      b: "bold",
+      em: "italic",
+      i: "italic",
+      u: "underline",
+      a: "link",
+      h1: "h2",
+    };
+    tag = ALIAS[tag] ?? tag;
+
+    if (tag === "p" || tag === "div" || tag === "span") {
+      i = end + 1;
+      continue;
+    }
+
+    if (tag === "br") {
+      flush(i);
+      buf += "\n";
+      i = end + 1;
+      start = i;
+      continue;
+    }
 
     if (!/^[a-z][a-z0-9-]*$/.test(tag)) {
       i++;

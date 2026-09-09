@@ -101,6 +101,42 @@ fn clean_title(raw: &str) -> Option<String> {
     Some(truncate_chars(t, 60))
 }
 
+fn auto_model(conn: &Connection) -> Result<String, String> {
+    let models = crate::gateway::store::list_chat_models(conn)?;
+
+    models
+        .first()
+        .map(|m| m.model_id.clone())
+        .ok_or("auto mode: no enabled models".into())
+}
+
+fn sanitize_tags(s: &str) -> String {
+    let mut t = s.to_string();
+    t = t
+        .replace("<strong>", "<bold>")
+        .replace("</strong>", "</bold>");
+    t = t.replace("<b>", "<bold>").replace("</b>", "</bold>");
+    t = t.replace("<em>", "<italic>").replace("</em>", "</italic>");
+    t = t.replace("<i>", "<italic>").replace("</i>", "</italic>");
+    t = t
+        .replace("<u>", "<underline>")
+        .replace("</u>", "</underline>");
+    t = t
+        .replace("<a ", "<link ")
+        .replace("<a>", "<link>")
+        .replace("</a>", "</link>");
+
+    if let Ok(re) = regex::Regex::new(r"(?i)</?(p|div|span)[^>]*>") {
+        t = re.replace_all(&t, "").into_owned();
+    }
+
+    if let Ok(re) = regex::Regex::new(r"(?i)<br\s*/?>") {
+        t = re.replace_all(&t, "\n").into_owned();
+    }
+
+    t
+}
+
 pub async fn send(
     gw: &Gateway,
     app: &AppHandle,
@@ -157,7 +193,7 @@ pub async fn send(
             return Err("model returned an empty reply — try again".into());
         }
 
-        let text = tools::normalize_actions(&stats.text);
+        let text = sanitize_tags(&tools::normalize_actions(&stats.text));
         let actions = tools::parse_actions(&text);
         let done = actions.is_empty();
 

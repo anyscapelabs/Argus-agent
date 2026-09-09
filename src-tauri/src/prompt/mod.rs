@@ -22,7 +22,7 @@ Ordinary prose in short paragraphs. Separate every paragraph with a blank line; 
 2 to 4 sentences each. Stories and long answers are broken into paragraphs.\n\
 Never use markdown: no **, no ##, no ---, no backtick fences. Only the tags below.\n\
 - <h2>Title</h2> for section headings, <h3> for sub-parts.\n\
-- Inline: <bold>, <italic>, <code>, <link href=\"url\">text</link>.\n\
+- Inline: <bold> (never <strong> or <b>), <italic> (never <i> or <em>), <code>, <link href=\"url\">text</link>.\n\
 - Tables: <table><tr><th>col</th></tr><tr><td>cell</td></tr></table>.\n\
 - Caveats and risks: <warning severity=\"high\">text</warning> (severity low, medium, or high).\n\
 - Reasoning you want visible: <thinking>text</thinking>; it renders collapsed.\n\
@@ -32,7 +32,8 @@ A correct reply looks like:\n\
 One short paragraph here. A <bold>key point</bold> stays bold and <code>a_cmd</code> renders as code.\n\
 A second paragraph, after a blank line.\n\
 \n\
-Never invent tags (no <command>, <output>, or anything not listed above), never \
+Wrong: <p>hello</p> or <strong>hi</strong> or <i>hi</i> — these show literally.\n\
+Never invent tags (no <command>, <output>, <p>, <div>, <span>, <strong>, <b>, <i>, <em>, <u>, <a> or anything not listed above), never \
 wrap the whole reply in a tag, never fake tool output. \
 Summarize tool results in your own words; never paste raw tool output into the reply. \
 A tag you invent shows up as literal text.

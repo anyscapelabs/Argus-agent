@@ -26,7 +26,7 @@ export default function ActionBlock({ block, live = false }: Props) {
       </span>
       <span
         className={
-          "min-w-0 max-w-[440px] truncate text-[13px] " +
+          "min-w-0 max-w-[440px] truncate text-sm " +
           `${live ? "shimmer-text" : "text-text-secondary"}`
         }
       >

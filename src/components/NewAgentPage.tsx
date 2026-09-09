@@ -3,12 +3,13 @@ import type { ChatModel } from "../lib/ipc";
 import ChatInput from "./ChatInput";
 
 type NewAgentPageProps = {
-  onSend: (text: string, model: ChatModel | null) => void;
+  onSend: (text: string, model: ChatModel | null, permission: string) => void;
 };
 
 export default function NewAgentPage({ onSend }: NewAgentPageProps) {
   const [draft, setDraft] = useState("");
   const [model, setModel] = useState<ChatModel | null>(null);
+  const [permission, setPermission] = useState("ask");
 
   return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-6 pb-40">
@@ -20,10 +21,12 @@ export default function NewAgentPage({ onSend }: NewAgentPageProps) {
         onChange={setDraft}
         model={model}
         onModelChange={setModel}
+        permission={permission}
+        onPermissionChange={setPermission}
         onSubmit={() => {
           const txt = draft.trim();
           if (txt.length === 0) return;
-          onSend(txt, model);
+          onSend(txt, model, permission);
         }}
       />
     </div>

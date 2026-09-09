@@ -38,7 +38,7 @@ async fn generate_title(gw: &Gateway, session_id: &str, content: &str) -> Result
   let raw = match util {
     Ok(u) => {
       let req = ChatReq { model: u, msgs: msgs.clone(), prefix_hash: None };
-      match router::run(gw, &req).await {
+      match router::run_opts(gw, &req, 2).await {
         Ok(resp) => resp.content,
         Err(_) => fallback_title(gw, selected, &msgs).await?,
       }
@@ -65,7 +65,7 @@ async fn fallback_title(
 ) -> Result<String, String> {
   let model = selected.filter(|m| !m.is_empty()).ok_or("no fallback model for title")?;
   let req = ChatReq { model, msgs: msgs.to_vec(), prefix_hash: None };
-  Ok(router::run(gw, &req).await?.content)
+  Ok(router::run_opts(gw, &req, 2).await?.content)
 }
 
 fn clean_title(raw: &str) -> Option<String> {

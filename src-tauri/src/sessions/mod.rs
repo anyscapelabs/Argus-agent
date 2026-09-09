@@ -29,6 +29,26 @@ pub fn sess_save_session(gw: State<'_, Gateway>, session: Session) -> Result<(),
 }
 
 #[tauri::command]
+pub fn sess_set_permission(
+  gw: State<'_, Gateway>,
+  session_id: String,
+  permission: String,
+) -> Result<(), String> {
+  let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+  store::set_permission(&conn, &session_id, &permission)
+}
+
+#[tauri::command]
+pub fn sess_set_model(
+  gw: State<'_, Gateway>,
+  session_id: String,
+  model_id: Option<String>,
+) -> Result<(), String> {
+  let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+  store::set_model(&conn, &session_id, model_id.as_deref())
+}
+
+#[tauri::command]
 pub fn sess_delete_session(gw: State<'_, Gateway>, session_id: String) -> Result<(), String> {
   let conn = gw.conn.lock().map_err(|e| e.to_string())?;
   store::delete_session(&conn, &session_id)

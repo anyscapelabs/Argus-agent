@@ -102,9 +102,9 @@ export type StreamEvent =
     }
   | { type: "err"; msg: string };
 
-export const sessCreateSession = (title: string, modelId: string | null) =>
+export const sessCreateSession = (title: string, modelId: string | null, permission: string = "ask") =>
   invoke<SessionRow>("sess_create_session", {
-    req: { title, model_id: modelId, permission: null, folder_id: null },
+    req: { title, model_id: modelId, permission, folder_id: null },
   });
 
 export const sessListSessions = () => invoke<SessionRow[]>("sess_list_sessions");
@@ -114,6 +114,12 @@ export const sessDeleteSession = (sessionId: string) =>
 
 export const sessSaveSession = (session: SessionRow) =>
   invoke<void>("sess_save_session", { session });
+
+export const sessSetPermission = (sessionId: string, permission: string) =>
+  invoke<void>("sess_set_permission", { sessionId, permission });
+
+export const sessSetModel = (sessionId: string, modelId: string | null) =>
+  invoke<void>("sess_set_model", { sessionId, modelId });
 
 export const sessExportJson = (sessionId: string) =>
   invoke<string>("sess_export_json", { sessionId });

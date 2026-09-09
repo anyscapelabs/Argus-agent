@@ -48,6 +48,8 @@ function groupTurns(rows: MsgRow[], turn: Turn | undefined, sessionId: string): 
 export default function ChatDetailPage({ sessionId }: Props) {
   const { sessions, msgs, turns } = useSessions();
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const pinnedRef = useRef(true);
+  const rafRef = useRef(0);
   const [draft, setDraft] = useState("");
   const rows = msgs[sessionId] ?? [];
   const turn = turns[sessionId];
@@ -61,9 +63,34 @@ export default function ChatDetailPage({ sessionId }: Props) {
 
   const voteOf = (msgId: string) => rows.find((m) => m.id === msgId)?.vote ?? null;
 
+  // Follow the stream only while the user sits near the bottom; scrolling up
+  // unpins until they come back down.
   useEffect(() => {
+    const onScroll = () => {
+      const el = scrollRef.current;
+      if (el) pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    };
+    const el = scrollRef.current;
+    if (el) {
+      el.addEventListener("scroll", onScroll, { passive: true });
+      return () => el.removeEventListener("scroll", onScroll);
+    }
+  }, []);
+
+  useEffect(() => {
+    pinnedRef.current = true;
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!pinnedRef.current) return;
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      const el = scrollRef.current;
+      if (el !== null && pinnedRef.current) el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(rafRef.current);
   }, [rows.length, turn?.text]);
 
   const handleSend = (text: string) => {
@@ -116,7 +143,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
         ref={scrollRef}
         tabIndex={0}
         onKeyDown={handleScrollKey}
-        className="min-h-0 flex-1 overflow-y-auto px-6 py-6 outline-none"
+        className="min-h-0 flex-1 overflow-y-auto px-6 pb-16 pt-6 outline-none"
       >
         <div className="mx-auto flex w-full min-w-0 max-w-[700px] flex-col gap-3">
           {groups.map((group, gi) => {

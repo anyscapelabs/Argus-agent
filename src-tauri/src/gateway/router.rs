@@ -103,6 +103,11 @@ fn backoff_ms(status: Option<u16>, attempt: i64, retry_after: Option<u64>) -> u6
 }
 
 pub async fn run(gw: &Gateway, req: &ChatReq) -> Result<ChatResp, String> {
+  run_opts(gw, req, MAX_ATTEMPTS).await
+}
+
+// Utility calls (titles) get a short budget: a slow title is worse than none.
+pub async fn run_opts(gw: &Gateway, req: &ChatReq, max_attempts: i64) -> Result<ChatResp, String> {
   let Resolved { provs, av, req_json } = resolve(gw, req)?;
   let prov = match provs.iter().find(|p| p.id == av.provider_id) {
     Some(p) => p,
@@ -179,12 +184,12 @@ pub async fn run(gw: &Gateway, req: &ChatReq) -> Result<ChatResp, String> {
           let conn = gw.conn.lock().map_err(|e| e.to_string())?;
           let _ = store::log_req(&conn, &log); // keep the loop moving even if log fails
         }
-        let msg = if attempt >= MAX_ATTEMPTS {
+        let msg = if attempt >= max_attempts {
           format!("gave up after {attempt} attempts: {}", e.msg)
         } else {
           e.msg.clone()
         };
-        if !e.retryable() || attempt >= MAX_ATTEMPTS {
+        if !e.retryable() || attempt >= max_attempts {
           return Err(msg); // Drop it
         }
         if e.status == Some(429) {

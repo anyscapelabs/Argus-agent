@@ -217,7 +217,7 @@ export default function ChatInput({
             side="top"
             align="right"
             dividers={false}
-            panelClassName="max-h-[320px] overflow-y-auto"
+            maxH="320px"
             header={
               <span className="text-xs font-medium text-text-secondary">
                 Models

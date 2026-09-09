@@ -89,6 +89,7 @@ export type StreamEvent =
   | { type: "status"; provider_id: string; attempt: number }
   | { type: "delta"; text: string }
   | { type: "reset" }
+  | { type: "step" }
   | {
       type: "done";
       model_id: string;

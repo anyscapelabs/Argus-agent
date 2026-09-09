@@ -2,15 +2,48 @@ import { useEffect, useRef, useState } from "react";
 import AgentBubble from "./AgentBubble";
 import ChatInput from "./ChatInput";
 import UserBubble from "./UserBubble";
-import ToolResultChip from "./ToolResultChip";
 import { useChatModels } from "../hooks/useChatModels";
-import { sessionStore, useSessions } from "../stores/sessions";
-import type { ChatMessage } from "../types/chat";
+import { sessionStore, useSessions, type Turn } from "../stores/sessions";
+import type { MsgRow } from "../lib/ipc";
 
 const SCROLL_LINE = 40;
 const SCROLL_PAGE_RATIO = 0.85;
 
 type Props = { sessionId: string };
+
+type TurnGroup = { user: MsgRow | null; agent: MsgRow[] };
+
+// One user message starts a turn; every agent-side row after it (assistant
+// steps and tool results) belongs to that same turn and renders as one bubble.
+function groupTurns(rows: MsgRow[], turn: Turn | undefined, sessionId: string): TurnGroup[] {
+  const groups: TurnGroup[] = [];
+  for (const r of rows) {
+    if (r.role === "user" && !r.content.startsWith("<tool-result")) {
+      groups.push({ user: r, agent: [] });
+      continue;
+    }
+    if (groups.length === 0) groups.push({ user: null, agent: [] });
+    groups[groups.length - 1].agent.push(r);
+  }
+  if (turn !== undefined && turn.err === null) {
+    if (groups.length === 0) groups.push({ user: null, agent: [] });
+    groups[groups.length - 1].agent.push({
+      id: "live",
+      session_id: sessionId,
+      seq: 0,
+      role: "assistant",
+      content: turn.text,
+      model_id: null,
+      provider_id: null,
+      tok_in: null,
+      tok_out: null,
+      active: true,
+      vote: null,
+      created_at: "",
+    });
+  }
+  return groups;
+}
 
 export default function ChatDetailPage({ sessionId }: Props) {
   const { sessions, msgs, turns } = useSessions();
@@ -24,27 +57,14 @@ export default function ChatDetailPage({ sessionId }: Props) {
   const session = sessions.find((s) => s.id === sessionId);
   const model = models.find((m) => m.modelId === session?.model_id) ?? null;
 
-  const messages: ChatMessage[] = rows.map((m) => ({
-    id: m.id,
-    role:
-      m.role === "user"
-        ? m.content.startsWith("<tool-result")
-          ? "tool"
-          : "user"
-        : "agent",
-    content: m.content,
-    timestamp: Date.now(),
-  }));
-  if (turn !== undefined) {
-    messages.push({ id: "live", role: "agent", content: turn.text });
-  }
+  const groups = groupTurns(rows, turn, sessionId);
 
   const voteOf = (msgId: string) => rows.find((m) => m.id === msgId)?.vote ?? null;
 
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, turn?.text]);
+  }, [rows.length, turn?.text]);
 
   const handleSend = (text: string) => {
     if (running) return;
@@ -56,15 +76,6 @@ export default function ChatDetailPage({ sessionId }: Props) {
     const row = rows.find((m) => m.id === userMsgId && m.role === "user");
     if (row === undefined) return;
     sessionStore.retry(sessionId, row.seq, row.content);
-  };
-
-  const retryBefore = (idx: number) => {
-    for (let i = idx - 1; i >= 0; i--) {
-      if (messages[i].role === "user") {
-        retryFrom(messages[i].id);
-        return;
-      }
-    }
   };
 
   const handleScrollKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -108,28 +119,39 @@ export default function ChatDetailPage({ sessionId }: Props) {
         className="min-h-0 flex-1 overflow-y-auto px-6 py-6 outline-none"
       >
         <div className="mx-auto flex w-full min-w-0 max-w-[700px] flex-col gap-3">
-          {messages.map((message, idx) =>
-            message.role === "tool" ? (
-              <ToolResultChip key={message.id} raw={message.content} />
-            ) : message.role === "user" ? (
-              <UserBubble
-                key={message.id}
-                timestamp={message.timestamp}
-                onRetry={() => retryFrom(message.id)}
-              >
-                {message.content}
-              </UserBubble>
-            ) : (
-              <AgentBubble
-                key={message.id}
-                text={message.content}
-                caret={running && message.id === "live"}
-                vote={message.id === "live" ? null : voteOf(message.id)}
-                onVote={(v) => sessionStore.setVote(sessionId, message.id, v)}
-                onRetry={() => retryBefore(idx)}
-              />
-            )
-          )}
+          {groups.map((group, gi) => {
+            const text = group.agent
+              .filter((a) => a.role === "assistant")
+              .map((a) => a.content)
+              .join("\n\n");
+            const last = [...group.agent].reverse().find((a) => a.role === "assistant");
+            const live = running && gi === groups.length - 1;
+            return (
+              <div key={group.user?.id ?? `g-${gi}`} className="flex flex-col gap-3">
+                {group.user !== null && (
+                  <UserBubble
+                    timestamp={Date.now()}
+                    onRetry={() => {
+                      if (group.user !== null) retryFrom(group.user.id);
+                    }}
+                  >
+                    {group.user.content}
+                  </UserBubble>
+                )}
+                <AgentBubble
+                  text={text}
+                  caret={live}
+                  vote={live ? null : voteOf(last?.id ?? "")}
+                  onVote={(v) => {
+                    if (last !== undefined) sessionStore.setVote(sessionId, last.id, v);
+                  }}
+                  onRetry={() => {
+                    if (group.user !== null) retryFrom(group.user.id);
+                  }}
+                />
+              </div>
+            );
+          })}
           {turn?.err !== undefined && turn !== undefined && turn.err !== null && (
             <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
               {turn.err}

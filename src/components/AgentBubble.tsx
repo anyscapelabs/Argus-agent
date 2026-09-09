@@ -126,7 +126,7 @@ function renderInline(nodes: InlineNode[]): React.ReactNode {
       const isClose = raw.startsWith("</");
       const isSelf = raw.endsWith("/>");
       const isInline = name in INLINE_CLS || name === "link";
-      if (!isInline) { pend += raw; continue; }
+      if (!isInline) continue; // unknown tag junk: drop it, keep inner text
       flush(pend + txt.slice(cur, m.index));
       pend = "";
       if (isClose) {

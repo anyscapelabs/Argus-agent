@@ -53,7 +53,7 @@ const HEADING_CLS: Record<string, string> = {
 };
 
 const INLINE_CLS: Record<string, string> = {
-  bold: "font-medium",
+  bold: "font-bold",
   italic: "italic",
   underline: "underline",
   strikethrough: "line-through",
@@ -290,7 +290,7 @@ function renderBlk(
         return (
           <p
             key={key}
-            className="mt-2 font-serif text-[16px] font-light leading-6 first:mt-0"
+            className="mt-2 font-sans text-[16px] font-medium leading-6 first:mt-0"
           >
             {renderInline(blk.children)}
           </p>
@@ -306,7 +306,7 @@ function renderBlk(
             {items.map((it, idx) => (
               <li
                 key={idx}
-                className="font-serif text-[16px] font-light leading-6 text-text-primary"
+                className="font-sans text-[16px] font-medium leading-6 text-text-primary"
               >
                 {renderInline([{ kind: "text", value: it }])}
               </li>
@@ -323,7 +323,7 @@ function renderBlk(
           {items.map((it, idx) => (
             <li
               key={idx}
-              className="font-serif text-[16px] font-light leading-6 text-text-primary"
+              className="font-sans text-[16px] font-medium leading-6 text-text-primary"
             >
               {renderInline([{ kind: "text", value: it }])}
             </li>
@@ -335,7 +335,7 @@ function renderBlk(
     return (
       <p
         key={key}
-        className="mt-2 font-serif text-[16px] font-light leading-6 first:mt-0"
+        className="mt-2 font-sans text-[16px] font-medium leading-6 first:mt-0"
       >
         {renderInline(blk.children)}
       </p>
@@ -348,7 +348,7 @@ function renderBlk(
     return (
       <div
         key={key}
-        className={`mt-3 font-serif leading-tight ${cls} first:mt-0`}
+        className={`mt-3 font-sans leading-tight ${cls} first:mt-0`}
       >
         {renderInline(blk.children)}
       </div>
@@ -539,7 +539,7 @@ export default function AgentBubble({
       {tree ? (
         renderTree(tree, !!caret)
       ) : (
-        <div className="font-serif text-[16px] font-light">{children}</div>
+        <div className="font-sans text-[16px] font-light">{children}</div>
       )}
 
       {caret && !hasBlocks && <span className="stream-caret" />}

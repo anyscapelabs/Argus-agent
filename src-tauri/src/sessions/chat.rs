@@ -159,6 +159,10 @@ pub async fn send(
       break;
     }
 
+    // Step boundary: UI swaps the streamed text for the persisted rows, so
+    // finished steps read "Ran" while only the live one shows "Running".
+    let _ = chan.send(StreamEvent::Step);
+
     for a in &actions {
       let (status, body) = match tools::exec(&a.tool, &a.args, &perm).await {
         Ok(t) => ("ok", t),

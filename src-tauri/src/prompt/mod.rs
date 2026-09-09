@@ -10,8 +10,7 @@ use crate::gateway::{store as gw_store, Gateway};
 use rusqlite::Connection;
 use tauri::State;
 
-// Built-in identity. Lives in code: it cannot be deleted and ships versioned
-// with the app. User personas (app_data/prompts/*.md) slot in before it later.
+
 const BASE: &str = "You are Argus, a personal AI agent operating on the user's machine.\n\
 Rules:\n\
 - Be direct. Short answers unless depth is asked for.\n\
@@ -34,12 +33,13 @@ A correct reply looks like:\n\
 One short paragraph here. A <bold>key point</bold> stays bold and <code>a_cmd</code> renders as code.\n\
 A second paragraph, after a blank line.\n\
 \n\
-Never invent tags, never wrap the whole reply in a tag, never fake tool output. \
+Never invent tags (no <command>, <output>, or anything not listed above), never \
+wrap the whole reply in a tag, never fake tool output. \
+Summarize tool results in your own words; never paste raw tool output into the reply. \
 A tag you invent shows up as literal text.
 ";
 
-// Stable layer: identity + preference rules + skills index. Rebuilt only when
-// its inputs change; must stay byte-identical across turns for cache hits.
+
 fn stable_layer(conn: &Connection) -> Result<String, String> {
   let mut s = String::from(BASE);
   s.push_str(&crate::tools::section());
@@ -65,8 +65,7 @@ fn stable_layer(conn: &Connection) -> Result<String, String> {
   Ok(s)
 }
 
-// Projection: DB is truth, the prompt is derived. system = stable -> volatile
-// (summary), then every active message after compact_seq, verbatim.
+
 pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String> {
   let (model_id, compact_seq, ctx_tokens) = conn
     .query_row(
@@ -170,7 +169,7 @@ pub struct PromptPreview {
   pub compact_seq: i64,
 }
 
-// Debug surface: shows exactly what the next gateway call will send.
+
 #[tauri::command]
 pub fn prompt_preview(gw: State<'_, Gateway>, session_id: String) -> Result<PromptPreview, String> {
   let conn = gw.conn.lock().map_err(|e| e.to_string())?;

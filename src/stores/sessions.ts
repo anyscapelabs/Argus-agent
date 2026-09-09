@@ -195,6 +195,9 @@ class SessionStore {
         this.patchTurn(sessionId, (prev) => ({ text: prev.text + ev.text, err: null }));
       } else if (ev.type === "reset") {
         this.patchTurn(sessionId, (prev) => ({ text: "", err: prev.err }));
+      } else if (ev.type === "step") {
+        this.set({ turns: { ...this.state.turns, [sessionId]: { text: "", err: null } } });
+        void this.loadMsgs(sessionId);
       } else if (ev.type === "err") {
         this.patchTurn(sessionId, (prev) => ({ text: prev.text, err: ev.msg }));
       }

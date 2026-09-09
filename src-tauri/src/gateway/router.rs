@@ -8,8 +8,12 @@ use super::{store, Gateway};
 
 const MAX_ATTEMPTS: i64 = 10;
 
-const FAST_MS: [u64; 9] = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000, 60_000, 90_000, 120_000];
-const RATE_MS: [u64; 9] = [15_000, 30_000, 60_000, 90_000, 120_000, 120_000, 120_000, 120_000, 120_000];
+const FAST_MS: [u64; 9] = [
+    1_000, 2_000, 4_000, 8_000, 15_000, 30_000, 60_000, 90_000, 120_000,
+];
+const RATE_MS: [u64; 9] = [
+    15_000, 30_000, 60_000, 90_000, 120_000, 120_000, 120_000, 120_000, 120_000,
+];
 
 pub fn rank(provs: &[Provider], avails: &[Avail], mode: &str, pinned: &str) -> Vec<Avail> {
     let mut out = avails.to_vec();
@@ -92,7 +96,10 @@ fn resolve(gw: &Gateway, req: &ChatReq) -> Result<Resolved, String> {
     }
 
     let ranked = rank(&provs, &avails, &mode, &pinned);
-    let av = ranked.first().ok_or("no provider serves this model")?.clone();
+    let av = ranked
+        .first()
+        .ok_or("no provider serves this model")?
+        .clone();
 
     Ok(Resolved {
         provs,
@@ -106,7 +113,11 @@ fn backoff_ms(status: Option<u16>, attempt: i64, retry_after: Option<u64>) -> u6
         return secs.saturating_mul(1000).min(120_000);
     }
 
-    let ladder = if status == Some(429) { RATE_MS } else { FAST_MS };
+    let ladder = if status == Some(429) {
+        RATE_MS
+    } else {
+        FAST_MS
+    };
     let base = ladder[(attempt - 1).clamp(0, 8) as usize];
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -120,12 +131,12 @@ pub async fn run(gw: &Gateway, req: &ChatReq) -> Result<ChatResp, String> {
     run_opts(gw, req, MAX_ATTEMPTS).await
 }
 
-pub async fn run_opts(
-    gw: &Gateway,
-    req: &ChatReq,
-    max_attempts: i64,
-) -> Result<ChatResp, String> {
-    let Resolved { provs, av, req_json } = resolve(gw, req)?;
+pub async fn run_opts(gw: &Gateway, req: &ChatReq, max_attempts: i64) -> Result<ChatResp, String> {
+    let Resolved {
+        provs,
+        av,
+        req_json,
+    } = resolve(gw, req)?;
 
     let prov = match provs.iter().find(|p| p.id == av.provider_id) {
         Some(p) => p,
@@ -142,18 +153,16 @@ pub async fn run_opts(
         attempt += 1;
 
         let t0 = Instant::now();
-        let res = adapters::dispatch(&gw.http, prov, &av.remote_model_id, tok.clone(), &req.msgs).await;
+        let res =
+            adapters::dispatch(&gw.http, prov, &av.remote_model_id, tok.clone(), &req.msgs).await;
         let latency = t0.elapsed().as_millis() as i64;
 
         match res {
             Ok((wire, raw)) => {
-                let usage = wire
-                    .usage
-                    .clone()
-                    .unwrap_or(WireUsage {
-                        prompt_tokens: 0,
-                        completion_tokens: 0,
-                    });
+                let usage = wire.usage.clone().unwrap_or(WireUsage {
+                    prompt_tokens: 0,
+                    completion_tokens: 0,
+                });
 
                 let cost = usage.prompt_tokens as f64 / 1000.0 * av.cost_in
                     + usage.completion_tokens as f64 / 1000.0 * av.cost_out;
@@ -260,7 +269,11 @@ pub async fn stream_run(
     req: &ChatReq,
     chan: &Channel<StreamEvent>,
 ) -> Result<StreamStats, String> {
-    let Resolved { provs, av, req_json } = resolve(gw, req)?;
+    let Resolved {
+        provs,
+        av,
+        req_json,
+    } = resolve(gw, req)?;
 
     let prov = match provs.iter().find(|p| p.id == av.provider_id) {
         Some(p) => p,
@@ -317,7 +330,8 @@ pub async fn stream_run(
             Ok(done) => {
                 let tok_in = done.tok_in.unwrap_or(0) as i64;
                 let tok_out = done.tok_out.unwrap_or(0) as i64;
-                let cost = tok_in as f64 / 1000.0 * av.cost_in + tok_out as f64 / 1000.0 * av.cost_out;
+                let cost =
+                    tok_in as f64 / 1000.0 * av.cost_in + tok_out as f64 / 1000.0 * av.cost_out;
 
                 let log = ReqLog {
                     model_id: Some(req.model.clone()),

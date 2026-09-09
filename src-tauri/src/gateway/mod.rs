@@ -316,10 +316,7 @@ fn per_1k(v: &serde_json::Value) -> f64 {
 }
 
 #[tauri::command]
-pub fn gw_logs(
-    gw: State<'_, Gateway>,
-    limit: Option<i64>,
-) -> Result<Vec<schema::ReqLog>, String> {
+pub fn gw_logs(gw: State<'_, Gateway>, limit: Option<i64>) -> Result<Vec<schema::ReqLog>, String> {
     let conn = gw.conn.lock().map_err(|e| e.to_string())?;
     store::list_logs(&conn, limit.unwrap_or(100))
 }

@@ -16,7 +16,8 @@ const DEFAULT_TITLE: &str = "New chat";
 const MAX_STEPS: usize = 8;
 const RESULT_CLIP: usize = 4000;
 
-const TITLE_SYS: &str = "You are the title generator for Argus, a personal AI agent the user chats with. \
+const TITLE_SYS: &str =
+    "You are the title generator for Argus, a personal AI agent the user chats with. \
 Write a short session title for the user's message. Reply with only the title: \
 3 to 6 words, no quotes, no trailing punctuation.";
 

@@ -117,7 +117,9 @@ pub async fn stream(
                         }
                     }
                     Some("message_start") => {
-                        done.tok_in = v["message"]["usage"]["input_tokens"].as_u64().or(done.tok_in);
+                        done.tok_in = v["message"]["usage"]["input_tokens"]
+                            .as_u64()
+                            .or(done.tok_in);
                     }
                     Some("message_delta") => {
                         done.tok_out = v["usage"]["output_tokens"].as_u64().or(done.tok_out);
@@ -141,7 +143,10 @@ pub async fn chat(
     let pl = payload(remote_id, msgs, false);
     let url = format!("{base_url}/v1/messages");
 
-    let mut req = http.post(&url).header("anthropic-version", "2023-06-01").json(&pl);
+    let mut req = http
+        .post(&url)
+        .header("anthropic-version", "2023-06-01")
+        .json(&pl);
     if let Some(t) = tok {
         req = req.header("x-api-key", t);
     }

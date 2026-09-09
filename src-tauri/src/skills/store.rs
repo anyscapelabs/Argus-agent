@@ -6,7 +6,7 @@ use std::time::UNIX_EPOCH;
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use super::schema::{BODY_MAX, DESC_MAX, NAME_MAX, NewSkill, Skill, UpdSkill};
+use super::schema::{NewSkill, Skill, UpdSkill, BODY_MAX, DESC_MAX, NAME_MAX};
 
 const COLS: &str = "s.name, s.description, s.body, s.source, s.origin, s.created_at, s.file_mtime";
 const JOIN_STATS: &str =
@@ -185,8 +185,11 @@ pub fn sync(conn: &Connection, dir: &Path) -> Result<usize, String> {
         let mut stmt = conn
             .prepare("SELECT name FROM skills")
             .map_err(|e| e.to_string())?;
-        let rows = stmt.query_map([], |r| r.get(0)).map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+        let rows = stmt
+            .query_map([], |r| r.get(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?
     };
 
     for name in all {
@@ -271,10 +274,16 @@ pub fn list_skills(conn: &Connection) -> Result<Vec<Skill>, String> {
         .map_err(|e| e.to_string())?;
 
     let rows = stmt.query_map([], row_skill).map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
-pub fn update_skill(conn: &Connection, dir: &Path, name: &str, u: &UpdSkill) -> Result<Skill, String> {
+pub fn update_skill(
+    conn: &Connection,
+    dir: &Path,
+    name: &str,
+    u: &UpdSkill,
+) -> Result<Skill, String> {
     let cur = get_skill(conn, dir, name)?;
     let desc = u.description.clone().unwrap_or(cur.description);
     let body = u.body.clone().unwrap_or(cur.body);
@@ -328,5 +337,6 @@ pub fn search_skills(conn: &Connection, query: &str, limit: i64) -> Result<Vec<S
         .query_map(params![fts_q, limit], row_skill)
         .map_err(|e| e.to_string())?;
 
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }

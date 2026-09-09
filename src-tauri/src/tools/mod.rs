@@ -185,12 +185,18 @@ mod tests {
     fn salvages_native_key_value_tool_call() {
         let t = "<tool_callweb.search\n<arg_key>query</arg_key>\n<arg_value>\"Announcing Rust 1.98.0\" blog.rust-lang.org</arg_value>\n</tool_call>";
         let out = normalize_actions(t);
-        assert!(out.contains(r#"<action tool="web.search">{"query":"#), "got: {out}");
+        assert!(
+            out.contains(r#"<action tool="web.search">{"query":"#),
+            "got: {out}"
+        );
         let acts = parse_actions(&out);
         assert_eq!(acts.len(), 1);
         assert_eq!(acts[0].tool, "web.search");
         let args: Value = serde_json::from_str(&acts[0].args).expect("args json");
-        assert_eq!(args["query"], "\"Announcing Rust 1.98.0\" blog.rust-lang.org");
+        assert_eq!(
+            args["query"],
+            "\"Announcing Rust 1.98.0\" blog.rust-lang.org"
+        );
     }
 
     #[test]
@@ -212,7 +218,12 @@ mod tests {
     }
 }
 
-pub async fn exec(name: &str, args_json: &str, permission: &str, web: bool) -> Result<String, String> {
+pub async fn exec(
+    name: &str,
+    args_json: &str,
+    permission: &str,
+    web: bool,
+) -> Result<String, String> {
     let meta = TOOLS
         .iter()
         .chain(WEB_TOOLS.iter())
@@ -220,7 +231,9 @@ pub async fn exec(name: &str, args_json: &str, permission: &str, web: bool) -> R
         .ok_or_else(|| format!("unknown tool {name}"))?;
 
     if name.starts_with("web.") && !web {
-        return Err("web search is off for this session; the user can enable it from the + menu".into());
+        return Err(
+            "web search is off for this session; the user can enable it from the + menu".into(),
+        );
     }
 
     if meta.mutating && permission == "ask" {

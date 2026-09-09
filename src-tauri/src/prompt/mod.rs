@@ -1,8 +1,8 @@
 pub mod compressor;
 pub mod config;
 
-use rusqlite::Connection;
 use rusqlite::params;
+use rusqlite::Connection;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tauri::State;
@@ -57,8 +57,9 @@ fn stable_layer(conn: &Connection, web: bool) -> Result<String, String> {
         .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
         .map_err(|e| e.to_string())?;
 
-    let skills: Vec<(String, String)> =
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    let skills: Vec<(String, String)> = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
 
     if !skills.is_empty() {
         s.push_str(
@@ -114,7 +115,10 @@ pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String
 
     let rows = stmt
         .query_map(params![session_id, compact_seq], |r| {
-            Ok(WireMsg { role: r.get(0)?, content: r.get(1)? })
+            Ok(WireMsg {
+                role: r.get(0)?,
+                content: r.get(1)?,
+            })
         })
         .map_err(|e| e.to_string())?;
 
@@ -124,7 +128,11 @@ pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String
 
     let mut hasher = Sha256::new();
     hasher.update(system.as_bytes());
-    let hash: String = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    let hash: String = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
 
     Ok(Projection {
         session_id: session_id.into(),

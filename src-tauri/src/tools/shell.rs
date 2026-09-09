@@ -6,7 +6,9 @@ use tokio::process::Command;
 const SHELL_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub async fn run(args: &Value) -> Result<String, String> {
-    let cmd = args["command"].as_str().ok_or("shell.run needs a command")?;
+    let cmd = args["command"]
+        .as_str()
+        .ok_or("shell.run needs a command")?;
 
     let mut c = Command::new("sh");
     c.arg("-c").arg(cmd);

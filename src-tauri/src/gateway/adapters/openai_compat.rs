@@ -20,14 +20,11 @@ pub async fn stream(
         req = req.bearer_auth(t);
     }
 
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| CallErr {
-            status: None,
-            msg: e.to_string(),
-            retry_after: None,
-        })?;
+    let resp = req.send().await.map_err(|e| CallErr {
+        status: None,
+        msg: e.to_string(),
+        retry_after: None,
+    })?;
 
     let status = resp.status().as_u16();
     if status != 200 {

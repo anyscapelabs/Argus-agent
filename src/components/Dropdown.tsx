@@ -67,7 +67,7 @@ export default function Dropdown({
         <div
           role="menu"
           className={
-            "absolute z-50 min-w-[220px] overflow-hidden rounded-2xl " +
+            "absolute z-50 min-w-[220px] overflow-y-auto rounded-2xl " +
             "border border-border-primary bg-bg-secondary p-1 shadow-4xl " +
             `${side === "top" ? "bottom-full mb-2" : "top-full mt-2"} ` +
             `${align === "right" ? "right-0" : "left-0"} ` +

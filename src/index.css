@@ -130,3 +130,26 @@ button:focus-visible {
     opacity: 0.15;
   }
 }
+
+.shimmer-text {
+  background: linear-gradient(
+    90deg,
+    var(--color-text-secondary) 40%,
+    var(--color-text-primary) 50%,
+    var(--color-text-secondary) 60%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: argus-shimmer 1.6s linear infinite;
+}
+
+@keyframes argus-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}

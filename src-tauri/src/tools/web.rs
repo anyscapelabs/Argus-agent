@@ -2,10 +2,17 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use regex::Regex;
+use serde::Deserialize;
 use serde_json::Value;
 
 const MAX_RESULTS: usize = 8;
 const UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
+const SEARXNG_POOL: &[&str] = &[
+    "https://search.sapti.me/search",
+    "https://searx.be/search",
+    "https://search.bus-hit.me/search",
+];
 
 fn client() -> &'static reqwest::Client {
     static C: OnceLock<reqwest::Client> = OnceLock::new();
@@ -29,6 +36,94 @@ fn arg_str<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
 pub async fn search(args: &Value) -> Result<String, String> {
     let query = arg_str(args, "query")?;
 
+    if let Some(hits) = searxng_pool_search(query).await {
+        if !hits.is_empty() {
+            return format_hits(&hits);
+        }
+    }
+
+    duck_search(query).await
+}
+
+fn format_hits(hits: &[(String, String, String)]) -> Result<String, String> {
+    if hits.is_empty() {
+        return Err(
+            "search returned no results (the engine may be rate-limiting automated queries — try again in a moment)".into(),
+        );
+    }
+
+    let mut out = String::new();
+    for (i, (title, url, snippet)) in hits.iter().take(MAX_RESULTS).enumerate() {
+        out.push_str(&format!("{}. {title}\n   {url}\n   {snippet}\n", i + 1));
+    }
+
+    Ok(out)
+}
+
+#[derive(Deserialize, Debug)]
+struct SearxngHit {
+    title: String,
+    url: String,
+    #[serde(default)]
+    content: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct SearxngResp {
+    #[serde(default)]
+    results: Vec<SearxngHit>,
+}
+
+async fn searxng_pool_search(query: &str) -> Option<Vec<(String, String, String)>> {
+    for base in SEARXNG_POOL {
+        if let Some(hits) = searxng_fetch(base, query).await {
+            if !hits.is_empty() {
+                return Some(hits);
+            }
+        }
+    }
+
+    None
+}
+
+async fn searxng_fetch(base: &str, query: &str) -> Option<Vec<(String, String, String)>> {
+    let resp = client()
+        .get(base)
+        .query(&[("q", query), ("format", "json"), ("categories", "general")])
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .ok()?;
+
+    if !resp.status().is_success() {
+        return None;
+    }
+
+    let body: SearxngResp = resp.json().await.ok()?;
+    let hits: Vec<(String, String, String)> = body
+        .results
+        .into_iter()
+        .filter_map(|r| {
+            let title = strip(&r.title);
+            let url = r.url.trim().to_string();
+            if title.is_empty() || url.is_empty() {
+                return None;
+            }
+
+            let snippet = strip(&r.content);
+            Some((title, url, snippet))
+        })
+        .take(MAX_RESULTS)
+        .collect();
+
+    if hits.is_empty() {
+        None
+    } else {
+        Some(hits)
+    }
+}
+
+async fn duck_search(query: &str) -> Result<String, String> {
     let resp = client()
         .get("https://html.duckduckgo.com/html/")
         .query(&[("q", query)])
@@ -47,18 +142,8 @@ pub async fn search(args: &Value) -> Result<String, String> {
     }
 
     let results = parse_results(&html);
-    if results.is_empty() {
-        return Err(
-            "search returned no results (the engine may be rate-limiting automated queries — try again in a moment)".into(),
-        );
-    }
 
-    let mut out = String::new();
-    for (i, (title, url, snippet)) in results.iter().take(MAX_RESULTS).enumerate() {
-        out.push_str(&format!("{}. {title}\n   {url}\n   {snippet}\n", i + 1));
-    }
-
-    Ok(out)
+    format_hits(&results)
 }
 
 struct Hit {

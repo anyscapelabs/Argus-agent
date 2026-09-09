@@ -84,17 +84,20 @@ fn resolve(gw: &Gateway, req: &ChatReq) -> Result<Resolved, String> {
   Ok(Resolved { provs, av, req_json: serde_json::to_string(req).ok() })
 }
 
-// Exponential with jitter; Retry-After wins when the provider sends one.
+// Long-lived retry: catch transient blips fast, then wait out sustained rate
+// limits. 10 attempts spread over ~3.5 min, +0-25% jitter. Retry-After wins.
+const RETRY_DELAYS_MS: [u64; 9] = [500, 1_000, 2_000, 4_000, 8_000, 15_000, 30_000, 60_000, 90_000];
+
 fn backoff_ms(attempt: i64, retry_after: Option<u64>) -> u64 {
   if let Some(secs) = retry_after {
-    return secs.saturating_mul(1000).min(30_000);
+    return secs.saturating_mul(1000).min(120_000);
   }
-  let base = 500u64 << (attempt - 1).min(4); // 500, 1k, 2k, 4k, 8k cap
+  let base = RETRY_DELAYS_MS[(attempt - 1).clamp(0, 8) as usize];
   let nanos = std::time::SystemTime::now()
     .duration_since(std::time::UNIX_EPOCH)
     .map(|d| d.subsec_nanos() as u64)
     .unwrap_or(0);
-  base + nanos % base / 2
+  base + nanos % base / 4
 }
 
 pub async fn run(gw: &Gateway, req: &ChatReq) -> Result<ChatResp, String> {

@@ -107,13 +107,13 @@ export default function ActionBlock({
         }
       >
         <FiTerminal size={12} className="shrink-0 text-text-secondary" />
-        <span className="min-w-0 flex-1 truncate text-left font-mono text-text-primary">
-          {command}
+        <span className="text-left font-medium text-text-primary">
+          Terminal
         </span>
         {statusBadge(code, output !== undefined)}
         <FiChevronDown
           size={12}
-          className={`shrink-0 transition-transform ${open ? "" : "-rotate-90"}`}
+          className={`ml-auto shrink-0 transition-transform ${open ? "" : "-rotate-90"}`}
         />
       </button>
       {approval !== undefined && approval !== null && (
@@ -135,13 +135,21 @@ export default function ActionBlock({
           </button>
         </div>
       )}
-      {open && output !== undefined && (
-        <pre
-          ref={preRef}
-          className="max-h-[240px] overflow-y-auto whitespace-pre-wrap p-3 font-mono text-xs leading-5 text-text-primary"
-        >
-          {output.length > 0 ? output : "…"}
-        </pre>
+      {open && (
+        <>
+          <div className="border-b border-border-primary px-3 py-2 font-mono text-xs">
+            <span className="text-text-secondary">$ </span>
+            <span className="text-text-primary">{command}</span>
+          </div>
+          {output !== undefined && (
+            <pre
+              ref={preRef}
+              className="max-h-[240px] overflow-y-auto whitespace-pre-wrap p-3 font-mono text-xs leading-5 text-text-primary"
+            >
+              {output.length > 0 ? output : "…"}
+            </pre>
+          )}
+        </>
       )}
     </div>
   );

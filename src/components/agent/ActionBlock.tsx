@@ -137,14 +137,14 @@ export default function ActionBlock({
       )}
       {open && (
         <>
-          <div className="border-b border-border-primary px-3 py-2 font-mono text-xs">
+          <div className="border-b border-border-primary px-3 py-2.5 font-mono text-sm leading-6">
             <span className="text-text-secondary">$ </span>
             <span className="text-text-primary">{command}</span>
           </div>
           {output !== undefined && (
             <pre
               ref={preRef}
-              className="max-h-[240px] overflow-y-auto whitespace-pre-wrap p-3 font-mono text-xs leading-5 text-text-primary"
+              className="max-h-[280px] overflow-y-auto whitespace-pre-wrap px-3 py-2.5 font-mono text-sm leading-6 text-text-primary"
             >
               {output.length > 0 ? output : "…"}
             </pre>

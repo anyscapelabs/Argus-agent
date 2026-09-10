@@ -35,11 +35,11 @@ export default function TerminalBlock({ block }: Props) {
       </button>
       {open && (
         <>
-          <div className="border-b border-border-primary px-3 py-2 font-mono text-xs">
+          <div className="border-b border-border-primary px-3 py-2.5 font-mono text-sm leading-6">
             <span className="text-text-secondary">$ </span>
             <span className="text-text-primary">{command}</span>
           </div>
-          <pre className="overflow-x-auto whitespace-pre p-3 font-mono text-xs leading-5 text-text-primary">
+          <pre className="overflow-x-auto whitespace-pre px-3 py-2.5 font-mono text-sm leading-6 text-text-primary">
             {body || <span className="italic text-text-secondary">…</span>}
           </pre>
         </>

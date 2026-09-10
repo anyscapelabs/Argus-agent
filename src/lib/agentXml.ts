@@ -210,7 +210,13 @@ export function tokenize(buf: string): Token[] {
     };
     tag = ALIAS[tag] ?? tag;
 
-    if (tag === "p" || tag === "div" || tag === "span") {
+    if (
+      tag === "p" ||
+      tag === "div" ||
+      tag === "span" ||
+      tag === "command" ||
+      tag === "output"
+    ) {
       i = end + 1;
       continue;
     }

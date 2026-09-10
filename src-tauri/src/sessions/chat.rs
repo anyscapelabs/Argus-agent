@@ -198,7 +198,7 @@ fn sanitize_tags(s: &str) -> String {
         .replace("<a>", "<link>")
         .replace("</a>", "</link>");
 
-    if let Ok(re) = regex::Regex::new(r"(?i)</?(p|div|span)[^>]*>") {
+    if let Ok(re) = regex::Regex::new(r"(?i)</?(p|div|span|command|output)[^>]*>") {
         t = re.replace_all(&t, "").into_owned();
     }
 

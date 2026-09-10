@@ -106,8 +106,8 @@ export default function ActionBlock({
           "focus:outline-none focus-visible:bg-bg-hover-primary"
         }
       >
-        <FiTerminal size={12} className="shrink-0 text-text-secondary" />
-        <span className="text-left font-medium text-text-primary">
+        <FiTerminal size={14} className="shrink-0 text-text-secondary" />
+        <span className="text-left text-sm font-medium text-text-primary">
           Terminal
         </span>
         {statusBadge(code, output !== undefined)}

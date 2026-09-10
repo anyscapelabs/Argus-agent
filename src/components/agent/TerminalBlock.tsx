@@ -26,8 +26,8 @@ export default function TerminalBlock({ block }: Props) {
         }
         aria-expanded={open}
       >
-        <FiTerminal size={12} />
-        <span className="font-medium text-text-primary">Terminal</span>
+        <FiTerminal size={14} />
+        <span className="text-sm font-medium text-text-primary">Terminal</span>
         <FiChevronDown
           size={12}
           className={`ml-auto transition-transform ${open ? "" : "-rotate-90"}`}

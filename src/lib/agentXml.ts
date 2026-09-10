@@ -217,6 +217,8 @@ export function tokenize(buf: string): Token[] {
       tag === "command" ||
       tag === "output"
     ) {
+      flush(i);
+      start = end + 1;
       i = end + 1;
       continue;
     }

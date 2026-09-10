@@ -31,6 +31,7 @@ import DocumentCard from "./agent/DocumentCard";
 import EmailDraftCard from "./agent/EmailDraftCard";
 import FileGroup from "./agent/FileGroup";
 import MemoryRefChip from "./agent/MemoryRefChip";
+import PathChip from "./agent/PathChip";
 import PlanBlock from "./agent/PlanBlock";
 import TableBlock from "./agent/TableBlock";
 import TerminalBlock from "./agent/TerminalBlock";
@@ -176,40 +177,88 @@ function renderInline(nodes: InlineNode[]): React.ReactNode {
           continue;
         }
 
-        const cls = stk
-          .filter((s) => s.tag !== "link")
-          .map((s) => INLINE_CLS[s.tag])
-          .filter(Boolean)
-          .join(" ");
-        const link = stk.find((s) => s.tag === "link");
-
-        if (link?.href) {
-          out.push(
-            <a
-              key={`i-${k++}`}
-              href={link.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`text-blue-400 underline decoration-blue-400/30 underline-offset-2 hover:text-blue-300 ${cls}`}
-            >
-              {mp}
-            </a>,
-          );
-          continue;
-        }
-
-        if (!cls) {
-          out.push(<Fragment key={`i-${k++}`}>{mp}</Fragment>);
-          continue;
-        }
-
-        out.push(
-          <span key={`i-${k++}`} className={cls}>
-            {mp}
-          </span>,
-        );
+        pushText(mp);
       }
     }
+  };
+
+  const pushPlain = (seg: string) => {
+    if (!seg) {
+      return;
+    }
+
+    const cls = stk
+      .filter((s) => s.tag !== "link")
+      .map((s) => INLINE_CLS[s.tag])
+      .filter(Boolean)
+      .join(" ");
+    const link = stk.find((s) => s.tag === "link");
+
+    if (link?.href) {
+      out.push(
+        <a
+          key={`i-${k++}`}
+          href={link.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`text-blue-400 underline decoration-blue-400/30 underline-offset-2 hover:text-blue-300 ${cls}`}
+        >
+          {seg}
+        </a>,
+      );
+      return;
+    }
+
+    if (!cls) {
+      out.push(<Fragment key={`i-${k++}`}>{seg}</Fragment>);
+      return;
+    }
+
+    out.push(
+      <span key={`i-${k++}`} className={cls}>
+        {seg}
+      </span>,
+    );
+  };
+
+  const pushText = (seg: string) => {
+    if (!seg) {
+      return;
+    }
+
+    const re = /(?:~\/|\/)[^\s<>"'`]+/g;
+    let cur = 0;
+    let m: RegExpExecArray | null;
+    const plain = (from: number, to: number) => {
+      if (to <= from) {
+        return;
+      }
+      pushPlain(seg.slice(from, to));
+    };
+
+    while ((m = re.exec(seg)) !== null) {
+      const raw = m[0];
+      const junk = raw.match(/[.,;:!?)\]}]+$/)?.[0].length ?? 0;
+      const path = raw
+        .slice(0, raw.length - junk)
+        .replace(/\/+$/, "");
+
+      const usable =
+        path.length >= 2 &&
+        !path.startsWith("//") &&
+        (path.startsWith("~/") || path.includes("/", 1));
+
+      if (!usable) {
+        continue;
+      }
+
+      plain(cur, m.index);
+      out.push(<PathChip key={`i-${k++}`} path={path} />);
+      cur = m.index + path.length;
+      re.lastIndex = cur;
+    }
+
+    plain(cur, seg.length);
   };
 
   const scan = (txt: string) => {
@@ -543,6 +592,13 @@ function renderTree(
 
     if (blk.tag === "action") {
       out.push(renderBlk(blk, `b-${i}`, live, actFor(aIdx)));
+      aIdx++;
+      i++;
+      continue;
+    }
+
+    if (blk.tag === "terminal") {
+      out.push(renderBlk(blk, `b-${i}`, live));
       aIdx++;
       i++;
       continue;

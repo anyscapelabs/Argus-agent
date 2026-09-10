@@ -27,16 +27,22 @@ export default function TerminalBlock({ block }: Props) {
         aria-expanded={open}
       >
         <FiTerminal size={12} />
-        <span className="font-mono text-text-primary">{command}</span>
+        <span className="font-medium text-text-primary">Terminal</span>
         <FiChevronDown
           size={12}
           className={`ml-auto transition-transform ${open ? "" : "-rotate-90"}`}
         />
       </button>
       {open && (
-        <pre className="overflow-x-auto whitespace-pre p-3 font-mono text-xs leading-5 text-text-primary">
-          {body || <span className="italic text-text-secondary">…</span>}
-        </pre>
+        <>
+          <div className="border-b border-border-primary px-3 py-2 font-mono text-xs">
+            <span className="text-text-secondary">$ </span>
+            <span className="text-text-primary">{command}</span>
+          </div>
+          <pre className="overflow-x-auto whitespace-pre p-3 font-mono text-xs leading-5 text-text-primary">
+            {body || <span className="italic text-text-secondary">…</span>}
+          </pre>
+        </>
       )}
     </div>
   );

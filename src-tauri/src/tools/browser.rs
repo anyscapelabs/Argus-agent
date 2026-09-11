@@ -118,6 +118,24 @@ fn profile_of(args: &Value) -> String {
         .to_string()
 }
 
+/// Unnamed profile follows the Chrome permission — "use chrome" must never
+/// open a lookalike window.
+async fn route_profile(args: &Value) -> String {
+    if let Some(p) = args
+        .get("profile")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+    {
+        return p.to_string();
+    }
+
+    match crate::sessions::ext_install::real_enabled() {
+        true => "real".into(),
+        false => "main".into(),
+    }
+}
+
 async fn launch(root: &PathBuf, name: &str) -> Result<Sess, String> {
     let dir = root.join(sanitize(name));
     std::fs::create_dir_all(&dir).map_err(|e| format!("profile dir failed: {e}"))?;
@@ -297,7 +315,7 @@ async fn page_out(s: &mut Sess) -> Result<String, String> {
 pub async fn open(args: &Value) -> Result<String, String> {
     let url = url_of(args)?;
     url_guard(&url)?;
-    let name = profile_of(args);
+    let name = route_profile(args).await;
 
     if super::browser_ext::is_real(&name) {
         return super::browser_ext::open(args).await;
@@ -334,7 +352,7 @@ async fn target(s: &Sess, r: usize) -> Result<String, String> {
 }
 
 pub async fn click(args: &Value) -> Result<String, String> {
-    let name = profile_of(args);
+    let name = route_profile(args).await;
 
     if super::browser_ext::is_real(&name) {
         return super::browser_ext::click(args).await;
@@ -361,7 +379,7 @@ pub async fn click(args: &Value) -> Result<String, String> {
 }
 
 pub async fn type_text(args: &Value) -> Result<String, String> {
-    let name = profile_of(args);
+    let name = route_profile(args).await;
 
     if super::browser_ext::is_real(&name) {
         return super::browser_ext::type_text(args).await;
@@ -403,7 +421,7 @@ pub async fn type_text(args: &Value) -> Result<String, String> {
 }
 
 pub async fn read(args: &Value) -> Result<String, String> {
-    let name = profile_of(args);
+    let name = route_profile(args).await;
 
     if super::browser_ext::is_real(&name) {
         return super::browser_ext::read(args).await;
@@ -417,7 +435,7 @@ pub async fn read(args: &Value) -> Result<String, String> {
 }
 
 pub async fn close(args: &Value) -> Result<String, String> {
-    let name = profile_of(args);
+    let name = route_profile(args).await;
 
     if super::browser_ext::is_real(&name) {
         return super::browser_ext::close(args).await;
@@ -481,9 +499,8 @@ fn pct_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// Block URLs that carry credentials — a prompt injection can exfiltrate
-/// secrets by planting them in a url the agent is asked to open. Checks the
-/// raw and percent-decoded forms (%2D-style tricks).
+/// A prompt injection can exfiltrate secrets by planting them in a url the
+/// agent is asked to open. Raw and percent-decoded forms.
 pub fn url_guard(url: &str) -> Result<(), String> {
     let Some(re) = secret_re() else { return Ok(()) };
 
@@ -496,8 +513,7 @@ pub fn url_guard(url: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Mask obvious token shapes in page text and element labels before they
-/// reach chat history.
+/// Mask token shapes before they reach chat history.
 pub fn redact(s: &str) -> String {
     match secret_re() {
         Some(re) => re.replace_all(s, "[redacted]").into_owned(),
@@ -532,7 +548,9 @@ pub async fn sensitive(tool: &str, args: &Value) -> bool {
         None => return false,
     };
 
-    if super::browser_ext::is_real(&profile_of(args)) && super::browser_ext::sensitive(args).await {
+    let name = route_profile(args).await;
+
+    if super::browser_ext::is_real(&name) && super::browser_ext::sensitive(args).await {
         return true;
     }
 
@@ -549,8 +567,6 @@ pub async fn sensitive(tool: &str, args: &Value) -> bool {
     }
 
     if let Ok(r) = ref_of(args) {
-        let name = profile_of(args);
-
         if let Ok(g) = pool().sess.try_lock() {
             if let Some(s) = g.get(&name) {
                 if url_re.is_match(&s.url) {

@@ -180,6 +180,20 @@ export const sessResolveApproval = (
 export const sessBrowserImport = (profile: string) =>
   invoke<void>("sess_browser_import", { profile });
 
+export type ExtInstall = {
+  extId: string;
+  extPath: string;
+};
+
+export const sessExtInstall = () =>
+  invoke<ExtInstall>("sess_ext_install");
+
+export const sessExtUninstall = () =>
+  invoke<void>("sess_ext_uninstall");
+
+export const sessExtStatus = () =>
+  invoke<boolean>("sess_ext_status");
+
 export const sessChatStream = (
   sessionId: string,
   content: string,

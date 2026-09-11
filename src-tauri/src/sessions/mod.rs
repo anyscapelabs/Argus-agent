@@ -1,5 +1,6 @@
 pub mod browser_import;
 pub mod chat;
+pub mod ext_install;
 pub mod schema;
 pub mod store;
 

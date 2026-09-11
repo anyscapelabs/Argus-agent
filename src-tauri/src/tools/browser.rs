@@ -94,7 +94,7 @@ pub fn profile_dir(name: &str) -> PathBuf {
     pool().root.join(sanitize(name))
 }
 
-fn sanitize(name: &str) -> String {
+pub fn sanitize(name: &str) -> String {
     let t: String = name
         .to_lowercase()
         .chars()
@@ -295,6 +295,11 @@ async fn page_out(s: &mut Sess) -> Result<String, String> {
 pub async fn open(args: &Value) -> Result<String, String> {
     let url = url_of(args)?;
     let name = profile_of(args);
+
+    if super::browser_ext::is_real(&name) {
+        return super::browser_ext::open(args).await;
+    }
+
     let mut map = sess(&name).await?;
     let s = map.get_mut(&name).ok_or("browser session missing")?;
     s.last_used = Instant::now();
@@ -324,6 +329,11 @@ async fn target(s: &Sess, r: usize) -> Result<String, String> {
 
 pub async fn click(args: &Value) -> Result<String, String> {
     let name = profile_of(args);
+
+    if super::browser_ext::is_real(&name) {
+        return super::browser_ext::click(args).await;
+    }
+
     let r = ref_of(args)?;
 
     let mut map = sess(&name).await?;
@@ -346,6 +356,11 @@ pub async fn click(args: &Value) -> Result<String, String> {
 
 pub async fn type_text(args: &Value) -> Result<String, String> {
     let name = profile_of(args);
+
+    if super::browser_ext::is_real(&name) {
+        return super::browser_ext::type_text(args).await;
+    }
+
     let r = ref_of(args)?;
     let text = args
         .get("text")
@@ -383,6 +398,11 @@ pub async fn type_text(args: &Value) -> Result<String, String> {
 
 pub async fn read(args: &Value) -> Result<String, String> {
     let name = profile_of(args);
+
+    if super::browser_ext::is_real(&name) {
+        return super::browser_ext::read(args).await;
+    }
+
     let mut map = sess(&name).await?;
     let s = map.get_mut(&name).ok_or("browser session missing")?;
     s.last_used = Instant::now();
@@ -392,6 +412,11 @@ pub async fn read(args: &Value) -> Result<String, String> {
 
 pub async fn close(args: &Value) -> Result<String, String> {
     let name = profile_of(args);
+
+    if super::browser_ext::is_real(&name) {
+        return super::browser_ext::close(args).await;
+    }
+
     let mut map = pool().sess.lock().await;
 
     match map.remove(&name) {
@@ -404,26 +429,45 @@ pub async fn close(args: &Value) -> Result<String, String> {
     }
 }
 
+pub fn close_profile(name: &str) {
+    let name = sanitize(name);
+
+    if let Ok(mut g) = pool().sess.try_lock() {
+        if let Some(mut s) = g.remove(&name) {
+            tokio::spawn(async move {
+                let _ = s.page.close().await;
+                let _ = s._browser.close().await;
+            });
+        }
+    }
+}
+
 const URL_PAT: &str =
     "login|signin|sign-in|sign_up|signup|/auth|checkout|cart|/pay|billing|order|password";
 const LABEL_PAT: &str = "sign in|sign-in|signin|log in|log-in|login|checkout|pay now|payment|place order|buy now|add to cart|password";
 
-fn pats() -> Option<(regex::Regex, regex::Regex)> {
+pub fn sensitive_pats() -> Option<(regex::Regex, regex::Regex)> {
     Some((
         regex::Regex::new(&format!("(?i)({URL_PAT})")).ok()?,
         regex::Regex::new(&format!("(?i)({LABEL_PAT})")).ok()?,
     ))
 }
 
-pub fn sensitive(tool: &str, args: &Value) -> bool {
+pub async fn sensitive(tool: &str, args: &Value) -> bool {
     if !tool.starts_with("browser.") {
         return false;
     }
 
-    let (url_re, label_re) = match pats() {
+    let (url_re, label_re) = match sensitive_pats() {
         Some(p) => p,
         None => return false,
     };
+
+    if super::browser_ext::is_real(&profile_of(args))
+        && super::browser_ext::sensitive(args).await
+    {
+        return true;
+    }
 
     if let Some(u) = args.get("url").and_then(|v| v.as_str()) {
         if url_re.is_match(u) {
@@ -470,19 +514,22 @@ mod tests {
         assert_eq!(sanitize("main"), "main");
     }
 
-    #[test]
-    fn flags_sensitive_urls_and_labels() {
+    #[tokio::test]
+    async fn flags_sensitive_urls_and_labels() {
         assert!(sensitive(
             "browser.open",
             &serde_json::json!({"url": "https://github.com/login"})
-        ));
+        )
+        .await);
         assert!(!sensitive(
             "browser.open",
             &serde_json::json!({"url": "https://en.wikipedia.org/wiki/Rust"})
-        ));
+        )
+        .await);
         assert!(!sensitive(
             "terminal",
             &serde_json::json!({"command": "ls"})
-        ));
+        )
+        .await);
     }
 }

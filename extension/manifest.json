@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Argus Browser Bridge",
+  "version": "1.0.0",
+  "description": "Lets the Argus agent read and act on pages in your browser. No cookie access, no network interception.",
+  "permissions": ["nativeMessaging", "scripting", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "minimum_chrome_version": "110"
+}

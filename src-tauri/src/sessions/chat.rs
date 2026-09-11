@@ -28,6 +28,20 @@ const TITLE_SYS: &str =
 Write a short session title for the user's message. Reply with only the title: \
 3 to 6 words, no quotes, no trailing punctuation.";
 
+const NUDGE: &str = "Continue: your last reply said you were acting, but it contained no \
+<action> block, so nothing actually ran. Emit the correct action block now. If you \
+cannot act, say so plainly — never describe an action without running it.";
+
+/// Catches the "I'm opening X…" failure mode: intent phrasing with no action
+/// block behind it, so the turn would end with nothing done.
+pub fn claims_action(text: &str) -> bool {
+    let re = regex::Regex::new(
+        r"(?i)\b(i'?m|i am|i'?ll|i will|let me|going to)\s+(open|click|type|run|search|navigat|check|launch|browse)\w*",
+    );
+
+    re.map(|r| r.is_match(text)).unwrap_or(false)
+}
+
 async fn generate_title(gw: &Gateway, session_id: &str, content: &str) -> Result<(), String> {
     let (util, selected) = {
         let conn = gw.conn.lock().map_err(|e| e.to_string())?;
@@ -278,6 +292,8 @@ pub async fn send(
 
     let mut tok_in_sum = 0i64;
     let mut act_base = 0usize;
+    let mut nudge: Option<String> = None;
+    let mut nudged = false;
 
     for _step in 0..MAX_STEPS {
         let mut req = {
@@ -288,6 +304,14 @@ pub async fn send(
             }
 
             let mut r = p.chat_req();
+
+            if let Some(n) = &nudge {
+                r.msgs.push(WireMsg {
+                    role: "user".into(),
+                    content: n.clone(),
+                });
+            }
+
             r.prefix_hash = Some(p.prefix_hash);
             r
         };
@@ -321,6 +345,12 @@ pub async fn send(
         };
 
         if done {
+            if !nudged && claims_action(&text) {
+                nudged = true;
+                nudge = Some(NUDGE.into());
+                continue;
+            }
+
             break;
         }
 

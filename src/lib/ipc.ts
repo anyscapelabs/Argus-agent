@@ -177,6 +177,9 @@ export const sessResolveApproval = (
   allow: boolean,
 ) => invoke<void>("sess_resolve_approval", { approvalId, allow });
 
+export const sessBrowserImport = (profile: string) =>
+  invoke<void>("sess_browser_import", { profile });
+
 export const sessChatStream = (
   sessionId: string,
   content: string,

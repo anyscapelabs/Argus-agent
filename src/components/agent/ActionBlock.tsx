@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FiChevronDown, FiTerminal } from "react-icons/fi";
+import { FiChevronDown, FiGlobe, FiTerminal } from "react-icons/fi";
 
 import type { BlockNode } from "../../lib/agentXml";
 import { sessionStore, type PendingApproval } from "../../stores/sessions";
@@ -18,7 +18,22 @@ const VERB: Record<string, string> = {
   "bash.run": "command",
   grep: "search",
   "fs.write": "file write",
+  "web.search": "web search",
+  "web.read": "web read",
+  "browser.open": "browser open",
+  "browser.click": "browser click",
+  "browser.type": "browser type",
+  "browser.read": "browser read",
+  "browser.close": "browser close",
 };
+
+function argUrl(raw: string): string {
+  try {
+    return (JSON.parse(raw)["url"] as string) ?? "";
+  } catch {
+    return "";
+  }
+}
 
 function statusBadge(code: number | undefined, hasOutput: boolean) {
   if (code === undefined) {
@@ -54,27 +69,60 @@ export default function ActionBlock({
     }
   }, [output]);
 
+  const decide = (allow: boolean) => {
+    if (sessionId !== undefined) {
+      sessionStore.resolveApproval(sessionId, allow);
+    }
+  };
+
   if (!isTerm) {
+    const isBrowser = tool.startsWith("browser.");
     const label = `${live ? "Running" : "Ran"} ${VERB[tool] ?? (tool || "command")}`;
+    const url = isBrowser ? argUrl(block.children.map((c) => c.value).join("")) : "";
+    const pending = approval ?? null;
+    const Icon = isBrowser ? FiGlobe : FiTerminal;
 
     return (
-      <div className="my-2 flex items-center gap-2.5 font-sans">
-        <span
-          className={
-            "flex h-5 w-5 shrink-0 items-center justify-center rounded-md " +
-            "border border-border-primary bg-bg-secondary text-text-secondary"
-          }
-        >
-          <FiTerminal size={11} />
-        </span>
-        <span
-          className={
-            "min-w-0 max-w-[440px] truncate text-sm " +
-            `${live ? "shimmer-text" : "text-text-secondary"}`
-          }
-        >
-          {label}
-        </span>
+      <div className="my-2 font-sans">
+        <div className="flex items-center gap-2.5">
+          <span
+            className={
+              "flex h-5 w-5 shrink-0 items-center justify-center rounded-md " +
+              "border border-border-primary bg-bg-secondary text-text-secondary"
+            }
+          >
+            <Icon size={11} />
+          </span>
+          <span
+            className={
+              "min-w-0 max-w-[440px] truncate text-sm " +
+              `${live ? "shimmer-text" : "text-text-secondary"}`
+            }
+          >
+            {url ? `${label} ${url}` : label}
+          </span>
+        </div>
+        {pending && (
+          <div className="ml-7.5 mt-1.5 flex items-center gap-2">
+            <span className="text-xs text-text-secondary">
+              Allow this action?
+            </span>
+            <button
+              type="button"
+              onClick={() => decide(true)}
+              className="rounded-full bg-white px-3 py-1 text-xs font-medium text-bg-primary hover:opacity-90"
+            >
+              Run
+            </button>
+            <button
+              type="button"
+              onClick={() => decide(false)}
+              className="rounded-full border border-border-primary px-3 py-1 text-xs text-text-secondary hover:text-text-primary"
+            >
+              Deny
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -87,12 +135,6 @@ export default function ActionBlock({
   } catch {
     command = argsRaw || "shell";
   }
-
-  const decide = (allow: boolean) => {
-    if (sessionId !== undefined) {
-      sessionStore.resolveApproval(sessionId, allow);
-    }
-  };
 
   return (
     <div className="my-2 overflow-hidden rounded-lg border border-border-primary bg-bg-primary font-sans">

@@ -2,6 +2,7 @@ use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -196,9 +197,47 @@ pub fn sess_ext_install(app: AppHandle) -> Result<ExtInstall, String> {
 
     let _ = fs::write(data.join("extension.enabled"), b"on");
 
-    launch_chrome(&data.join("extension"));
-
     Ok(res)
+}
+
+/// Agent-side gate for real-browser actions: connect the extension or fail
+/// closed with the exact fix. Chrome only opens when the agent acts — never
+/// from the Connectors toggle.
+pub async fn ensure_real() -> Result<(), String> {
+    if extpipe::connected() {
+        return Ok(());
+    }
+
+    let data = data_dir();
+
+    if !data.join("extension.enabled").is_file() {
+        return Err(
+            "real-browser permission is off — the user can enable Chrome in Connectors".into(),
+        );
+    }
+
+    install_core(&data)?;
+
+    let ext_dir = data.join("extension");
+
+    if !chrome_running() {
+        launch_chrome(&ext_dir);
+    }
+
+    for _ in 0..20 {
+        if extpipe::connected() {
+            return Ok(());
+        }
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+
+    Err(format!(
+        "Chrome is not connected to Argus. Branded Chrome ignores silent extension loading, \
+         so one manual step: open chrome://extensions, enable Developer mode, click \
+         Load unpacked and pick {p}. Tell the user to do that once, then try again.",
+        p = ext_dir.display()
+    ))
 }
 
 #[tauri::command]
@@ -217,6 +256,7 @@ pub fn sess_ext_uninstall(app: AppHandle) -> Result<(), String> {
 
     if let Ok(data) = app.path().app_data_dir() {
         let _ = fs::remove_file(data.join("extension.enabled"));
+        let _ = fs::remove_dir_all(data.join("extension"));
     }
 
     Ok(())

@@ -16,7 +16,7 @@ use super::schema::NewMsg;
 use super::store;
 
 const DEFAULT_TITLE: &str = "New chat";
-const MAX_STEPS: usize = 8;
+const MAX_STEPS: usize = 12;
 const RESULT_CLIP: usize = 4000;
 const TERM_TIMEOUT: u64 = 300;
 const DENIED_CODE: i64 = -2;
@@ -182,6 +182,40 @@ fn exit_of(body: &str) -> i64 {
         .unwrap_or(-1)
 }
 
+fn browser_what(tool: &str, v: &serde_json::Value, masked: bool) -> String {
+    let text = v
+        .get("text")
+        .and_then(|t| t.as_str())
+        .map(|s| if masked { "····".into() } else { s.to_string() });
+    let what = v
+        .get("url")
+        .and_then(|u| u.as_str())
+        .map(Into::into)
+        .or(text)
+        .unwrap_or_default();
+
+    match v.get("ref").and_then(|r| r.as_u64()) {
+        Some(r) => format!("{tool} ref {r} {what}"),
+        None => format!("{tool} {what}"),
+    }
+}
+
+fn browser_block(idx: usize, tool: &str, url: &str, what: &str) -> String {
+    format!(
+        "<browser-action id=\"a{idx}\" url=\"{}\" action=\"{}\">{}</browser-action>",
+        esc_attr(url),
+        esc_attr(tool),
+        esc_attr(what)
+    )
+}
+
+fn body_url(body: &str) -> String {
+    body.lines()
+        .find(|l| l.starts_with("url "))
+        .map(|l| l[4..].trim().to_string())
+        .unwrap_or_default()
+}
+
 fn sanitize_tags(s: &str) -> String {
     let mut t = s.to_string();
     t = t
@@ -297,24 +331,34 @@ pub async fn send(
         for (i, a) in actions.iter().enumerate() {
             let idx = act_base + i;
             let is_term = a.tool == "terminal" || a.tool == "bash.run";
+            let is_browser = a.tool.starts_with("browser.");
+
+            let args_v: serde_json::Value =
+                serde_json::from_str(&a.args).unwrap_or(serde_json::Value::Null);
 
             let cmd = if is_term {
-                serde_json::from_str::<serde_json::Value>(&a.args)
-                    .ok()
-                    .and_then(|v| v["command"].as_str().map(Into::into))
-                    .unwrap_or_default()
+                args_v["command"].as_str().unwrap_or_default().to_string()
             } else {
                 String::new()
             };
 
-            let mut allow = perm != "ask";
+            let sensitive = is_browser && tools::browser::sensitive(&a.tool, &args_v);
+            let needs_ask = (perm == "ask" && tools::is_mutating(&a.tool)) || sensitive;
+
+            let mut allow = !needs_ask;
             let mut denied = false;
 
-            if !allow && is_term && tools::is_mutating(&a.tool) {
-                allow = ask_approval(gw, &chan, &approval_id(), idx as u32, &cmd).await;
+            if !allow {
+                let what = if is_browser {
+                    browser_what(&a.tool, &args_v, false)
+                } else {
+                    cmd.clone()
+                };
+
+                allow = ask_approval(gw, &chan, &approval_id(), idx as u32, &what).await;
                 denied = !allow;
 
-                if denied {
+                if denied && is_term {
                     let _ = chan.send(StreamEvent::TermEnd {
                         idx: idx as u32,
                         code: DENIED_CODE,
@@ -323,7 +367,7 @@ pub async fn send(
             }
 
             let (status, body, code) = if denied {
-                ("err", "command denied by user".to_string(), DENIED_CODE)
+                ("err", "action denied by user".to_string(), DENIED_CODE)
             } else {
                 match tools::exec(
                     &a.tool,
@@ -385,6 +429,19 @@ pub async fn send(
                 };
 
                 edits.push((a.start, a.end, terminal_block(idx, &cmd, code, &out)));
+            }
+
+            if is_browser {
+                let url = args_v["url"]
+                    .as_str()
+                    .map(Into::into)
+                    .unwrap_or_else(|| body_url(&body));
+
+                edits.push((
+                    a.start,
+                    a.end,
+                    browser_block(idx, &a.tool, &url, &browser_what(&a.tool, &args_v, true)),
+                ));
             }
         }
 

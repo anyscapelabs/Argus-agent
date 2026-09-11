@@ -1,3 +1,4 @@
+pub mod browser;
 pub mod fs;
 pub mod grep;
 pub mod shell;
@@ -43,6 +44,7 @@ const TOOLS: &[ToolMeta] = &[
         mutating: true,
     },
 ];
+
 
 const WEB_TOOLS: &[ToolMeta] = &[
     ToolMeta {
@@ -247,6 +249,7 @@ pub async fn exec(
     let meta = TOOLS
         .iter()
         .chain(WEB_TOOLS.iter())
+        .chain(browser::META.iter())
         .find(|t| t.name == name)
         .ok_or_else(|| format!("unknown tool {name}"))?;
 
@@ -277,6 +280,11 @@ pub async fn exec(
         "fs.write" => fs::write(&args),
         "web.search" => web::search(&args).await,
         "web.read" => web::read(&args).await,
+        "browser.open" => browser::open(&args).await,
+        "browser.click" => browser::click(&args).await,
+        "browser.type" => browser::type_text(&args).await,
+        "browser.read" => browser::read(&args).await,
+        "browser.close" => browser::close(&args).await,
         _ => Err("unknown tool".into()),
     }
 }
@@ -285,6 +293,7 @@ pub fn is_mutating(name: &str) -> bool {
     TOOLS
         .iter()
         .chain(WEB_TOOLS.iter())
+        .chain(browser::META.iter())
         .find(|t| t.name == name)
         .map(|t| t.mutating)
         .unwrap_or(false)
@@ -310,6 +319,19 @@ Available tools:\n",
     for t in TOOLS {
         s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));
     }
+
+    s.push_str("Browser tools:\n");
+    for t in browser::META {
+        s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));
+    }
+    s.push_str(
+        "Browser refs are the [n] numbers from the last snapshot; after every page \
+change re-check the list before using a ref, and re-read if a ref is stale. \
+Never type passwords or payment details into the browser yourself — if a page \
+asks you to log in or pay, tell the user to do it inside the Argus browser \
+window, then browser.read to confirm. Login, checkout and purchase actions \
+always need the user's approval; if one is denied, never retry it.\n",
+    );
 
     if web {
         s.push_str("Web tools:\n");

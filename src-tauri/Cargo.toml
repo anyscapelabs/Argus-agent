@@ -30,4 +30,5 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 uuid = { version = "1", features = ["v4"] }
 sha2 = "0.10"
 regex = "1"
+chromiumoxide = "0.9"
 

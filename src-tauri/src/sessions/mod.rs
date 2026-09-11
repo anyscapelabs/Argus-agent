@@ -1,3 +1,4 @@
+pub mod browser_import;
 pub mod chat;
 pub mod schema;
 pub mod store;

@@ -152,7 +152,7 @@ struct Hit {
     snippet: String,
 }
 
-fn parse_results(html: &str) -> Vec<(String, String, String)> {
+pub fn parse_results(html: &str) -> Vec<(String, String, String)> {
     let anchor = Regex::new(r#"<a\s([^>]*result__a[^>]*)>(.*?)</a>"#).expect("anchor regex");
     let snippet = Regex::new(r#"<a\s[^>]*result__snippet[^>]*>(.*?)</a>"#).expect("snippet regex");
     let href = Regex::new(r#"href="([^"]*)""#).expect("href regex");
@@ -323,7 +323,7 @@ pub async fn read(args: &Value) -> Result<String, String> {
     }
 }
 
-fn html_to_text(html: &str) -> String {
+pub fn html_to_text(html: &str) -> String {
     let script = Regex::new(r"(?is)<script[^>]*>.*?</script>").expect("script regex");
     let style = Regex::new(r"(?is)<style[^>]*>.*?</style>").expect("style regex");
     let tag = Regex::new(r"<[^>]*>").expect("tag regex");
@@ -342,36 +342,4 @@ fn html_to_text(html: &str) -> String {
         .join("\n");
 
     blank.replace_all(&lines, "\n\n").into_owned()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_ddg_html() {
-        let html = r##"
-          <div class="result">
-          <a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fa&rut=abc" class="result__a">Ex<b>ample</b> One</a>
-          <a class="result__snippet" href="#">The first &amp; best result</a>
-          </div>
-          <a rel="nofollow" href="https://direct.example.com/b" class="result__a">Direct Two</a>
-          <a class="result__snippet" href="#">second snippet</a>
-        "##;
-
-        let out = parse_results(html);
-        assert_eq!(out.len(), 2);
-        assert_eq!(out[0].0, "Example One");
-        assert_eq!(out[0].1, "https://example.com/a");
-        assert_eq!(out[0].2, "The first & best result");
-        assert_eq!(out[1].1, "https://direct.example.com/b");
-    }
-
-    #[test]
-    fn html_to_text_drops_scripts() {
-        let t = html_to_text(
-            "<html><script>var x=1;</script><style>a{}</style><body><p>hello world</p></body></html>",
-        );
-        assert_eq!(t, "hello world");
-    }
 }

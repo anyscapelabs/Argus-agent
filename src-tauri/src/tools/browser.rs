@@ -463,9 +463,7 @@ pub async fn sensitive(tool: &str, args: &Value) -> bool {
         None => return false,
     };
 
-    if super::browser_ext::is_real(&profile_of(args))
-        && super::browser_ext::sensitive(args).await
-    {
+    if super::browser_ext::is_real(&profile_of(args)) && super::browser_ext::sensitive(args).await {
         return true;
     }
 
@@ -500,36 +498,4 @@ pub async fn sensitive(tool: &str, args: &Value) -> bool {
     }
 
     false
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sanitizes_profile_names() {
-        assert_eq!(sanitize("My Work!"), "mywork");
-        assert_eq!(sanitize("../etc"), "etc");
-        assert_eq!(sanitize(""), "main");
-        assert_eq!(sanitize("main"), "main");
-    }
-
-    #[tokio::test]
-    async fn flags_sensitive_urls_and_labels() {
-        assert!(sensitive(
-            "browser.open",
-            &serde_json::json!({"url": "https://github.com/login"})
-        )
-        .await);
-        assert!(!sensitive(
-            "browser.open",
-            &serde_json::json!({"url": "https://en.wikipedia.org/wiki/Rust"})
-        )
-        .await);
-        assert!(!sensitive(
-            "terminal",
-            &serde_json::json!({"command": "ls"})
-        )
-        .await);
-    }
 }

@@ -200,9 +200,12 @@ pub fn sess_ext_install(app: AppHandle) -> Result<ExtInstall, String> {
     Ok(res)
 }
 
+pub fn real_enabled() -> bool {
+    data_dir().join("extension.enabled").is_file()
+}
+
 /// Agent-side gate for real-browser actions: connect the extension or fail
-/// closed with the exact fix. Chrome only opens when the agent acts — never
-/// from the Connectors toggle.
+/// closed with the exact fix. Chrome only opens when the agent acts.
 pub async fn ensure_real() -> Result<(), String> {
     if extpipe::connected() {
         return Ok(());

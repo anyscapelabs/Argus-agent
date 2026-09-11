@@ -291,14 +291,15 @@ Never type passwords or payment details into the browser yourself — if a page 
 asks you to log in or pay, tell the user to do it inside the Argus browser \
 window, then browser.read to confirm. Login, checkout and purchase actions \
 always need the user's approval; if one is denied, never retry it. \
-Use profile \"real\" when the user says their real browser or real Chrome — \
-it acts inside their everyday Chrome via the Argus extension; other profile \
-names open an isolated Argus browser window instead. Chrome is only opened \
-when you run a real-profile action, so just act — no need to ask first. If a \
-real-profile action errors, relay the exact error to the user: permission \
-off means they enable Chrome in Connectors; a message about loading the \
-extension unpacked means the one manual step it describes. Never open a url \
-that carries a credential — the tool will refuse it anyway.\n",
+When the user granted Chrome permission in Connectors, browser tools act \
+inside their everyday Chrome via the Argus extension by default — even with \
+no profile given. Use an isolated profile (any other name) only when the \
+user asks for one. Chrome is only opened when you run a real-profile \
+action, so just act — no need to ask first. If a real-profile action \
+errors, relay the exact error to the user: permission off means they enable \
+Chrome in Connectors; a message about loading the extension unpacked means \
+the one manual step it describes. Never open a url that carries a \
+credential — the tool will refuse it anyway.\n",
     );
 
     if web {
@@ -340,9 +341,8 @@ pub fn clip(s: String) -> String {
     format!("{cut}\n...[truncated]")
 }
 
-/// Page text for model history: clip ends, but when truncation kicks in,
-/// cache the full (already-redacted) text on disk and point the agent at it
-/// so it can page through instead of guessing at alternate urls.
+/// Clipped output caches the full (already-redacted) text on disk and points
+/// the agent at it, so truncation never forces url guessing.
 pub fn page_text(text: &str) -> String {
     let clipped = clip_ends(text.to_string());
 
@@ -379,8 +379,7 @@ pub fn clip_ends(s: String) -> String {
     let head: String = s.chars().take(half).collect();
     let tail: String = s.chars().skip(n - half).collect();
 
-    // prefer a line boundary over cutting mid-line, but only when the
-    // sacrificed part is small
+    // line boundary beats mid-line cut, unless it sacrifices too much
     let head = match head.rfind('\n') {
         Some(i) if head.len() - i - 1 <= 500 => head[..=i].to_string(),
         _ => head,

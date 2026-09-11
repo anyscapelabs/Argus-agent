@@ -36,6 +36,8 @@ pub fn run() {
             let logos_dir = dir.join("logos");
             std::fs::create_dir_all(&logos_dir)?;
 
+            tools::browser::init(dir.join("browser-profiles"));
+
             let http = reqwest::Client::builder().build()?;
 
             app.manage(Gateway {
@@ -88,6 +90,7 @@ pub fn run() {
             sessions::sess_list_folders,
             sessions::chat::sess_chat_stream,
             sessions::chat::sess_resolve_approval,
+            sessions::browser_import::sess_browser_import,
             skills::skill_create,
             skills::skill_get,
             skills::skill_list,

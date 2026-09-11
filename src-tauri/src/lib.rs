@@ -14,6 +14,17 @@ use gateway::{store, Gateway};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if std::env::args().any(|a| a == "--native-host") {
+        let socket = sessions::ext_install::data_dir().join("native.sock");
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("tokio runtime"); // Loud fail: no runtime, no bridge
+
+        rt.block_on(tools::extpipe::run_stdio_host(socket));
+        return;
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -37,6 +48,11 @@ pub fn run() {
             std::fs::create_dir_all(&logos_dir)?;
 
             tools::browser::init(dir.join("browser-profiles"));
+            tools::extpipe::start_listener(dir.clone());
+
+            if dir.join("extension.enabled").is_file() {
+                let _ = sessions::ext_install::install_core(&dir);
+            }
 
             let http = reqwest::Client::builder().build()?;
 
@@ -91,6 +107,9 @@ pub fn run() {
             sessions::chat::sess_chat_stream,
             sessions::chat::sess_resolve_approval,
             sessions::browser_import::sess_browser_import,
+            sessions::ext_install::sess_ext_install,
+            sessions::ext_install::sess_ext_status,
+            sessions::ext_install::sess_ext_uninstall,
             skills::skill_create,
             skills::skill_get,
             skills::skill_list,

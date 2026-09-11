@@ -1,5 +1,4 @@
-import { FiExternalLink } from "react-icons/fi";
-import { SiGithub } from "react-icons/si";
+import { FiExternalLink, FiGlobe } from "react-icons/fi";
 
 import type { BlockNode } from "../../lib/agentXml";
 
@@ -11,7 +10,7 @@ export default function BrowserActionCard({ block }: Props) {
 
   return (
     <div className="flex items-center gap-3 rounded-lg border border-border-primary bg-bg-secondary p-3 font-sans">
-      <SiGithub size={20} className="shrink-0 text-text-primary" />
+      <FiGlobe size={20} className="shrink-0 text-text-primary" />
       <div className="min-w-0 flex-1">
         {body && <div className="text-sm text-text-primary">{body}</div>}
         {url && (

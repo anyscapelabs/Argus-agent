@@ -1,5 +1,5 @@
 use argus_lib::tools::browser;
-use argus_lib::tools::{normalize_actions, parse_actions, web};
+use argus_lib::tools::{clip_ends, normalize_actions, page_text, parse_actions, web};
 use serde_json::Value;
 
 #[test]
@@ -77,6 +77,64 @@ fn sanitizes_profile_names() {
     assert_eq!(browser::sanitize("../etc"), "etc");
     assert_eq!(browser::sanitize(""), "main");
     assert_eq!(browser::sanitize("main"), "main");
+}
+
+#[test]
+fn blocks_urls_carrying_credentials() {
+    assert!(browser::url_guard("https://x.com/?key=sk-abcdefghijklmnopqrst").is_err());
+    assert!(browser::url_guard("https://x.com/?key=sk%2Dabcdefghijklmnopqrst").is_err());
+    assert!(browser::url_guard("https://x.com/?t=ghp_abcdefghijklmnopqrstuvwx").is_err());
+    assert!(browser::url_guard("https://x.com/?t=AKIAABCDEFGHIJKLMNOP").is_err());
+    assert!(browser::url_guard("https://x.com/?h=a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4").is_err());
+    assert!(browser::url_guard("https://en.wikipedia.org/wiki/Rust").is_ok());
+    assert!(browser::url_guard("https://x.com/?q=skateboard").is_ok());
+}
+
+#[test]
+fn redacts_token_shapes_only() {
+    assert_eq!(
+        browser::redact("key sk-abcdefghijklmnopqrst end"),
+        "key [redacted] end"
+    );
+    assert_eq!(browser::redact("plain prose stays"), "plain prose stays");
+    assert_eq!(
+        browser::redact("visit skateboard.com"),
+        "visit skateboard.com"
+    );
+}
+
+#[test]
+fn page_text_caches_full_text_when_truncated() {
+    let short = "just a short page";
+    assert_eq!(page_text(short), short);
+
+    let long = "row of pricing data\n".repeat(800);
+    let out = page_text(&long);
+
+    assert!(out.contains("...[truncated]..."));
+    assert!(
+        out.contains("full text saved to "),
+        "truncated output must point at the cached full text"
+    );
+}
+
+#[test]
+fn clip_ends_prefers_line_boundaries() {
+    let mut s = String::new();
+
+    for i in 0..100 {
+        s.push_str(&format!("line {i}: {}\n", "x".repeat(60)));
+    }
+
+    let out = clip_ends(s);
+    let (head, rest) = out.split_once("...[truncated]...").expect("truncated");
+
+    assert!(out.starts_with("line 0"));
+    assert!(head.ends_with('\n'), "head should end at a line boundary");
+    assert!(rest.trim_start_matches('\n').starts_with("line "));
+
+    let flat = "y".repeat(9000);
+    assert!(clip_ends(flat).starts_with("yyyy"));
 }
 
 #[tokio::test]

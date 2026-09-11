@@ -3,9 +3,11 @@ use std::time::Instant;
 use serde_json::Value;
 use tokio::sync::Mutex as AsyncMutex;
 
+use crate::sessions::ext_install;
+
 use super::browser::sensitive_pats;
 use super::extpipe;
-use super::{browser, clip_ends};
+use super::{browser, page_text};
 
 struct Sess {
     tab_id: i32,
@@ -32,6 +34,9 @@ pub async fn open(args: &Value) -> Result<String, String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("url must start with http:// or https://".into());
     }
+
+    browser::url_guard(url)?;
+    ext_install::ensure_real().await?;
 
     let prev_tab = SESS.lock().await.as_ref().map(|s| s.tab_id).unwrap_or(0);
 
@@ -66,7 +71,9 @@ pub async fn open(args: &Value) -> Result<String, String> {
         last_used: Instant::now(),
     };
 
-    Ok(page_out(&mut s, text, page_url, title).await)
+    let out = page_out(&mut s, text, page_url.clone(), title).await;
+
+    Ok(browser::sensitive_note(&page_url, out))
 }
 
 fn ref_of(args: &Value) -> Result<usize, String> {
@@ -108,13 +115,14 @@ async fn snapshot_list(tab_id: i32, s: &mut Sess) -> String {
             let mut out = String::from("\nElements:\n");
 
             for (i, el) in els.iter().enumerate() {
+                let label = browser::redact(&el.label);
                 r.push(el.path.clone());
-                l.push(el.label.clone());
+                l.push(label.clone());
 
-                if el.label.is_empty() {
+                if label.is_empty() {
                     out.push_str(&format!("[{}] {}\n", i, el.kind));
                 } else {
-                    out.push_str(&format!("[{}] {} \"{}\"\n", i, el.kind, el.label));
+                    out.push_str(&format!("[{}] {} \"{}\"\n", i, el.kind, label));
                 }
             }
 
@@ -142,7 +150,7 @@ async fn page_out(s: &mut Sess, text: String, url: String, title: String) -> Str
 
     format!(
         "url {url}\ntitle {title}\n\n---\n{}\n---{list}",
-        clip_ends(text)
+        page_text(&browser::redact(&text))
     )
 }
 
@@ -173,6 +181,8 @@ async fn read_page(tab_id: i32) -> Result<String, String> {
 }
 
 pub async fn read(_args: &Value) -> Result<String, String> {
+    ext_install::ensure_real().await?;
+
     let tab_id = SESS
         .lock()
         .await
@@ -184,6 +194,8 @@ pub async fn read(_args: &Value) -> Result<String, String> {
 }
 
 pub async fn click(args: &Value) -> Result<String, String> {
+    ext_install::ensure_real().await?;
+
     let (tab_id, path) = path_of(args).await?;
 
     extpipe::request("click", serde_json::json!({"tabId": tab_id, "path": path})).await?;
@@ -192,6 +204,8 @@ pub async fn click(args: &Value) -> Result<String, String> {
 }
 
 pub async fn type_text(args: &Value) -> Result<String, String> {
+    ext_install::ensure_real().await?;
+
     let (tab_id, path) = path_of(args).await?;
 
     let text = args

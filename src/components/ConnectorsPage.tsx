@@ -59,14 +59,14 @@ const CONNECTORS: Connector[] = [
   },
 ];
 
-type ExtState = "off" | "busy" | "fallback" | "connected";
+type ExtState = "off" | "busy" | "granted" | "connected";
 type ImportState = "idle" | "busy" | "ok" | "err";
 
 const ON_KEY = "argus.ext.enabled";
 
 function BrowserCard() {
   const [extState, setExtState] = useState<ExtState>(() =>
-    localStorage.getItem(ON_KEY) === "on" ? "fallback" : "off"
+    localStorage.getItem(ON_KEY) === "on" ? "granted" : "off"
   );
   const [note, setNote] = useState("");
   const [impState, setImpState] = useState<ImportState>("idle");
@@ -124,38 +124,32 @@ function BrowserCard() {
 
   const enable = async () => {
     setExtState("busy");
-    setNote("Setting up…");
+    setNote("Saving permission…");
 
     try {
-      const res = await sessExtInstall();
+      await sessExtInstall();
       localStorage.setItem(ON_KEY, "on");
-
-      // give the silent --load-extension path a moment to connect
-      for (let i = 0; i < 8; i++) {
-        await new Promise((r) => setTimeout(r, 1_000));
-
-        try {
-          if (await sessExtStatus()) {
-            setExtState("connected");
-            setNote("");
-            return;
-          }
-        } catch {
-          // keep waiting
-        }
-      }
-
-      // branded Chrome blocks silent loading — guide the one manual step
-      setExtState("fallback");
-      setNote("One step left: in the Chrome window that opened, click “Load unpacked” and pick the revealed Argus extension folder.");
-      await openUrl("chrome://extensions").catch(() => {});
-      await import("@tauri-apps/plugin-opener").then((m) =>
-        m.openPath(res.extPath).catch(() => {})
-      );
+      setExtState("granted");
+      setNote("Permission saved — Chrome will open the first time the agent needs it.");
     } catch (err) {
       setExtState("off");
       setNote(String(err));
       localStorage.removeItem(ON_KEY);
+    }
+  };
+
+  const runSetup = async () => {
+    setNote("Opening chrome://extensions…");
+
+    try {
+      const res = await sessExtInstall();
+      await openUrl("chrome://extensions").catch(() => {});
+      await import("@tauri-apps/plugin-opener").then((m) =>
+        m.openPath(res.extPath).catch(() => {})
+      );
+      setNote("Click “Load unpacked” and pick the revealed Argus extension folder.");
+    } catch (err) {
+      setNote(String(err));
     }
   };
 
@@ -189,16 +183,16 @@ function BrowserCard() {
     }
   };
 
-  const extOn = extState === "fallback" || extState === "connected";
+  const extOn = extState === "granted" || extState === "connected";
 
   const statusLine =
     extState === "connected"
       ? "Connected — the agent can use your real Chrome."
-      : extState === "fallback"
+      : extState === "granted"
         ? note
         : extState === "busy"
-          ? "Setting up…"
-          : "Let the agent act inside your real Chrome. Logins stay yours.";
+          ? "Saving permission…"
+          : "Permission for the agent to act inside your real Chrome. Chrome only opens when it needs to.";
 
   return (
     <div className="rounded-xl bg-transparent px-2 py-1 transition-colors hover:bg-bg-hover-primary">
@@ -231,7 +225,7 @@ function BrowserCard() {
             `${extOn ? "bg-green-600" : "bg-bg-hover-primary border border-border-primary"}`
           }
           aria-pressed={extOn}
-          aria-label="Enable real browser"
+          aria-label="Allow the agent to use real Chrome"
         >
           <span
             className={
@@ -241,6 +235,21 @@ function BrowserCard() {
           />
         </button>
       </div>
+      {extOn && extState !== "connected" && (
+        <div className="ml-16 mt-1.5">
+          <button
+            type="button"
+            onClick={runSetup}
+            className={
+              "flex items-center gap-1.5 rounded-full border " +
+              "border-border-primary px-2.5 py-1 text-xs text-text-secondary " +
+              "hover:text-text-primary cursor-pointer"
+            }
+          >
+            Set up extension
+          </button>
+        </div>
+      )}
       {extOn && (
         <div className="ml-16 mt-1.5 flex items-center gap-3">
           <button

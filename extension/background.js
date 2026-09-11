@@ -4,7 +4,7 @@
 const HOST_NAME = "com.argus.browser";
 const PING_MS = 20_000;
 const NAV_TIMEOUT_MS = 20_000;
-const SETTLE_MS = 1_500;
+const SETTLE_MS = 2_500;
 
 let port = null;
 let pingTimer = null;

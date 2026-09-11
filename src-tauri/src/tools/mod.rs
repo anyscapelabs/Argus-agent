@@ -293,9 +293,12 @@ window, then browser.read to confirm. Login, checkout and purchase actions \
 always need the user's approval; if one is denied, never retry it. \
 Use profile \"real\" when the user says their real browser or real Chrome — \
 it acts inside their everyday Chrome via the Argus extension; other profile \
-names open an isolated Argus browser window instead. If the real-browser \
-profile errors that the extension is not connected, tell the user to enable \
-it from Connectors and use an isolated profile meanwhile.\n",
+names open an isolated Argus browser window instead. Chrome is only opened \
+when you run a real-profile action, so just act — no need to ask first. If a \
+real-profile action errors, relay the exact error to the user: permission \
+off means they enable Chrome in Connectors; a message about loading the \
+extension unpacked means the one manual step it describes. Never open a url \
+that carries a credential — the tool will refuse it anyway.\n",
     );
 
     if web {
@@ -304,7 +307,11 @@ it from Connectors and use an isolated profile meanwhile.\n",
             s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));
         }
         s.push_str(
-            "Cite what you used: after web.search or web.read, mention the source url in the reply.\n",
+            "Cite what you used: after web.search or web.read, mention the source url in the reply.\n\
+For static pages — docs, pricing, articles — prefer web.read: plain fetch, faster, \
+fewer bot checks; use the browser only when a page needs interaction (clicking, \
+forms, JS apps). If search or a page serves a bot-check or rate-limit page, wait \
+a moment and retry once with different wording, or switch engine.\n",
         );
     }
 
@@ -333,6 +340,34 @@ pub fn clip(s: String) -> String {
     format!("{cut}\n...[truncated]")
 }
 
+/// Page text for model history: clip ends, but when truncation kicks in,
+/// cache the full (already-redacted) text on disk and point the agent at it
+/// so it can page through instead of guessing at alternate urls.
+pub fn page_text(text: &str) -> String {
+    let clipped = clip_ends(text.to_string());
+
+    if clipped == text {
+        return clipped;
+    }
+
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    use std::hash::{Hash, Hasher};
+    text.hash(&mut h);
+
+    let dir = crate::sessions::ext_install::data_dir().join("page-cache");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join(format!("page-{:016x}.txt", h.finish()));
+
+    match std::fs::write(&path, text) {
+        Ok(()) => format!(
+            "{clipped}\nfull text saved to {p} — read more of it with terminal, \
+             e.g. sed -n '150,300p' {p}",
+            p = path.display()
+        ),
+        Err(_) => clipped,
+    }
+}
+
 pub fn clip_ends(s: String) -> String {
     let n = s.chars().count();
 
@@ -343,6 +378,18 @@ pub fn clip_ends(s: String) -> String {
     let half = MAX_OUT / 2;
     let head: String = s.chars().take(half).collect();
     let tail: String = s.chars().skip(n - half).collect();
+
+    // prefer a line boundary over cutting mid-line, but only when the
+    // sacrificed part is small
+    let head = match head.rfind('\n') {
+        Some(i) if head.len() - i - 1 <= 500 => head[..=i].to_string(),
+        _ => head,
+    };
+
+    let tail = match tail.find('\n') {
+        Some(i) if i <= 500 => tail[i + 1..].to_string(),
+        _ => tail,
+    };
 
     format!("{head}\n...[truncated]...\n{tail}")
 }

@@ -30,7 +30,7 @@
 
   window.__argusSnapshot = () => {
     const sel =
-      'a, button, input, textarea, select, [role="button"], [onclick]';
+      'a, button, input, textarea, select, summary, [role="button"], [role="tab"], [role="search"], [role="combobox"], [role="switch"], [onclick], [aria-expanded], [contenteditable="true"]';
     const els = [...document.querySelectorAll(sel)];
     const out = [];
 
@@ -62,6 +62,6 @@
       });
     }
 
-    return out.slice(0, 60);
+    return out.slice(0, 100);
   };
 })();

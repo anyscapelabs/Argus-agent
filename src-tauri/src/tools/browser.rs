@@ -9,7 +9,7 @@ use futures_util::StreamExt;
 use serde_json::Value;
 use tokio::sync::Mutex as AsyncMutex;
 
-use super::{clip_ends, ToolMeta};
+use super::{page_text, ToolMeta};
 
 const IDLE: Duration = Duration::from_secs(600);
 
@@ -183,7 +183,7 @@ async fn sess(name: &str) -> Result<tokio::sync::MutexGuard<'static, SessMap>, S
 
 const SNAP_JS: &str = r#"
 (() => {
-  const sel = 'a, button, input, textarea, select, [role="button"], [onclick]';
+  const sel = 'a, button, input, textarea, select, summary, [role="button"], [role="tab"], [role="search"], [role="combobox"], [role="switch"], [onclick], [aria-expanded], [contenteditable="true"]';
   const els = [...document.querySelectorAll(sel)];
   const out = [];
 
@@ -214,7 +214,7 @@ const SNAP_JS: &str = r#"
     });
   }
 
-  return JSON.stringify(out.slice(0, 60));
+  return JSON.stringify(out.slice(0, 100));
 })()
 "#;
 
@@ -245,13 +245,14 @@ async fn snapshot(page: &Page, refs: &mut Vec<String>, labels: &mut Vec<String>)
 
     let mut list = String::from("\nElements:\n");
     for (i, el) in els.iter().enumerate() {
+        let label = redact(&el.label);
         refs.push(el.path.clone());
-        labels.push(el.label.clone());
+        labels.push(label.clone());
 
-        if el.label.is_empty() {
+        if label.is_empty() {
             list.push_str(&format!("[{}] {}\n", i, el.kind));
         } else {
-            list.push_str(&format!("[{}] {} \"{}\"\n", i, el.kind, el.label));
+            list.push_str(&format!("[{}] {} \"{}\"\n", i, el.kind, label));
         }
     }
 
@@ -282,18 +283,20 @@ async fn page_out(s: &mut Sess) -> Result<String, String> {
         .unwrap_or_default()
         .unwrap_or_default();
     let text = eval_str(&s.page, TEXT_JS).await;
+    let text = redact(&text);
     let list = snapshot(&s.page, &mut s.refs, &mut s.labels).await;
 
     s.url = url.clone();
 
     Ok(format!(
         "url {url}\ntitle {title}\n\n---\n{}\n---{list}",
-        clip_ends(text)
+        page_text(&text)
     ))
 }
 
 pub async fn open(args: &Value) -> Result<String, String> {
     let url = url_of(args)?;
+    url_guard(&url)?;
     let name = profile_of(args);
 
     if super::browser_ext::is_real(&name) {
@@ -310,7 +313,10 @@ pub async fn open(args: &Value) -> Result<String, String> {
         .map_err(|e| format!("navigation failed: {e}"))?;
 
     let _ = s.page.wait_for_navigation().await;
-    page_out(s).await
+
+    let out = page_out(s).await?;
+
+    Ok(sensitive_note(&s.url, out))
 }
 
 fn ref_of(args: &Value) -> Result<usize, String> {
@@ -445,6 +451,69 @@ pub fn close_profile(name: &str) {
 const URL_PAT: &str =
     "login|signin|sign-in|sign_up|signup|/auth|checkout|cart|/pay|billing|order|password";
 const LABEL_PAT: &str = "sign in|sign-in|signin|log in|log-in|login|checkout|pay now|payment|place order|buy now|add to cart|password";
+
+const SECRET_PAT: &str = r"sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{12,}|xox[bap]-[A-Za-z0-9-]{10,}|Bearer\s+[A-Za-z0-9._-]{16,}|[a-f0-9]{32,}";
+
+fn secret_re() -> Option<regex::Regex> {
+    regex::Regex::new(SECRET_PAT).ok()
+}
+
+fn pct_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            let hex = std::str::from_utf8(&b[i + 1..i + 3]).unwrap_or("");
+
+            if let Ok(v) = u8::from_str_radix(hex, 16) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+
+        out.push(b[i]);
+        i += 1;
+    }
+
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Block URLs that carry credentials — a prompt injection can exfiltrate
+/// secrets by planting them in a url the agent is asked to open. Checks the
+/// raw and percent-decoded forms (%2D-style tricks).
+pub fn url_guard(url: &str) -> Result<(), String> {
+    let Some(re) = secret_re() else { return Ok(()) };
+
+    if re.is_match(url) || re.is_match(&pct_decode(url)) {
+        return Err(
+            "url looks like it carries a credential — remove the token from the url".into(),
+        );
+    }
+
+    Ok(())
+}
+
+/// Mask obvious token shapes in page text and element labels before they
+/// reach chat history.
+pub fn redact(s: &str) -> String {
+    match secret_re() {
+        Some(re) => re.replace_all(s, "[redacted]").into_owned(),
+        None => s.into(),
+    }
+}
+
+/// Tell the model when a page it just opened is one the approval gate guards.
+pub fn sensitive_note(url: &str, out: String) -> String {
+    match sensitive_pats() {
+        Some((url_re, _)) if url_re.is_match(url) => format!(
+            "{out}\nnote: this page looks like login/checkout — further actions here will need user approval"
+        ),
+        _ => out,
+    }
+}
 
 pub fn sensitive_pats() -> Option<(regex::Regex, regex::Regex)> {
     Some((

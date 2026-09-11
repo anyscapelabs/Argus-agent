@@ -141,6 +141,16 @@ async fn duck_search(query: &str) -> Result<String, String> {
         return Err(format!("search engine answered {status} — try again later"));
     }
 
+    let lower = html.to_lowercase();
+
+    if lower.contains("unusual traffic") || lower.contains("anomaly detected") {
+        return Err(
+            "search engine served a bot-check page — wait a moment and retry, \
+             or reword the query"
+                .into(),
+        );
+    }
+
     let results = parse_results(&html);
 
     format_hits(&results)
@@ -288,7 +298,7 @@ pub async fn read(args: &Value) -> Result<String, String> {
                 .map_err(|e| format!("page read failed: {e}"))?;
             let body = body.trim().to_string();
             if !body.is_empty() {
-                return Ok(crate::tools::clip(body));
+                return Ok(crate::tools::page_text(&body));
             }
         }
     }
@@ -317,9 +327,9 @@ pub async fn read(args: &Value) -> Result<String, String> {
     }
 
     if ct.contains("html") {
-        Ok(crate::tools::clip(html_to_text(&body)))
+        Ok(crate::tools::page_text(&html_to_text(&body)))
     } else {
-        Ok(crate::tools::clip(body))
+        Ok(crate::tools::page_text(&body))
     }
 }
 

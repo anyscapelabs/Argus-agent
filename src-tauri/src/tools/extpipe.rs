@@ -176,7 +176,8 @@ pub async fn request(method: &str, data: Value) -> Result<Value, String> {
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
 
     let (rtx, rrx) = oneshot::channel();
-    reg().pending
+    reg()
+        .pending
         .lock()
         .map_err(|_| "extpipe lock poisoned")?
         .insert(id, rtx);
@@ -223,7 +224,9 @@ pub async fn run_stdio_host(socket: PathBuf) {
 
         let up = tokio::spawn(async move {
             loop {
-                let Some(len) = read_u32(&mut srd).await else { break };
+                let Some(len) = read_u32(&mut srd).await else {
+                    break;
+                };
                 if len == 0 || len > MAX_FRAME {
                     break;
                 }

@@ -42,9 +42,21 @@ pub async fn open(args: &Value) -> Result<String, String> {
     .await?;
 
     let tab_id = data.get("tabId").and_then(|t| t.as_i64()).unwrap_or(0) as i32;
-    let page_url: String = data.get("url").and_then(|u| u.as_str()).unwrap_or(url).into();
-    let title: String = data.get("title").and_then(|t| t.as_str()).unwrap_or("").into();
-    let text: String = data.get("text").and_then(|t| t.as_str()).unwrap_or("").into();
+    let page_url: String = data
+        .get("url")
+        .and_then(|u| u.as_str())
+        .unwrap_or(url)
+        .into();
+    let title: String = data
+        .get("title")
+        .and_then(|t| t.as_str())
+        .unwrap_or("")
+        .into();
+    let text: String = data
+        .get("text")
+        .and_then(|t| t.as_str())
+        .unwrap_or("")
+        .into();
 
     let mut s = Sess {
         tab_id,
@@ -136,9 +148,21 @@ async fn page_out(s: &mut Sess, text: String, url: String, title: String) -> Str
 
 async fn read_page(tab_id: i32) -> Result<String, String> {
     let data = extpipe::request("read", serde_json::json!({"tabId": tab_id})).await?;
-    let url: String = data.get("url").and_then(|u| u.as_str()).unwrap_or("").into();
-    let title: String = data.get("title").and_then(|t| t.as_str()).unwrap_or("").into();
-    let text: String = data.get("text").and_then(|t| t.as_str()).unwrap_or("").into();
+    let url: String = data
+        .get("url")
+        .and_then(|u| u.as_str())
+        .unwrap_or("")
+        .into();
+    let title: String = data
+        .get("title")
+        .and_then(|t| t.as_str())
+        .unwrap_or("")
+        .into();
+    let text: String = data
+        .get("text")
+        .and_then(|t| t.as_str())
+        .unwrap_or("")
+        .into();
 
     let mut g = SESS.lock().await;
 
@@ -162,11 +186,7 @@ pub async fn read(_args: &Value) -> Result<String, String> {
 pub async fn click(args: &Value) -> Result<String, String> {
     let (tab_id, path) = path_of(args).await?;
 
-    extpipe::request(
-        "click",
-        serde_json::json!({"tabId": tab_id, "path": path}),
-    )
-    .await?;
+    extpipe::request("click", serde_json::json!({"tabId": tab_id, "path": path})).await?;
 
     read_page(tab_id).await
 }

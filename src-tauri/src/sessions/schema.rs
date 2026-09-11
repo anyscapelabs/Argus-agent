@@ -108,28 +108,3 @@ pub struct NewMsg {
     pub tok_in: Option<i64>,
     pub tok_out: Option<i64>,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn session_deserializes_from_ui_row() {
-        let js = serde_json::json!({
-            "id": "628a",
-            "title": "t",
-            "status": "live",
-            "model_id": null,
-            "permission": "never",
-            "folder_id": null,
-            "created_at": "2026-09-09 06:21:23",
-            "updated_at": "2026-09-09 06:21:23",
-            "ctx_tokens": 0,
-            "compact_seq": 0,
-            "compactions": 0
-        });
-
-        let s: Result<Session, _> = serde_json::from_value(js);
-        assert!(s.is_ok(), "{s:?}");
-    }
-}

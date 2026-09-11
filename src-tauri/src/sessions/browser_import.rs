@@ -5,7 +5,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::tools::browser;
 
-const SKIP_DIRS: &[&str] = &[
+pub const SKIP_DIRS: &[&str] = &[
     "Cache",
     "Code Cache",
     "GPUCache",
@@ -120,16 +120,4 @@ pub fn sess_browser_import(app: AppHandle, profile: String) -> Result<(), String
     });
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn skips_cache_dirs_wherever_they_live() {
-        assert!(SKIP_DIRS.contains(&"Cache"));
-        assert!(SKIP_DIRS.contains(&"Service Worker"));
-        assert!(SKIP_DIRS.contains(&"component_crx_cache"));
-    }
 }

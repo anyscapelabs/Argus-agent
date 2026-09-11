@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -111,7 +111,7 @@ async fn fallback_title(
     Ok(router::run_opts(gw, &req, 2).await?.content)
 }
 
-fn clean_title(raw: &str) -> Option<String> {
+pub fn clean_title(raw: &str) -> Option<String> {
     let line = raw.lines().next().unwrap_or("").trim();
     let t = line.trim_matches('"').trim_matches('\'').trim();
 
@@ -197,10 +197,13 @@ fn exit_of(body: &str) -> i64 {
 }
 
 fn browser_what(tool: &str, v: &serde_json::Value, masked: bool) -> String {
-    let text = v
-        .get("text")
-        .and_then(|t| t.as_str())
-        .map(|s| if masked { "····".into() } else { s.to_string() });
+    let text = v.get("text").and_then(|t| t.as_str()).map(|s| {
+        if masked {
+            "····".into()
+        } else {
+            s.to_string()
+        }
+    });
     let what = v
         .get("url")
         .and_then(|u| u.as_str())
@@ -451,8 +454,7 @@ pub async fn send(
                 let out = if denied {
                     "command denied by user".to_string()
                 } else {
-                    body
-                        .strip_prefix("exit ")
+                    body.strip_prefix("exit ")
                         .and_then(|r| r.split_once('\n'))
                         .map(|(_, o)| o.to_string())
                         .unwrap_or_else(|| body.clone())
@@ -579,20 +581,5 @@ pub fn sess_resolve_approval(
             Ok(())
         }
         None => Err("unknown approval".into()),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rejects_junk_titles() {
-        assert_eq!(clean_title("<tool_call>web_search"), None);
-        assert_eq!(clean_title("  "), None);
-        assert_eq!(
-            clean_title("\"Rust release notes\""),
-            Some("Rust release notes".into())
-        );
     }
 }

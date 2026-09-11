@@ -1,9 +1,9 @@
 mod gateway;
 mod library;
 mod prompt;
-mod sessions;
+pub mod sessions;
 mod skills;
-mod tools;
+pub mod tools;
 
 use std::collections::HashMap;
 use std::sync::Mutex;

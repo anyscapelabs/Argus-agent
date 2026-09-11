@@ -49,7 +49,7 @@ fn src_dir() -> PathBuf {
 /// Chrome derives an unpacked extension's id from the sha256 of its absolute
 /// path — hex digits mapped to a-p. Deterministic, so we can pin the host
 /// manifest to it before the user ever loads the extension.
-fn unpacked_id(dir: &Path) -> String {
+pub fn unpacked_id(dir: &Path) -> String {
     let hash = Sha256::digest(dir.to_string_lossy().as_bytes());
     let hex = format!("{:x}", hash);
 
@@ -78,14 +78,12 @@ fn copy_tree(src: &Path, dst: &Path) -> Result<(), String> {
 }
 
 fn write_wrapper(exe: &Path, path: &Path) -> Result<(), String> {
-    let mut f =
-        fs::File::create(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut f = fs::File::create(path).map_err(|e| format!("{}: {e}", path.display()))?;
 
     writeln!(f, "#!/bin/sh").map_err(|e| e.to_string())?;
     writeln!(f, "exec \"{}\" --native-host", exe.display()).map_err(|e| e.to_string())?;
 
-    fs::set_permissions(path, PermissionsExt::from_mode(0o755))
-        .map_err(|e| e.to_string())
+    fs::set_permissions(path, PermissionsExt::from_mode(0o755)).map_err(|e| e.to_string())
 }
 
 fn write_host_manifest(wrapper: &Path, ext_id: &str) -> Result<usize, String> {
@@ -227,18 +225,4 @@ pub fn sess_ext_uninstall(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn sess_ext_status() -> bool {
     extpipe::connected()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn id_is_32_ap_letters() {
-        let dir = Path::new("/tmp/argus-extension");
-        let id = unpacked_id(dir);
-
-        assert_eq!(id.len(), 32);
-        assert!(id.chars().all(|c| ('a'..='p').contains(&c)));
-    }
 }

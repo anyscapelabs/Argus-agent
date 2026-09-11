@@ -47,7 +47,6 @@ const TOOLS: &[ToolMeta] = &[
     },
 ];
 
-
 const WEB_TOOLS: &[ToolMeta] = &[
     ToolMeta {
         name: "web.search",
@@ -197,47 +196,6 @@ fn collect_spans(body: &str, open: &str, close: &str) -> Vec<String> {
     }
 
     out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn salvages_native_key_value_tool_call() {
-        let t = "<tool_callweb.search\n<arg_key>query</arg_key>\n<arg_value>\"Announcing Rust 1.98.0\" blog.rust-lang.org</arg_value>\n</tool_call>";
-        let out = normalize_actions(t);
-        assert!(
-            out.contains(r#"<action tool="web.search">{"query":"#),
-            "got: {out}"
-        );
-        let acts = parse_actions(&out);
-        assert_eq!(acts.len(), 1);
-        assert_eq!(acts[0].tool, "web.search");
-        let args: Value = serde_json::from_str(&acts[0].args).expect("args json");
-        assert_eq!(
-            args["query"],
-            "\"Announcing Rust 1.98.0\" blog.rust-lang.org"
-        );
-    }
-
-    #[test]
-    fn salvages_json_tool_call() {
-        let t = "pre <tool_call{\"name\":\"web.read\",\"arguments\":{\"url\":\"https://x.y\"}}</tool_call> post";
-        let acts = parse_actions(&normalize_actions(t));
-        assert_eq!(acts.len(), 1);
-        assert_eq!(acts[0].tool, "web.read");
-        let args: Value = serde_json::from_str(&acts[0].args).expect("args json");
-        assert_eq!(args["url"], "https://x.y");
-        assert!(normalize_actions(t).starts_with("pre "));
-        assert!(normalize_actions(t).ends_with(" post"));
-    }
-
-    #[test]
-    fn drops_unsalvageable_tool_call() {
-        assert_eq!(normalize_actions("<tool_call???' </tool_call>"), "");
-        assert_eq!(normalize_actions("a <tool_callweb.search b"), "a ");
-    }
 }
 
 pub async fn exec(

@@ -10,11 +10,7 @@ use crate::gateway::schema::StreamEvent;
 
 const TERM_TIMEOUT: Duration = Duration::from_secs(120);
 
-async fn pump<R>(
-    rd: R,
-    idx: u32,
-    chan: Option<Channel<StreamEvent>>,
-) -> String
+async fn pump<R>(rd: R, idx: u32, chan: Option<Channel<StreamEvent>>) -> String
 where
     R: tokio::io::AsyncRead + Unpin,
 {
@@ -49,9 +45,7 @@ pub async fn run_stream(
     idx: u32,
     chan: Option<&Channel<StreamEvent>>,
 ) -> Result<(String, i64), String> {
-    let cmd = args["command"]
-        .as_str()
-        .ok_or("terminal needs a command")?;
+    let cmd = args["command"].as_str().ok_or("terminal needs a command")?;
 
     let mut c = Command::new("sh");
     c.arg("-c").arg(cmd).kill_on_drop(true);

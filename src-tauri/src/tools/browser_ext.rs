@@ -239,12 +239,21 @@ pub async fn close(_args: &Value) -> Result<String, String> {
 /// Sensitive check against the live extension session — same policy as the
 /// CDP pool: current URL or target label matching login/checkout patterns.
 pub async fn sensitive(args: &Value) -> bool {
-    let name = args
+    let named = args
         .get("profile")
         .and_then(|v| v.as_str())
-        .unwrap_or("main");
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
 
-    if !is_real(name) {
+    let name = match named {
+        Some(p) => p.to_string(),
+        None => match ext_install::real_enabled() {
+            true => "real".into(),
+            false => "main".into(),
+        },
+    };
+
+    if !is_real(&name) {
         return false;
     }
 

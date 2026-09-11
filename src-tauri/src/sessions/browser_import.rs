@@ -14,7 +14,11 @@ const SKIP_DIRS: &[&str] = &[
     "Service Worker",
     "OptimizationGuidePredictionModels",
     "Crashpad",
+    "component_crx_cache",
+    "extensions_crx_cache",
 ];
+
+const PROGRESS_STEP: u64 = 32 * 1_048_576;
 
 fn source_profile() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
@@ -34,8 +38,14 @@ fn source_profile() -> Option<PathBuf> {
     None
 }
 
-fn copy_tree(src: &Path, dst: &Path, depth: usize) -> Result<u64, String> {
-    let mut total = 0u64;
+fn copy_tree(
+    src: &Path,
+    dst: &Path,
+    app: &AppHandle,
+    copied: &mut u64,
+    next: &mut u64,
+) -> Result<(), String> {
+    fs::create_dir_all(dst).map_err(|e| format!("{}: {e}", dst.display()))?;
 
     for entry in fs::read_dir(src).map_err(|e| format!("{}: {e}", src.display()))? {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -45,31 +55,35 @@ fn copy_tree(src: &Path, dst: &Path, depth: usize) -> Result<u64, String> {
         let to = dst.join(&name);
 
         if from.is_dir() {
-            if depth == 0 && SKIP_DIRS.contains(&name.as_str()) {
+            if SKIP_DIRS.contains(&name.as_str())
+                || name.starts_with("Singleton")
+                || name.ends_with(".tmp")
+            {
                 continue;
             }
 
-            if name.starts_with("Singleton") || name.ends_with(".tmp") {
-                continue;
-            }
-
-            fs::create_dir_all(&to).map_err(|e| e.to_string())?;
-            total += copy_tree(&from, &to, depth + 1)?;
+            copy_tree(&from, &to, app, copied, next)?;
         } else {
-            if let Ok(meta) = entry.metadata() {
-                total += meta.len();
-            }
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
             fs::copy(&from, &to).map_err(|e| format!("{}: {e}", from.display()))?;
+
+            *copied += size;
+            if *copied >= *next {
+                *next = *copied + PROGRESS_STEP;
+                let _ = app.emit("browser-import-progress", *copied);
+            }
         }
     }
 
-    Ok(total)
+    Ok(())
 }
 
 #[tauri::command]
 pub fn sess_browser_import(app: AppHandle, profile: String) -> Result<(), String> {
     let dst = browser::profile_dir(&profile);
     let src = source_profile().ok_or("no Chrome/Chromium profile found in ~/.config")?;
+
+    browser::close_profile(&profile);
 
     if dst.exists() {
         fs::remove_dir_all(&dst).map_err(|e| format!("clearing old profile failed: {e}"))?;
@@ -84,8 +98,12 @@ pub fn sess_browser_import(app: AppHandle, profile: String) -> Result<(), String
             let _ = fs::create_dir_all(d.join("browser-profiles"));
         }
 
-        let res = copy_tree(&src, &dst, 0)
-            .map(|bytes| format!("imported {:.0} MB", bytes as f64 / 1_048_576.0));
+        let mut copied = 0u64;
+        let mut next = PROGRESS_STEP;
+        let _ = app.emit("browser-import-progress", 0u64);
+
+        let res = copy_tree(&src, &dst, &app, &mut copied, &mut next)
+            .map(|_| format!("imported {:.0} MB", copied as f64 / 1_048_576.0));
 
         match res {
             Ok(note) => {
@@ -109,18 +127,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn skips_cache_dirs_at_top_level() {
+    fn skips_cache_dirs_wherever_they_live() {
         assert!(SKIP_DIRS.contains(&"Cache"));
-        assert!(SKIP_DIRS.contains(&"Code Cache"));
         assert!(SKIP_DIRS.contains(&"Service Worker"));
-    }
-
-    #[test]
-    fn keeps_nested_cache_like_dirs() {
-        let name = "Cache".to_string();
-        let depth = 1;
-
-        let skip = depth == 0 && SKIP_DIRS.contains(&name.as_str());
-        assert!(!skip);
+        assert!(SKIP_DIRS.contains(&"component_crx_cache"));
     }
 }

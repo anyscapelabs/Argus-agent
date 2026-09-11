@@ -1,4 +1,6 @@
 pub mod browser;
+pub mod browser_ext;
+pub mod extpipe;
 pub mod fs;
 pub mod grep;
 pub mod shell;
@@ -330,7 +332,12 @@ change re-check the list before using a ref, and re-read if a ref is stale. \
 Never type passwords or payment details into the browser yourself — if a page \
 asks you to log in or pay, tell the user to do it inside the Argus browser \
 window, then browser.read to confirm. Login, checkout and purchase actions \
-always need the user's approval; if one is denied, never retry it.\n",
+always need the user's approval; if one is denied, never retry it. \
+Use profile \"real\" when the user says their real browser or real Chrome — \
+it acts inside their everyday Chrome via the Argus extension; other profile \
+names open an isolated Argus browser window instead. If the real-browser \
+profile errors that the extension is not connected, tell the user to enable \
+it from Connectors and use an isolated profile meanwhile.\n",
     );
 
     if web {

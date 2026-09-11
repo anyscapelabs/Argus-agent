@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { LuGlobe, LuLoaderCircle } from "react-icons/lu";
 import {
   LuCalendar,
@@ -11,7 +12,12 @@ import {
   LuSearch,
 } from "react-icons/lu";
 
-import { sessBrowserImport } from "../lib/ipc";
+import {
+  sessBrowserImport,
+  sessExtInstall,
+  sessExtStatus,
+  sessExtUninstall,
+} from "../lib/ipc";
 import ConnectorCard, { type Connector } from "./ConnectorCard";
 
 const CONNECTORS: Connector[] = [
@@ -53,90 +59,212 @@ const CONNECTORS: Connector[] = [
   },
 ];
 
+type ExtState = "off" | "busy" | "fallback" | "connected";
 type ImportState = "idle" | "busy" | "ok" | "err";
 
+const ON_KEY = "argus.ext.enabled";
+
 function BrowserCard() {
-  const [state, setState] = useState<ImportState>("idle");
+  const [extState, setExtState] = useState<ExtState>(() =>
+    localStorage.getItem(ON_KEY) === "on" ? "fallback" : "off"
+  );
   const [note, setNote] = useState("");
+  const [impState, setImpState] = useState<ImportState>("idle");
+  const [impNote, setImpNote] = useState("");
 
   useEffect(() => {
-    const un = listen("browser-import-done", (e) => {
+    if (extState === "off" || extState === "busy") return;
+
+    const poll = setInterval(async () => {
+      try {
+        const up = await sessExtStatus();
+
+        if (up) {
+          setExtState("connected");
+          setNote("");
+        }
+      } catch {
+        // status check failing isn't fatal, keep polling
+      }
+    }, 2_000);
+
+    return () => clearInterval(poll);
+  }, [extState]);
+
+  useEffect(() => {
+    const unDone = listen("browser-import-done", (e) => {
       const p = e.payload as { Ok?: string; Err?: string } | string | null;
 
       if (typeof p === "string") {
-        setState("ok");
-        setNote(p);
+        setImpState("ok");
+        setImpNote(p);
         return;
       }
 
       if (p && p.Err) {
-        setState("err");
-        setNote(p.Err);
+        setImpState("err");
+        setImpNote(p.Err);
         return;
       }
 
-      setState("ok");
-      setNote(p?.Ok ?? "Profile imported");
+      setImpState("ok");
+      setImpNote(p?.Ok ?? "Profile imported");
+    });
+
+    const unProgress = listen<number>("browser-import-progress", (e) => {
+      setImpState("busy");
+      setImpNote(`Importing… ${Math.round(e.payload / 1_048_576)} MB copied`);
     });
 
     return () => {
-      void un.then((f) => f());
+      void unDone.then((f) => f());
+      void unProgress.then((f) => f());
     };
   }, []);
 
-  const run = async () => {
-    setState("busy");
+  const enable = async () => {
+    setExtState("busy");
+    setNote("Setting up…");
+
+    try {
+      const res = await sessExtInstall();
+      localStorage.setItem(ON_KEY, "on");
+
+      // give the silent --load-extension path a moment to connect
+      for (let i = 0; i < 8; i++) {
+        await new Promise((r) => setTimeout(r, 1_000));
+
+        try {
+          if (await sessExtStatus()) {
+            setExtState("connected");
+            setNote("");
+            return;
+          }
+        } catch {
+          // keep waiting
+        }
+      }
+
+      // branded Chrome blocks silent loading — guide the one manual step
+      setExtState("fallback");
+      setNote("One step left: in the Chrome window that opened, click “Load unpacked” and pick the revealed Argus extension folder.");
+      await openUrl("chrome://extensions").catch(() => {});
+      await import("@tauri-apps/plugin-opener").then((m) =>
+        m.openPath(res.extPath).catch(() => {})
+      );
+    } catch (err) {
+      setExtState("off");
+      setNote(String(err));
+      localStorage.removeItem(ON_KEY);
+    }
+  };
+
+  const disable = async () => {
+    setExtState("off");
     setNote("");
+    localStorage.removeItem(ON_KEY);
+
+    try {
+      await sessExtUninstall();
+    } catch {
+      // host manifest already gone is fine
+    }
+  };
+
+  const toggle = () => {
+    if (extState === "busy") return;
+    if (extState === "off") void enable();
+    if (extState !== "off") void disable();
+  };
+
+  const runImport = async () => {
+    setImpState("busy");
+    setImpNote("Preparing import…");
 
     try {
       await sessBrowserImport("main");
     } catch (err) {
-      setState("err");
-      setNote(String(err));
+      setImpState("err");
+      setImpNote(String(err));
     }
   };
 
-  const busy = state === "busy";
+  const extOn = extState === "fallback" || extState === "connected";
+
+  const statusLine =
+    extState === "connected"
+      ? "Connected — the agent can use your real Chrome."
+      : extState === "fallback"
+        ? note
+        : extState === "busy"
+          ? "Setting up…"
+          : "Let the agent act inside your real Chrome. Logins stay yours.";
 
   return (
-    <div
-      className={
-        "flex items-center gap-4 rounded-xl bg-transparent px-2 py-1 " +
-        "transition-colors hover:bg-bg-hover-primary"
-      }
-    >
-      <div
-        className={
-          "flex h-12 w-12 shrink-0 items-center justify-center rounded-lg " +
-          "border border-border-primary bg-bg-primary text-xl " +
-          "text-text-primary"
-        }
-      >
-        <LuGlobe />
+    <div className="rounded-xl bg-transparent px-2 py-1 transition-colors hover:bg-bg-hover-primary">
+      <div className="flex items-center gap-4">
+        <div
+          className={
+            "flex h-12 w-12 shrink-0 items-center justify-center rounded-lg " +
+            "border border-border-primary bg-bg-primary text-xl " +
+            "text-text-primary"
+          }
+        >
+          <LuGlobe />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="truncate text-sm font-medium text-text-primary">
+              Chrome — real browser
+            </h3>
+            {extState === "connected" && (
+              <span className="h-2 w-2 shrink-0 rounded-full bg-green-500" />
+            )}
+          </div>
+          <p className="truncate text-xs text-text-secondary">{statusLine}</p>
+        </div>
+        <button
+          type="button"
+          onClick={toggle}
+          className={
+            "relative h-6 w-11 shrink-0 rounded-full transition-colors cursor-pointer " +
+            `${extOn ? "bg-green-600" : "bg-bg-hover-primary border border-border-primary"}`
+          }
+          aria-pressed={extOn}
+          aria-label="Enable real browser"
+        >
+          <span
+            className={
+              "absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all " +
+              `${extOn ? "left-[22px]" : "left-0.5"}`
+            }
+          />
+        </button>
       </div>
-      <div className="flex-1 min-w-0">
-        <h3 className="truncate text-sm font-medium text-text-primary">
-          Browser
-        </h3>
-        <p className="truncate text-xs text-text-secondary">
-          {note || "Import your Chrome profile so logins carry over. Close Chrome first."}
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={run}
-        disabled={busy}
-        className={
-          "flex shrink-0 items-center gap-1.5 rounded-full border " +
-          "border-border-primary bg-bg-hover-secondary px-3 py-1.5 " +
-          "text-xs font-medium text-text-primary transition-colors " +
-          "hover:bg-bg-hover-primary cursor-pointer " +
-          "disabled:cursor-default disabled:opacity-60"
-        }
-      >
-        {busy && <LuLoaderCircle size={12} className="animate-spin" />}
-        Import Chrome profile
-      </button>
+      {extOn && (
+        <div className="ml-16 mt-1.5 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={runImport}
+            disabled={impState === "busy"}
+            className={
+              "flex items-center gap-1.5 rounded-full border " +
+              "border-border-primary px-2.5 py-1 text-xs text-text-secondary " +
+              "hover:text-text-primary cursor-pointer disabled:opacity-60"
+            }
+          >
+            {impState === "busy" && (
+              <LuLoaderCircle size={11} className="animate-spin" />
+            )}
+            Import my Chrome profile (isolated mode)
+          </button>
+          {impNote && (
+            <span className="truncate text-xs text-text-secondary">
+              {impNote}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

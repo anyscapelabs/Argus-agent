@@ -342,7 +342,7 @@ pub async fn send(
                 String::new()
             };
 
-            let sensitive = is_browser && tools::browser::sensitive(&a.tool, &args_v);
+            let sensitive = is_browser && tools::browser::sensitive(&a.tool, &args_v).await;
             let needs_ask = (perm == "ask" && tools::is_mutating(&a.tool)) || sensitive;
 
             let mut allow = !needs_ask;

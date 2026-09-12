@@ -1,36 +1,63 @@
+pub mod atspi;
 pub mod x11;
 
 use super::ToolMeta;
+
+use crate::sessions::ext_install::data_dir;
+
+/// The only directory whose files the chat layer will attach as images.
+pub fn shot_dir() -> std::path::PathBuf {
+    data_dir().join("screenshots")
+}
 
 // Gating lands with the Connectors card — every action is open for now.
 pub const META: &[ToolMeta] = &[
     ToolMeta {
         name: "computer.observe",
-        desc: "screenshot the desktop; returns the image, its size and the window list",
+        desc: "read the desktop as structured text: accessibility tree of every \
+               window with element refs, roles, actions and positions, plus the \
+               window list — the default way to see the screen",
+        args: "{}",
+        mutating: false,
+    },
+    ToolMeta {
+        name: "computer.act",
+        desc: "act on an element by ref from the last observe: press, toggle, \
+               select — runs the app's own action when it has one, else clicks \
+               the element's center; refusals include a fresh tree",
+        args: "{\"ref\":5,\"action\":\"press\"}",
+        mutating: false,
+    },
+    ToolMeta {
+        name: "computer.screen",
+        desc: "screenshot as an image — last resort, only when the tree cannot \
+               show what you need (canvas-drawn apps); returns the image, its \
+               size and the window list",
         args: "{}",
         mutating: false,
     },
     ToolMeta {
         name: "computer.click",
-        desc: "click at x,y from the latest screenshot; returns a fresh screenshot",
+        desc: "synthetic click at x,y — screen coords from the latest computer.screen",
         args: "{\"x\":100,\"y\":200,\"button\":1,\"double\":false}",
         mutating: false,
     },
     ToolMeta {
         name: "computer.type",
-        desc: "type text into the focused field; returns a fresh screenshot",
-        args: "{\"text\":\"...\"}",
+        desc: "type text; give a ref to focus that field first (password fields \
+               are refused — the user types those)",
+        args: "{\"text\":\"...\",\"ref\":7}",
         mutating: false,
     },
     ToolMeta {
         name: "computer.key",
-        desc: "press a key or combo like Return, ctrl+c, alt+Tab; returns a fresh screenshot",
+        desc: "press a key or combo like Return, ctrl+c, alt+Tab",
         args: "{\"key\":\"Return\"}",
         mutating: false,
     },
     ToolMeta {
         name: "computer.scroll",
-        desc: "scroll up or down at x,y (defaults to the cursor); returns a fresh screenshot",
+        desc: "scroll up or down at x,y (defaults to the cursor)",
         args: "{\"x\":100,\"y\":200,\"dir\":\"down\",\"amount\":3}",
         mutating: false,
     },

@@ -214,3 +214,16 @@ fn json_body_actions_stay_untouched() {
     let acts = parse_actions(r#"<action tool="computer.click">{"x":100,"y":200}</action>"#);
     assert_eq!(acts[0].args, r#"{"x":100,"y":200}"#);
 }
+
+#[test]
+fn attribute_args_cover_quote_styles_and_coercions() {
+    let acts =
+        parse_actions(r#"<action tool="t" a='single' b=bare c="3.5" d="" e="a=b"></action>"#);
+    assert_eq!(acts.len(), 1);
+    let args: Value = serde_json::from_str(&acts[0].args).expect("coerced json");
+    assert_eq!(args["a"], "single");
+    assert_eq!(args["b"], "bare");
+    assert_eq!(args["c"], 3.5);
+    assert!(args.get("d").is_none());
+    assert_eq!(args["e"], "a=b");
+}

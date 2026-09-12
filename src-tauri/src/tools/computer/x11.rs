@@ -55,8 +55,7 @@ async fn run(bin: &str, args: &[&str]) -> Result<String, String> {
 fn stamp() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0)
+        .map_or(0, |d| d.as_millis())
 }
 
 fn dims(s: &str) -> Result<(i64, i64), String> {

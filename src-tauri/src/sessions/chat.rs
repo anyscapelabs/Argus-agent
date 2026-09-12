@@ -203,10 +203,11 @@ fn browser_what(tool: &str, v: &serde_json::Value, masked: bool) -> String {
         .or(text)
         .unwrap_or_default();
 
-    match v.get("ref").and_then(|r| r.as_u64()) {
-        Some(r) => format!("{tool} ref {r} {what}"),
-        None => format!("{tool} {what}"),
-    }
+    v.get("ref")
+        .and_then(|r| r.as_u64())
+        .map_or(format!("{tool} {what}"), |r| {
+            format!("{tool} ref {r} {what}")
+        })
 }
 
 fn browser_block(idx: usize, tool: &str, url: &str, what: &str) -> String {

@@ -81,9 +81,8 @@ pub fn parse_actions(text: &str) -> Vec<Action> {
 
     while let Some(start) = rest.find("<action") {
         let tail = &rest[start..];
-        let end = match tail.find("</action>") {
-            Some(err) => err,
-            None => break,
+        let Some(end) = tail.find("</action>") else {
+            break;
         };
 
         let blk = &tail[..end];
@@ -146,96 +145,64 @@ fn coerce_val(v: &str) -> Value {
     match v {
         "true" => Value::Bool(true),
         "false" => Value::Bool(false),
-        _ => match v.parse::<i64>() {
-            Ok(n) => Value::Number(n.into()),
-            Err(_) => match v.parse::<f64>() {
-                Ok(f) => serde_json::Number::from_f64(f)
-                    .map(Value::Number)
-                    .unwrap_or_else(|| Value::String(v.into())),
-                Err(_) => Value::String(v.into()),
-            },
-        },
+        _ => v
+            .parse::<i64>()
+            .ok()
+            .map(Value::from)
+            .or_else(|| {
+                v.parse::<f64>()
+                    .ok()
+                    .and_then(serde_json::Number::from_f64)
+                    .map(Value::from)
+            })
+            .unwrap_or_else(|| Value::String(v.into())),
     }
+}
+
+fn attr_val(rest: &str) -> Option<(&str, &str, usize)> {
+    let eq = rest.find('=')?;
+    let key = rest[..eq]
+        .trim_end()
+        .rsplit(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .next()
+        .filter(|k| !k.is_empty())?;
+    let after = rest[eq + 1..].trim_start();
+    let lead = rest.len() - eq - 1 - after.len();
+
+    if let Some(mark) = after.chars().next().filter(|c| *c == '"' || *c == '\'') {
+        let inner = &after[mark.len_utf8()..];
+        let (val, end) = match inner.find(mark) {
+            Some(e) => (&inner[..e], e + mark.len_utf8()),
+            None => (inner, inner.len()),
+        };
+
+        return Some((key, val, eq + 1 + lead + mark.len_utf8() + end));
+    }
+
+    let val = after.split([' ', '/']).next().filter(|s| !s.is_empty())?;
+
+    Some((key, val, eq + 1 + lead + val.len()))
 }
 
 fn attrs_to_args(t: &str) -> Option<String> {
     let mut args = serde_json::Map::new();
-    let b = t.as_bytes();
-    let mut i = 0usize;
+    let mut rest = t;
 
-    while i < b.len() {
-        while i < b.len() && !(b[i].is_ascii_alphanumeric() || b[i] == b'_') {
-            i += 1;
-        }
-
-        let ks = i;
-
-        while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') {
-            i += 1;
-        }
-
-        let key = &t[ks..i];
-
-        if key.is_empty() {
-            i += 1;
-            continue;
-        }
-
-        let ke = i;
-
-        while i < b.len() && b[i] == b' ' {
-            i += 1;
-        }
-
-        if i >= b.len() || b[i] != b'=' {
-            i = ke;
-            continue;
-        }
-
-        i += 1;
-
-        while i < b.len() && b[i] == b' ' {
-            i += 1;
-        }
-
-        let val = if i < b.len() && (b[i] == b'"' || b[i] == b'\'') {
-            let q = b[i];
-            i += 1;
-            let vs = i;
-
-            while i < b.len() && b[i] != q {
-                i += 1;
-            }
-
-            let v = t[vs..i].to_string();
-            i += 1;
-            v
-        } else {
-            let vs = i;
-
-            while i < b.len() && b[i] != b' ' && b[i] != b'/' {
-                i += 1;
-            }
-
-            t[vs..i].to_string()
-        };
+    while let Some((key, val, used)) = attr_val(rest) {
+        rest = &rest[used..];
 
         if !val.is_empty() && key != "tool" && key != "action" {
-            args.insert(key.to_string(), coerce_val(&val));
+            args.insert(key.to_string(), coerce_val(val));
         }
     }
 
-    if args.is_empty() {
-        None
-    } else {
-        Some(Value::Object(args).to_string())
-    }
+    (!args.is_empty()).then(|| Value::Object(args).to_string())
 }
 
 fn coerce_args(tag: &str, body: &str) -> String {
     let t = body.trim();
 
-    if !t.is_empty() && serde_json::from_str::<Value>(t).is_ok() {
+    if serde_json::from_str::<Value>(t).is_ok() {
         return t.into();
     }
 
@@ -252,9 +219,8 @@ pub fn normalize_actions(text: &str) -> String {
         out.push_str(&rest[..start]);
         let tail = &rest[start..];
 
-        let close = match tail.find(TOOL_CALL_CLOSE) {
-            Some(err) => err,
-            None => return out,
+        let Some(close) = tail.find(TOOL_CALL_CLOSE) else {
+            return out;
         };
 
         if let Some((tool, args)) = salvage_call(&tail[..close]) {
@@ -279,37 +245,29 @@ fn salvage_call(inner: &str) -> Option<(String, String)> {
             .get("arguments")
             .cloned()
             .unwrap_or_else(|| Value::Object(Default::default()));
-
-        if !args.is_object() {
-            return None;
-        }
+        args.as_object()?;
 
         return Some((tool, args.to_string()));
     }
 
     let mut lines = body.lines().map(str::trim).filter(|l| !l.is_empty());
-    let tool = lines.next()?.to_string();
-
-    if !tool
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-    {
-        return None;
-    }
+    let tool = lines
+        .next()
+        .filter(|t| {
+            t.chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        })?
+        .to_string();
 
     let keys = collect_spans(body, "<arg_key>", "</arg_key>");
     let vals = collect_spans(body, "<arg_value>", "</arg_value>");
+    let args: serde_json::Map<String, Value> = keys
+        .into_iter()
+        .zip(vals)
+        .map(|(k, v)| (k, Value::String(v)))
+        .collect();
 
-    if keys.is_empty() {
-        return None;
-    }
-
-    let mut args = serde_json::Map::new();
-    for (k, v) in keys.into_iter().zip(vals) {
-        args.insert(k, Value::String(v));
-    }
-
-    Some((tool, Value::Object(args).to_string()))
+    (!args.is_empty()).then(|| (tool, Value::Object(args).to_string()))
 }
 
 fn collect_spans(body: &str, open: &str, close: &str) -> Vec<String> {
@@ -318,9 +276,8 @@ fn collect_spans(body: &str, open: &str, close: &str) -> Vec<String> {
 
     while let Some(i) = rest.find(open) {
         let tail = &rest[i + open.len()..];
-        let e = match tail.find(close) {
-            Some(err) => err,
-            None => break,
+        let Some(e) = tail.find(close) else {
+            break;
         };
 
         out.push(tail[..e].trim().to_string());

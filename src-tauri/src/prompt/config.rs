@@ -42,21 +42,12 @@ impl CompressionCfg {
     }
 
     pub fn threshold_for(&self, model_id: &str) -> f64 {
-        let mut best: Option<(usize, f64)> = None;
-
-        for (k, v) in &self.model_thresholds {
-            if model_id.contains(k.as_str()) {
-                let better = match best {
-                    Some((len, _)) => k.len() > len,
-                    None => true,
-                };
-                if better {
-                    best = Some((k.len(), *v));
-                }
-            }
-        }
-
-        best.map(|(_, v)| v).unwrap_or(self.threshold)
+        self.model_thresholds
+            .iter()
+            .filter(|(k, _)| model_id.contains(k.as_str()))
+            .max_by_key(|(k, _)| k.len())
+            .map(|(_, v)| *v)
+            .unwrap_or(self.threshold)
     }
 }
 

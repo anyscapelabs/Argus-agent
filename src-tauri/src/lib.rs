@@ -21,7 +21,7 @@ pub fn run() {
             .build()
             .expect("tokio runtime"); // Loud fail: no runtime, no bridge
 
-        rt.block_on(tools::extpipe::run_stdio_host(socket));
+        rt.block_on(tools::browser::extpipe::run_stdio_host(socket));
         return;
     }
 
@@ -48,7 +48,7 @@ pub fn run() {
             std::fs::create_dir_all(&logos_dir)?;
 
             tools::browser::init(dir.join("browser-profiles"));
-            tools::extpipe::start_listener(dir.clone());
+            tools::browser::extpipe::start_listener(dir.clone());
 
             if dir.join("extension.enabled").is_file() {
                 let _ = sessions::ext_install::install_core(&dir);

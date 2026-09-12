@@ -85,12 +85,17 @@ pub fn parse_actions(text: &str) -> Vec<Action> {
             .split("tool=\"")
             .nth(1)
             .and_then(|s| s.split('"').next())
+            .or_else(|| {
+                blk.split("tool='")
+                    .nth(1)
+                    .and_then(|s| s.split('\'').next())
+            })
             .unwrap_or("")
             .to_string();
 
-        let args = match blk.find('>') {
-            Some(i) => blk[i + 1..].trim().to_string(),
-            None => String::new(),
+        let args = match tag_end(blk) {
+            Some(i) => coerce_args(&blk[..i], &blk[i + 1..]),
+            None => "{}".into(),
         };
 
         if !tool.is_empty() {
@@ -107,6 +112,133 @@ pub fn parse_actions(text: &str) -> Vec<Action> {
     }
 
     out
+}
+
+/// The `>` closing the action tag, skipping over quoted attribute values.
+fn tag_end(blk: &str) -> Option<usize> {
+    let b = blk.as_bytes();
+    let mut i = 0usize;
+    let mut q = 0u8;
+
+    while i < b.len() {
+        if q != 0 {
+            if b[i] == q {
+                q = 0;
+            }
+        } else if b[i] == b'"' || b[i] == b'\'' {
+            q = b[i];
+        } else if b[i] == b'>' {
+            return Some(i);
+        }
+
+        i += 1;
+    }
+
+    None
+}
+
+fn coerce_val(v: &str) -> Value {
+    match v {
+        "true" => Value::Bool(true),
+        "false" => Value::Bool(false),
+        _ => match v.parse::<i64>() {
+            Ok(n) => Value::Number(n.into()),
+            Err(_) => match v.parse::<f64>() {
+                Ok(f) => serde_json::Number::from_f64(f)
+                    .map(Value::Number)
+                    .unwrap_or_else(|| Value::String(v.into())),
+                Err(_) => Value::String(v.into()),
+            },
+        },
+    }
+}
+
+/// Some models emit attribute-style actions —
+/// `<action tool="computer.click" x="96" y="740">` — turn those into the
+/// JSON args the executor expects.
+fn attrs_to_args(t: &str) -> Option<String> {
+    let mut args = serde_json::Map::new();
+    let b = t.as_bytes();
+    let mut i = 0usize;
+
+    while i < b.len() {
+        while i < b.len() && !(b[i].is_ascii_alphanumeric() || b[i] == b'_') {
+            i += 1;
+        }
+
+        let ks = i;
+
+        while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') {
+            i += 1;
+        }
+
+        let key = &t[ks..i];
+
+        if key.is_empty() {
+            i += 1;
+            continue;
+        }
+
+        let ke = i;
+
+        while i < b.len() && b[i] == b' ' {
+            i += 1;
+        }
+
+        if i >= b.len() || b[i] != b'=' {
+            i = ke;
+            continue;
+        }
+
+        i += 1;
+
+        while i < b.len() && b[i] == b' ' {
+            i += 1;
+        }
+
+        let val = if i < b.len() && (b[i] == b'"' || b[i] == b'\'') {
+            let q = b[i];
+            i += 1;
+            let vs = i;
+
+            while i < b.len() && b[i] != q {
+                i += 1;
+            }
+
+            let v = t[vs..i].to_string();
+            i += 1;
+            v
+        } else {
+            let vs = i;
+
+            while i < b.len() && b[i] != b' ' && b[i] != b'/' {
+                i += 1;
+            }
+
+            t[vs..i].to_string()
+        };
+
+        if !val.is_empty() && key != "tool" && key != "action" {
+            args.insert(key.to_string(), coerce_val(&val));
+        }
+    }
+
+    if args.is_empty() {
+        None
+    } else {
+        Some(Value::Object(args).to_string())
+    }
+}
+
+/// JSON body wins; otherwise the args may live in the tag attributes.
+fn coerce_args(tag: &str, body: &str) -> String {
+    let t = body.trim();
+
+    if !t.is_empty() && serde_json::from_str::<Value>(t).is_ok() {
+        return t.into();
+    }
+
+    attrs_to_args(tag).unwrap_or_else(|| if t.is_empty() { "{}".into() } else { t.into() })
 }
 
 const TOOL_CALL_CLOSE: &str = "</tool_call>";
@@ -271,9 +403,15 @@ pub fn section(web: bool) -> String {
         "\n\n## Tools\n\
 You work in steps. To run a tool, end your reply with an action block:\n\
 <action tool=\"fs.write\">{\"path\":\"~/notes.txt\",\"content\":\"hello\"}</action>\n\
+Args are a JSON object between the tags, exactly like the example. Never put \
+args as tag attributes, never self-close the tag.\n\
 Several action blocks in one reply run in order. Results come back as the next \
 message wrapped in <tool-result tool=\"...\" status=\"ok|err\">output</tool-result>. \
 Then continue: act again or write the final answer with no action block.\n\
+When a result arrives you will SEE it — until then you know nothing about the \
+outcome, so after writing your action block(s) end the reply. Never describe \
+what a tool returned and never say an action worked before its result message \
+arrives; never narrate screenshots you were not given.\n\
 Never invent tool output, never claim a tool ran without an action block, never \
 wrap an action block inside another tag. Never use <tool_call> or any other tool-call \
 format — the action block is the only way to run a tool.\n\

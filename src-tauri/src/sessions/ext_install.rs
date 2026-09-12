@@ -8,7 +8,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 
-use crate::tools::extpipe;
+use crate::tools::browser::extpipe;
 
 const HOST_NAME: &str = "com.argus.browser";
 const HOST_DIRS: &[&str] = &[

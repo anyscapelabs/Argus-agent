@@ -1,3 +1,6 @@
+mod ext;
+pub mod extpipe;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
@@ -317,8 +320,8 @@ pub async fn open(args: &Value) -> Result<String, String> {
     url_guard(&url)?;
     let name = route_profile(args).await;
 
-    if super::browser_ext::is_real(&name) {
-        return super::browser_ext::open(args).await;
+    if self::ext::is_real(&name) {
+        return self::ext::open(args).await;
     }
 
     let mut map = sess(&name).await?;
@@ -354,8 +357,8 @@ async fn target(s: &Sess, r: usize) -> Result<String, String> {
 pub async fn click(args: &Value) -> Result<String, String> {
     let name = route_profile(args).await;
 
-    if super::browser_ext::is_real(&name) {
-        return super::browser_ext::click(args).await;
+    if self::ext::is_real(&name) {
+        return self::ext::click(args).await;
     }
 
     let r = ref_of(args)?;
@@ -381,8 +384,8 @@ pub async fn click(args: &Value) -> Result<String, String> {
 pub async fn type_text(args: &Value) -> Result<String, String> {
     let name = route_profile(args).await;
 
-    if super::browser_ext::is_real(&name) {
-        return super::browser_ext::type_text(args).await;
+    if self::ext::is_real(&name) {
+        return self::ext::type_text(args).await;
     }
 
     let r = ref_of(args)?;
@@ -423,8 +426,8 @@ pub async fn type_text(args: &Value) -> Result<String, String> {
 pub async fn read(args: &Value) -> Result<String, String> {
     let name = route_profile(args).await;
 
-    if super::browser_ext::is_real(&name) {
-        return super::browser_ext::read(args).await;
+    if self::ext::is_real(&name) {
+        return self::ext::read(args).await;
     }
 
     let mut map = sess(&name).await?;
@@ -437,8 +440,8 @@ pub async fn read(args: &Value) -> Result<String, String> {
 pub async fn close(args: &Value) -> Result<String, String> {
     let name = route_profile(args).await;
 
-    if super::browser_ext::is_real(&name) {
-        return super::browser_ext::close(args).await;
+    if self::ext::is_real(&name) {
+        return self::ext::close(args).await;
     }
 
     let mut map = pool().sess.lock().await;
@@ -550,7 +553,7 @@ pub async fn sensitive(tool: &str, args: &Value) -> bool {
 
     let name = route_profile(args).await;
 
-    if super::browser_ext::is_real(&name) && super::browser_ext::sensitive(args).await {
+    if self::ext::is_real(&name) && self::ext::sensitive(args).await {
         return true;
     }
 

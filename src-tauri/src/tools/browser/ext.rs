@@ -4,10 +4,10 @@ use serde_json::Value;
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::sessions::ext_install;
+use crate::tools::page_text;
 
-use super::browser::sensitive_pats;
 use super::extpipe;
-use super::{browser, page_text};
+use super::sensitive_pats;
 
 struct Sess {
     tab_id: i32,
@@ -20,7 +20,7 @@ struct Sess {
 static SESS: AsyncMutex<Option<Sess>> = AsyncMutex::const_new(None);
 
 pub fn is_real(name: &str) -> bool {
-    matches!(browser::sanitize(name).as_str(), "real" | "chrome")
+    matches!(super::sanitize(name).as_str(), "real" | "chrome")
 }
 
 pub async fn open(args: &Value) -> Result<String, String> {
@@ -35,7 +35,7 @@ pub async fn open(args: &Value) -> Result<String, String> {
         return Err("url must start with http:// or https://".into());
     }
 
-    browser::url_guard(url)?;
+    super::url_guard(url)?;
     ext_install::ensure_real().await?;
 
     let prev_tab = SESS.lock().await.as_ref().map(|s| s.tab_id).unwrap_or(0);
@@ -73,7 +73,7 @@ pub async fn open(args: &Value) -> Result<String, String> {
 
     let out = page_out(&mut s, text, page_url.clone(), title).await;
 
-    Ok(browser::sensitive_note(&page_url, out))
+    Ok(super::sensitive_note(&page_url, out))
 }
 
 fn ref_of(args: &Value) -> Result<usize, String> {
@@ -115,7 +115,7 @@ async fn snapshot_list(tab_id: i32, s: &mut Sess) -> String {
             let mut out = String::from("\nElements:\n");
 
             for (i, el) in els.iter().enumerate() {
-                let label = browser::redact(&el.label);
+                let label = super::redact(&el.label);
                 r.push(el.path.clone());
                 l.push(label.clone());
 
@@ -150,7 +150,7 @@ async fn page_out(s: &mut Sess, text: String, url: String, title: String) -> Str
 
     format!(
         "url {url}\ntitle {title}\n\n---\n{}\n---{list}",
-        page_text(&browser::redact(&text))
+        page_text(&super::redact(&text))
     )
 }
 

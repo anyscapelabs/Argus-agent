@@ -31,13 +31,13 @@ function SettingsCard({ title, description, control }: SettingsCardProps) {
 
 type SegmentedProps<T extends string> = {
   value: T;
-  options: { value: T; label: string }[];
+  opts: { value: T; label: string }[];
   onChange: (next: T) => void;
 };
 
 function Segmented<T extends string>({
   value,
-  options,
+  opts,
   onChange,
 }: SegmentedProps<T>) {
   return (
@@ -47,7 +47,7 @@ function Segmented<T extends string>({
         "bg-bg-secondary p-0.5 text-xs"
       }
     >
-      {options.map((opt) => {
+      {opts.map((opt) => {
         const active = opt.value === value;
 
         return (
@@ -116,8 +116,8 @@ export default function SettingsModal({
   useEffect(() => {
     if (!open) return;
 
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+    const onKey = (evt: KeyboardEvent) => {
+      if (evt.key === "Escape") onClose();
     };
 
     document.addEventListener("keydown", onKey);
@@ -142,7 +142,7 @@ export default function SettingsModal({
           "flex h-[68vh] max-h-[620px] w-full max-w-5xl overflow-hidden " +
           "rounded-2xl border border-border-primary bg-bg-secondary shadow-4xl"
         }
-        onClick={(e) => e.stopPropagation()}
+        onClick={(evt) => evt.stopPropagation()}
       >
         <SettingsSidebar activeTab={activeTab} onTabChange={setActiveTab} />
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">

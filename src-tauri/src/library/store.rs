@@ -10,7 +10,7 @@ const COLS: &str = "id, name, kind, ext, path, session_id, sz, created_at";
 
 pub fn migrate(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(super::schema::MIGRATE)
-        .map_err(|e| e.to_string())
+        .map_err(|err| err.to_string())
 }
 
 fn row_item(r: &rusqlite::Row) -> rusqlite::Result<LibItem> {
@@ -85,7 +85,7 @@ pub fn add(conn: &Connection, dir: &Path, item: &NewLibItem) -> Result<LibItem, 
         .unwrap_or_else(|| "bin".into());
 
     let ym = chrono_ym();
-    fs::create_dir_all(dir.join(&ym)).map_err(|e| e.to_string())?;
+    fs::create_dir_all(dir.join(&ym)).map_err(|err| err.to_string())?;
 
     let file_name = sanitize(&item.name);
     let dot_ext = if ext == "bin" {
@@ -101,9 +101,9 @@ pub fn add(conn: &Connection, dir: &Path, item: &NewLibItem) -> Result<LibItem, 
         rel = format!("{ym}/{file_name}-{n}{dot_ext}");
     }
 
-    fs::copy(src, abs_path(dir, &rel)).map_err(|e| e.to_string())?;
+    fs::copy(src, abs_path(dir, &rel)).map_err(|err| err.to_string())?;
     let sz = fs::metadata(abs_path(dir, &rel))
-        .map_err(|e| e.to_string())?
+        .map_err(|err| err.to_string())?
         .len() as i64;
 
     let id = Uuid::new_v4().to_string();
@@ -111,7 +111,7 @@ pub fn add(conn: &Connection, dir: &Path, item: &NewLibItem) -> Result<LibItem, 
         "INSERT INTO library (id, name, kind, ext, path, session_id, sz) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![id, item.name, kind_of(&ext), ext, rel, item.session_id, sz],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     get(conn, dir, &id)
 }
@@ -144,16 +144,16 @@ pub fn list(conn: &Connection, kind: Option<&str>) -> Result<Vec<LibItem>, Strin
         None => format!("SELECT {COLS} FROM library ORDER BY created_at DESC"),
     };
 
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(&sql).map_err(|err| err.to_string())?;
 
     let rows = match kind {
         Some(k) => stmt.query_map(params![k], row_item),
         None => stmt.query_map([], row_item),
     }
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())
+        .map_err(|err| err.to_string())
 }
 
 pub fn get(conn: &Connection, dir: &Path, id: &str) -> Result<LibItem, String> {
@@ -164,12 +164,12 @@ pub fn get(conn: &Connection, dir: &Path, id: &str) -> Result<LibItem, String> {
             row_item,
         )
         .optional()
-        .map_err(|e| e.to_string())?
+        .map_err(|err| err.to_string())?
         .ok_or_else(|| String::from("item not found"))?;
 
     if !abs_path(dir, &item.path).exists() {
         conn.execute("DELETE FROM library WHERE id = ?1", params![id])
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
         return Err("item file missing, index row dropped".into());
     }
 
@@ -182,7 +182,7 @@ pub fn delete(conn: &Connection, dir: &Path, id: &str) -> Result<(), String> {
             r.get(0)
         })
         .optional()
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let rel = match row {
         Some(r) => r,
@@ -191,12 +191,12 @@ pub fn delete(conn: &Connection, dir: &Path, id: &str) -> Result<(), String> {
 
     match fs::remove_file(abs_path(dir, &rel)) {
         Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(e.to_string()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => return Err(err.to_string()),
     }
 
     conn.execute("DELETE FROM library WHERE id = ?1", params![id])
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     Ok(())
 }
@@ -217,13 +217,13 @@ pub fn search(conn: &Connection, query: &str, limit: i64) -> Result<Vec<LibItem>
          (SELECT rowid FROM library_fts WHERE library_fts MATCH ?1 ORDER BY bm25(library_fts) LIMIT ?2)"
     );
 
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(&sql).map_err(|err| err.to_string())?;
     let rows = stmt
         .query_map(params![fts_q, limit], row_item)
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())
+        .map_err(|err| err.to_string())
 }
 
 pub fn sync(conn: &Connection, dir: &Path) -> Result<(), String> {
@@ -234,19 +234,19 @@ pub fn sync(conn: &Connection, dir: &Path) -> Result<(), String> {
     let known: Vec<String> = {
         let mut stmt = conn
             .prepare("SELECT path FROM library")
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
         let rows = stmt
             .query_map([], |r| r.get(0))
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
         rows.collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?
+            .map_err(|err| err.to_string())?
     };
 
     let known: std::collections::HashSet<String> = known.into_iter().collect();
 
     let mut on_disk: Vec<String> = vec![];
 
-    for month in fs::read_dir(dir).map_err(|e| e.to_string())? {
+    for month in fs::read_dir(dir).map_err(|err| err.to_string())? {
         let month = match month {
             Ok(m) => m.path(),
             Err(_) => continue,
@@ -256,9 +256,9 @@ pub fn sync(conn: &Connection, dir: &Path) -> Result<(), String> {
             continue;
         }
 
-        for entry in fs::read_dir(&month).map_err(|e| e.to_string())? {
+        for entry in fs::read_dir(&month).map_err(|err| err.to_string())? {
             let path = match entry {
-                Ok(e) => e.path(),
+                Ok(err) => err.path(),
                 Err(_) => continue,
             };
 
@@ -293,14 +293,14 @@ pub fn sync(conn: &Connection, dir: &Path) -> Result<(), String> {
                 "INSERT OR IGNORE INTO library (id, name, kind, ext, path, sz) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![Uuid::new_v4().to_string(), name, kind_of(&ext), ext, rel, sz],
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
         }
     }
 
     for rel in known {
         if !on_disk.contains(&rel) {
             conn.execute("DELETE FROM library WHERE path = ?1", params![rel])
-                .map_err(|e| e.to_string())?;
+                .map_err(|err| err.to_string())?;
         }
     }
 

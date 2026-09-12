@@ -1,8 +1,3 @@
-//! Tier 2 — the OS accessibility tree. Structured element info the model can
-//! act on by ref, no pixels involved. Semantic actions run through the app's
-//! own Action interface; a synthetic click at the element's center is only
-//! the fallback.
-
 use atspi::{
     proxy::{accessible::AccessibleProxy, action::ActionProxy, component::ComponentProxy},
     CoordType, Role, State,
@@ -17,7 +12,6 @@ const MAX_KIDS: usize = 30;
 const ROOT_DEST: &str = "org.a11y.atspi.Registry";
 const ROOT_PATH: &str = "/org/a11y/atspi/accessible/root";
 
-/// Desktop daemons that sit on the bus but own no user-facing windows.
 fn daemon_app(name: &str) -> bool {
     name.starts_with("csd-")
         || name.starts_with("ibus")
@@ -26,7 +20,6 @@ fn daemon_app(name: &str) -> bool {
         || name == "dconf-service"
 }
 
-/// One listed element: enough to act on it later by ref.
 #[derive(Clone)]
 pub struct Elem {
     pub role: String,
@@ -45,7 +38,7 @@ async fn conn() -> Result<&'static atspi::AccessibilityConnection, String> {
     CONN.get_or_try_init(|| async {
         atspi::AccessibilityConnection::new()
             .await
-            .map_err(|e| format!("no accessibility bus (is at-spi2 running?): {e}"))
+            .map_err(|err| format!("no accessibility bus (is at-spi2 running?): {err}"))
     })
     .await
 }
@@ -57,15 +50,14 @@ async fn accessible(
 ) -> Result<AccessibleProxy<'static>, String> {
     AccessibleProxy::builder(conn.inner().connection())
         .destination(dest.to_string())
-        .map_err(|e| e.to_string())?
+        .map_err(|err| err.to_string())?
         .path(path.to_string())
-        .map_err(|e| e.to_string())?
+        .map_err(|err| err.to_string())?
         .build()
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|err| err.to_string())
 }
 
-/// Containers that only add noise to the listing.
 fn showable_role(role: &str) -> bool {
     !matches!(
         role,
@@ -103,7 +95,6 @@ pub async fn tree() -> Result<String, String> {
     let mut out = String::new();
     let mut elems: Vec<Elem> = Vec::new();
 
-    // applications under the desktop
     let root = accessible(c, ROOT_DEST, ROOT_PATH).await?;
     let count = root.child_count().await.unwrap_or(0);
 
@@ -130,7 +121,6 @@ pub async fn tree() -> Result<String, String> {
             continue;
         }
 
-        // every app gets its own budget so no tree starves the rest
         let mut per_app: Vec<Elem> = Vec::new();
         let mut pn = 0usize;
 
@@ -287,9 +277,6 @@ fn walk<'a>(
     })
 }
 
-/// Run a semantic action on a listed element by ref. Falls back to a
-/// synthetic click at the element's center when the app exposes no matching
-/// action. Returns the refreshed tree.
 pub async fn act(args: &Value) -> Result<String, String> {
     let e = resolve(args).await?;
     let c = conn().await?;
@@ -348,8 +335,6 @@ async fn resolve(args: &Value) -> Result<Elem, String> {
         .ok_or_else(|| "unknown ref — run computer.observe for a fresh list".to_string())?)
 }
 
-/// Focus a listed element for typing: password fields are refused — the user
-/// types those, enforced in code not just the prompt.
 pub async fn focus_ref(args: &Value) -> Result<(), String> {
     if args.get("ref").is_none() {
         return Ok(());

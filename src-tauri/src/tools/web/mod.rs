@@ -16,12 +16,13 @@ const SEARXNG_POOL: &[&str] = &[
 
 fn client() -> &'static reqwest::Client {
     static C: OnceLock<reqwest::Client> = OnceLock::new();
+
     C.get_or_init(|| {
         reqwest::Client::builder()
             .user_agent(UA)
             .timeout(Duration::from_secs(20))
             .build()
-            .expect("http client init")
+            .unwrap_or_else(|_| reqwest::Client::new())
     })
 }
 
@@ -129,13 +130,13 @@ async fn duck_search(query: &str) -> Result<String, String> {
         .query(&[("q", query)])
         .send()
         .await
-        .map_err(|e| format!("search request failed: {e}"))?;
+        .map_err(|err| format!("search request failed: {err}"))?;
 
     let status = resp.status();
     let html = resp
         .text()
         .await
-        .map_err(|e| format!("search read failed: {e}"))?;
+        .map_err(|err| format!("search read failed: {err}"))?;
 
     if !status.is_success() {
         return Err(format!("search engine answered {status} — try again later"));
@@ -163,10 +164,21 @@ struct Hit {
 }
 
 pub fn parse_results(html: &str) -> Vec<(String, String, String)> {
-    let anchor = Regex::new(r#"<a\s([^>]*result__a[^>]*)>(.*?)</a>"#).expect("anchor regex");
-    let snippet = Regex::new(r#"<a\s[^>]*result__snippet[^>]*>(.*?)</a>"#).expect("snippet regex");
-    let href = Regex::new(r#"href="([^"]*)""#).expect("href regex");
-    let tag = Regex::new(r#"<[^>]*>"#).expect("tag regex");
+    let Ok(anchor) = Regex::new(r#"<a\s([^>]*result__a[^>]*)>(.*?)</a>"#) else {
+        return vec![];
+    };
+
+    let Ok(snippet) = Regex::new(r#"<a\s[^>]*result__snippet[^>]*>(.*?)</a>"#) else {
+        return vec![];
+    };
+
+    let Ok(href) = Regex::new(r#"href="([^"]*)""#) else {
+        return vec![];
+    };
+
+    let Ok(tag) = Regex::new(r#"<[^>]*>"#) else {
+        return vec![];
+    };
 
     let mut hits: Vec<Hit> = vec![];
 
@@ -295,7 +307,7 @@ pub async fn read(args: &Value) -> Result<String, String> {
             let body = resp
                 .text()
                 .await
-                .map_err(|e| format!("page read failed: {e}"))?;
+                .map_err(|err| format!("page read failed: {err}"))?;
             let body = body.trim().to_string();
             if !body.is_empty() {
                 return Ok(crate::tools::page_text(&body));
@@ -307,7 +319,7 @@ pub async fn read(args: &Value) -> Result<String, String> {
         .get(url)
         .send()
         .await
-        .map_err(|e| format!("page fetch failed: {e}"))?;
+        .map_err(|err| format!("page fetch failed: {err}"))?;
 
     let ct = resp
         .headers()
@@ -320,7 +332,7 @@ pub async fn read(args: &Value) -> Result<String, String> {
     let body = resp
         .text()
         .await
-        .map_err(|e| format!("page read failed: {e}"))?;
+        .map_err(|err| format!("page read failed: {err}"))?;
 
     if !status.is_success() {
         return Err(format!("page answered {status}"));
@@ -334,10 +346,21 @@ pub async fn read(args: &Value) -> Result<String, String> {
 }
 
 pub fn html_to_text(html: &str) -> String {
-    let script = Regex::new(r"(?is)<script[^>]*>.*?</script>").expect("script regex");
-    let style = Regex::new(r"(?is)<style[^>]*>.*?</style>").expect("style regex");
-    let tag = Regex::new(r"<[^>]*>").expect("tag regex");
-    let blank = Regex::new(r"\n{3,}").expect("blank regex");
+    let Ok(script) = Regex::new(r"(?is)<script[^>]*>.*?</script>") else {
+        return html.to_string();
+    };
+
+    let Ok(style) = Regex::new(r"(?is)<style[^>]*>.*?</style>") else {
+        return html.to_string();
+    };
+
+    let Ok(tag) = Regex::new(r"<[^>]*>") else {
+        return html.to_string();
+    };
+
+    let Ok(blank) = Regex::new(r"\n{3,}") else {
+        return html.to_string();
+    };
 
     let no_script = script.replace_all(html, "");
     let no_css = style.replace_all(&no_script, "");

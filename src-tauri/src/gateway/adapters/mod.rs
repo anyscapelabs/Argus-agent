@@ -6,13 +6,13 @@ use reqwest::Client;
 use super::schema::{Provider, StreamDone, WireMsg, WireResp};
 
 #[derive(Debug)]
-pub struct CallErr {
+pub struct CallError {
     pub status: Option<u16>,
     pub msg: String,
     pub retry_after: Option<u64>,
 }
 
-impl CallErr {
+impl CallError {
     pub fn retryable(&self) -> bool {
         match self.status {
             None => true,
@@ -60,8 +60,6 @@ fn b64(data: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(data)
 }
 
-/// OpenAI wire form: plain string content, or text+image parts when the
-/// message carries screenshots.
 pub fn openai_msgs(msgs: &[WireMsg]) -> Vec<serde_json::Value> {
     msgs.iter()
         .map(|m| {
@@ -85,7 +83,6 @@ pub fn openai_msgs(msgs: &[WireMsg]) -> Vec<serde_json::Value> {
         .collect()
 }
 
-/// Anthropic wire form for one message's content.
 pub fn anthropic_content(m: &WireMsg) -> serde_json::Value {
     if m.images.is_empty() {
         return serde_json::json!(m.content);
@@ -112,7 +109,7 @@ pub async fn dispatch_stream(
     tok: Option<String>,
     msgs: &[WireMsg],
     on_delta: DeltaSink<'_>,
-) -> Result<StreamDone, CallErr> {
+) -> Result<StreamDone, CallError> {
     let lc = prov.compatible.to_lowercase();
 
     match lc.as_str() {
@@ -122,7 +119,7 @@ pub async fn dispatch_stream(
         "anthropic" => {
             anthropic::stream(http, &prov.base_url, tok, remote_id, msgs, on_delta).await
         }
-        _ => Err(CallErr {
+        _ => Err(CallError {
             status: None,
             msg: format!("unknown compatible dialect {}", prov.compatible),
             retry_after: None,
@@ -136,13 +133,13 @@ pub async fn dispatch(
     remote_id: &str,
     tok: Option<String>,
     msgs: &[WireMsg],
-) -> Result<(WireResp, String), CallErr> {
+) -> Result<(WireResp, String), CallError> {
     let lc = prov.compatible.to_lowercase();
 
     match lc.as_str() {
         "openai" => openai_compat::chat(http, &prov.base_url, tok, remote_id, msgs).await,
         "anthropic" => anthropic::chat(http, &prov.base_url, tok, remote_id, msgs).await,
-        _ => Err(CallErr {
+        _ => Err(CallError {
             status: None,
             msg: format!("unknown compatible dialect {}", prov.compatible),
             retry_after: None,

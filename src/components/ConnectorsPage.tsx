@@ -84,7 +84,6 @@ function BrowserCard() {
           setNote("");
         }
       } catch {
-        // status check failing isn't fatal, keep polling
       }
     }, 2_000);
 
@@ -161,14 +160,13 @@ function BrowserCard() {
     try {
       await sessExtUninstall();
     } catch {
-      // host manifest already gone is fine
     }
   };
 
   const toggle = () => {
     if (extState === "busy") return;
     if (extState === "off") void enable();
-    if (extState !== "off") void disable();
+    else void disable();
   };
 
   const runImport = async () => {

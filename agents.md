@@ -25,6 +25,8 @@
 * **Comment Only When Necessary:** Only write a statement when the logic is weird, handling a complex edge case, or when things are failing.
 * **Flat over Nested:** Keep indentation minimal. Enter, do work, finish.
 * **Meaning, But Short:** Variable names must explain what they hold, but always chopped. No single-letter junk (except standard iterators).
+* **Clean Production Code:** Debug statements (`println!`, `dbg!`, `eprintln!`, `console.log`, `fmt.Println`) live in test code only — never in production code. No hardcoded values in production logic: magic numbers, inline literals, or pinned strings belong in named constants or config, or they don't belong. Ship clean.
+* **Comments Are for Tests:** Explanatory comments are allowed in test code when something needs explaining. Production code gets none — the code is the explanation. If production logic needs a comment to be understood, the fix is renaming or restructuring, not narrating.
 
 **Field note:** rule 1 isn't just a Byron preference — it's enforced tooling in a lot of serious codebases. LLVM's coding standard bans `else` after a `return`/`break`/`continue`/`throw` outright, and the linter Biome ships a rule (`noUselessElse`) that exists purely to auto-fix that exact pattern. BPCS didn't invent guard clauses; it just refuses to compromise on them.
 
@@ -267,6 +269,16 @@ pub fn proc_blk(buf: &[u8]) -> Result<()> {
 ```
 The bad version collapses a real, typed error into `bool` — the caller has no idea *why* it failed. The BPCS version keeps the failure reason alive all the way to whoever calls `proc_blk`, which is the whole point of `Result`.
 
+**No panic in production.** Production code never calls `unwrap`, `expect`, `panic!`, `unreachable!`, `unimplemented!`, `todo!`, or `assert!`. A failed `Option` is `let-else` plus an early `Err`; a failed `Result` is `?` or `map_err`. `unwrap_or`, `unwrap_or_default`, and `unwrap_or_else` with a real fallback are fine — they never panic. Tests may use the full panic toolkit.
+
+```rust
+let Some(cli) = g.as_mut() else {
+    return Err("mcp gone".into());
+};
+
+let full_str = full.to_str().ok_or_else(|| "bad shot path".to_string())?;
+```
+
 ---
 
 ### TypeScript
@@ -348,6 +360,7 @@ When documenting code in Markdown, always use this exact structure to frame the 
 ## 8. Quick Reference Cheat Sheet
 
 **Rule 1, always:** guard clause, drop it, never `else`.
+**Rule 2, always:** production code clean — no debug statements, no hardcoded values, no comments. Tests get all three.
 
 | | Go | Rust | TypeScript |
 |---|---|---|---|

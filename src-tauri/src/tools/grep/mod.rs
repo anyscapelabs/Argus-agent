@@ -24,7 +24,7 @@ pub async fn run(args: &Value) -> Result<String, String> {
     let out = tokio::time::timeout(GREP_TIMEOUT, c.output())
         .await
         .map_err(|_| "grep timed out after 30s")?
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let txt = String::from_utf8_lossy(&out.stdout).trim().to_string();
 

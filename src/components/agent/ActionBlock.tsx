@@ -36,10 +36,8 @@ function argUrl(raw: string): string {
 }
 
 function statusBadge(code: number | undefined, hasOutput: boolean) {
-  if (code === undefined) {
-    if (!hasOutput) return null;
-    return <span className="shimmer-text text-xs">running</span>;
-  }
+  if (code === undefined && !hasOutput) return null;
+  if (code === undefined) return <span className="shimmer-text text-xs">running</span>;
 
   if (code === 0) return null;
 

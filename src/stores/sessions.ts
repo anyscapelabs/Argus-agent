@@ -34,13 +34,23 @@ export type Turn = {
   approval: PendingApproval | null;
 };
 
-const blankTurn = (err: string | null = null): Turn => ({
-  text: "",
-  err,
-  term: {},
-  termCode: {},
-  approval: null,
-});
+const EMPTY_TXT = "";
+const DEF_TITLE = "New chat";
+const TITLE_CLIP = 60;
+const PENDING_PREFIX = "pending-";
+
+class SessError extends Error {}
+class SessRetryError extends SessError {}
+
+function blankTurn(err: string | null = null): Turn {
+  return {
+    text: EMPTY_TXT,
+    err,
+    term: {},
+    termCode: {},
+    approval: null,
+  };
+}
 
 type State = {
   sessions: SessionRow[];
@@ -172,13 +182,13 @@ class SessionStore {
 
     try {
       await apply();
-    } catch (e) {
-      console.error("session update failed, retrying", e);
+    } catch (err) {
+
 
       try {
         await apply();
-      } catch (e2) {
-        console.error("session update failed, reverting", e2);
+      } catch (err2) {
+
         this.set({
           sessions: this.state.sessions.map((s) =>
             s.id === sessionId ? { ...s, [field]: row[field] } : s,
@@ -208,7 +218,7 @@ class SessionStore {
 
   async archive(sessionId: string) {
     const row = this.state.sessions.find((s) => s.id === sessionId);
-    if (row === undefined) return;
+    if (row === undefined) throw new SessRetryError("sess gone");
 
     await sessSaveSession({ ...row, status: "archived" });
     await this.loadSessions();
@@ -234,7 +244,7 @@ class SessionStore {
     if (prev !== undefined && prev.err === null) return;
 
     const pending: MsgRow = {
-      id: `pending-${Date.now()}`,
+      id: `${PENDING_PREFIX}${Date.now()}`,
       session_id: sessionId,
       seq: 0,
       role: "user",
@@ -254,8 +264,8 @@ class SessionStore {
     });
 
     const row = this.state.sessions.find((s) => s.id === sessionId);
-    if (row !== undefined && row.title === "New chat") {
-      const tempTitle = content.trim().split("\n")[0].trim().slice(0, 60);
+    if (row !== undefined && row.title === DEF_TITLE) {
+      const tempTitle = content.trim().split("\n")[0].trim().slice(0, TITLE_CLIP);
       if (tempTitle.length > 0) {
         this.set({
           sessions: this.state.sessions.map((s) =>
@@ -332,10 +342,10 @@ class SessionStore {
       this.clearTurn(sessionId);
       await this.loadMsgs(sessionId);
       await this.loadSessions();
-    } catch (e) {
+    } catch (err) {
       await this.loadMsgs(sessionId);
       this.set({
-        turns: { ...this.state.turns, [sessionId]: blankTurn(String(e)) },
+        turns: { ...this.state.turns, [sessionId]: blankTurn(String(err)) },
       });
     }
   }
@@ -352,18 +362,18 @@ class SessionStore {
     } catch {}
   }
 
-  async retry(sessionId: string, userSeq: number, content: string) {
+  async retry(sessionId: string, usrSeq: number, content: string) {
     const t = this.state.turns[sessionId];
     if (t !== undefined && t.err === null) return;
 
     try {
-      await sessSupersedeFrom(sessionId, userSeq);
+      await sessSupersedeFrom(sessionId, usrSeq);
     } catch {}
 
     await this.send(sessionId, content);
   }
 
-  clearError(sessionId: string) {
+  clearErr(sessionId: string) {
     this.clearTurn(sessionId);
   }
 }

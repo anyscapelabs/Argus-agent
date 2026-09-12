@@ -318,15 +318,16 @@ export function buildTree(toks: Token[]): XmlTree {
 
       if (isList(line)) {
         group.push(line);
-      } else {
-        pushGroup();
-        blks.push({
-          kind: "paragraph",
-          tag: "p",
-          attrs: {},
-          children: [{ kind: "text", value: line }],
-        });
+        continue;
       }
+
+      pushGroup();
+      blks.push({
+        kind: "paragraph",
+        tag: "p",
+        attrs: {},
+        children: [{ kind: "text", value: line }],
+      });
     }
 
     pushGroup();

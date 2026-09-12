@@ -71,7 +71,7 @@ fn pool() -> &'static Pool {
     P.get_or_init(|| {
         let root = ROOT
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(|err| err.into_inner())
             .clone()
             .unwrap_or_else(default_root);
 
@@ -121,8 +121,6 @@ fn profile_of(args: &Value) -> String {
         .to_string()
 }
 
-/// Unnamed profile follows the Chrome permission — "use chrome" must never
-/// open a lookalike window.
 async fn route_profile(args: &Value) -> String {
     if let Some(p) = args
         .get("profile")
@@ -141,7 +139,7 @@ async fn route_profile(args: &Value) -> String {
 
 async fn launch(root: &PathBuf, name: &str) -> Result<Sess, String> {
     let dir = root.join(sanitize(name));
-    std::fs::create_dir_all(&dir).map_err(|e| format!("profile dir failed: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|err| format!("profile dir failed: {err}"))?;
 
     let mut cfg = BrowserConfig::builder()
         .with_head()
@@ -157,10 +155,12 @@ async fn launch(root: &PathBuf, name: &str) -> Result<Sess, String> {
         }
     }
 
-    let cfg = cfg.build().map_err(|e| format!("browser config: {e}"))?;
+    let cfg = cfg
+        .build()
+        .map_err(|err| format!("browser config: {err}"))?;
     let (browser, handler) = Browser::launch(cfg)
         .await
-        .map_err(|e| format!("chrome launch failed: {e}"))?;
+        .map_err(|err| format!("chrome launch failed: {err}"))?;
 
     tokio::spawn(async move {
         let mut h = handler;
@@ -172,7 +172,7 @@ async fn launch(root: &PathBuf, name: &str) -> Result<Sess, String> {
     let page = browser
         .new_page("about:blank")
         .await
-        .map_err(|e| format!("tab failed: {e}"))?;
+        .map_err(|err| format!("tab failed: {err}"))?;
 
     Ok(Sess {
         _browser: browser,
@@ -331,7 +331,7 @@ pub async fn open(args: &Value) -> Result<String, String> {
     s.page
         .goto(url.as_str())
         .await
-        .map_err(|e| format!("navigation failed: {e}"))?;
+        .map_err(|err| format!("navigation failed: {err}"))?;
 
     let _ = s.page.wait_for_navigation().await;
 
@@ -375,7 +375,9 @@ pub async fn click(args: &Value) -> Result<String, String> {
         .await
         .map_err(|_| "stale ref — run browser.read for a fresh element list".to_string())?;
 
-    el.click().await.map_err(|e| format!("click failed: {e}"))?;
+    el.click()
+        .await
+        .map_err(|err| format!("click failed: {err}"))?;
     let _ = s.page.wait_for_navigation().await;
 
     page_out(s).await
@@ -410,10 +412,12 @@ pub async fn type_text(args: &Value) -> Result<String, String> {
         .await
         .map_err(|_| "stale ref — run browser.read for a fresh element list".to_string())?;
 
-    el.click().await.map_err(|e| format!("focus failed: {e}"))?;
+    el.click()
+        .await
+        .map_err(|err| format!("focus failed: {err}"))?;
     el.type_str(text)
         .await
-        .map_err(|e| format!("typing failed: {e}"))?;
+        .map_err(|err| format!("typing failed: {err}"))?;
 
     if submit {
         let _ = el.press_key("Enter").await;
@@ -502,8 +506,6 @@ fn pct_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// A prompt injection can exfiltrate secrets by planting them in a url the
-/// agent is asked to open. Raw and percent-decoded forms.
 pub fn url_guard(url: &str) -> Result<(), String> {
     let Some(re) = secret_re() else { return Ok(()) };
 
@@ -516,7 +518,6 @@ pub fn url_guard(url: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Mask token shapes before they reach chat history.
 pub fn redact(s: &str) -> String {
     match secret_re() {
         Some(re) => re.replace_all(s, "[redacted]").into_owned(),
@@ -524,7 +525,6 @@ pub fn redact(s: &str) -> String {
     }
 }
 
-/// Tell the model when a page it just opened is one the approval gate guards.
 pub fn sensitive_note(url: &str, out: String) -> String {
     match sensitive_pats() {
         Some((url_re, _)) if url_re.is_match(url) => format!(

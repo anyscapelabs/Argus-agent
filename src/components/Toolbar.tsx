@@ -23,17 +23,17 @@ export default function Toolbar({
     {
       label: "Archive",
       Icon: LuArchive,
-      onClick: () => console.log("archive"),
+      onClick: () => {},
     },
     {
       label: "Export",
       Icon: LuDownload,
-      onClick: () => console.log("export"),
+      onClick: () => {},
     },
     {
       label: "Delete",
       Icon: LuTrash2,
-      onClick: () => console.log("delete"),
+      onClick: () => {},
     },
   ];
 

@@ -32,8 +32,6 @@ const NUDGE: &str = "Continue: your last reply said you were acting, but it cont
 <action> block, so nothing actually ran. Emit the correct action block now. If you \
 cannot act, say so plainly — never describe an action without running it.";
 
-/// Catches the "I'm opening X…" failure mode: intent phrasing with no action
-/// block behind it, so the turn would end with nothing done.
 pub fn claims_action(text: &str) -> bool {
     let re = regex::Regex::new(
         r"(?i)\b(i'?m|i am|i'?ll|i will|let me|going to)\s+(open|click|type|run|search|navigat|check|launch|browse)\w*",
@@ -44,14 +42,14 @@ pub fn claims_action(text: &str) -> bool {
 
 async fn generate_title(gw: &Gateway, session_id: &str, content: &str) -> Result<(), String> {
     let (util, selected) = {
-        let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
         let selected: Option<String> = conn
             .query_row(
                 "SELECT model_id FROM sessions WHERE id = ?1",
                 params![session_id],
                 |r| r.get(0),
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
         (compressor::utility_model(&conn), selected)
     };
 
@@ -85,12 +83,12 @@ async fn generate_title(gw: &Gateway, session_id: &str, content: &str) -> Result
 
     let title = clean_title(&raw).ok_or("title model returned nothing usable")?;
 
-    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     conn.execute(
         "UPDATE sessions SET title = ?2 WHERE id = ?1",
         params![session_id, title],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     Ok(())
 }
@@ -235,10 +233,7 @@ fn body_url(body: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Only screenshots written by the computer tools qualify — a model must not
-/// be able to attach arbitrary local files to a request.
 fn shot_marker(line: &str) -> Option<String> {
-    // The marker rides inside a <tool-result> wrapper, so it may sit mid-line.
     let p = line
         .split("screenshot: ")
         .nth(1)?
@@ -249,8 +244,6 @@ fn shot_marker(line: &str) -> Option<String> {
     (p.ends_with(".png") && p.contains("/screenshots/shot-")).then(|| p.to_string())
 }
 
-/// Attach at most the last two screenshots as image parts; older markers
-/// stay as text only.
 fn attach_shots(msgs: &mut [WireMsg]) {
     let mut left = 2usize;
 
@@ -301,7 +294,7 @@ pub async fn send(
     chan: &Channel<StreamEvent>,
 ) -> Result<(), String> {
     {
-        let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
         store::add_msg(
             &conn,
             &NewMsg {
@@ -317,7 +310,7 @@ pub async fn send(
     }
 
     let (perm, web) = {
-        let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
         conn.query_row(
             "SELECT permission, web_search FROM sessions WHERE id = ?1",
             params![session_id],
@@ -333,7 +326,7 @@ pub async fn send(
 
     for _step in 0..MAX_STEPS {
         let mut req = {
-            let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+            let conn = gw.conn.lock().map_err(|err| err.to_string())?;
             let mut p = project(&conn, session_id)?;
             if p.model_id.is_none() {
                 p.model_id = Some(auto_model(&conn)?);
@@ -367,7 +360,7 @@ pub async fn send(
         let done = actions.is_empty();
 
         let asst = {
-            let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+            let conn = gw.conn.lock().map_err(|err| err.to_string())?;
             store::add_msg(
                 &conn,
                 &NewMsg {
@@ -451,7 +444,7 @@ pub async fn send(
                         let code = exit_of(&t);
                         ("ok", t, code)
                     }
-                    Err(e) => ("err", e, -1),
+                    Err(err) => ("err", err, -1),
                 }
             };
 
@@ -463,7 +456,7 @@ pub async fn send(
             );
 
             {
-                let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+                let conn = gw.conn.lock().map_err(|err| err.to_string())?;
                 store::add_msg(
                     &conn,
                     &NewMsg {
@@ -515,41 +508,39 @@ pub async fn send(
         if !edits.is_empty() {
             let mut updated = text;
 
-            for (s, e, blk) in edits.into_iter().rev() {
-                updated.replace_range(s..e, &blk);
+            for (s, end, blk) in edits.into_iter().rev() {
+                updated.replace_range(s..end, &blk);
             }
 
-            let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+            let conn = gw.conn.lock().map_err(|err| err.to_string())?;
             conn.execute(
                 "UPDATE messages SET content = ?2 WHERE id = ?1",
                 params![&asst.id, &updated],
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
         }
 
         act_base += actions.len();
     }
 
     {
-        let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
         store::touch_session(&conn, session_id, tok_in_sum)?;
     }
 
     let needs = {
-        let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
         compressor::check(&conn, session_id)
             .map(|s| s.needs_compact)
             .unwrap_or(false)
     };
 
     if needs {
-        if let Err(e) = compressor::compact(gw, session_id).await {
-            eprintln!("compaction skipped: {e}");
-        }
+        if compressor::compact(gw, session_id).await.is_err() {}
     }
 
     let untitled = {
-        let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
         conn.query_row(
             "SELECT title FROM sessions WHERE id = ?1",
             params![session_id],
@@ -563,12 +554,12 @@ pub async fn send(
         let temp = clean_title(content).unwrap_or_else(|| DEFAULT_TITLE.into());
 
         {
-            let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+            let conn = gw.conn.lock().map_err(|err| err.to_string())?;
             conn.execute(
                 "UPDATE sessions SET title = ?2 WHERE id = ?1",
                 params![session_id, temp],
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
         }
 
         let app = app.clone();
@@ -577,9 +568,7 @@ pub async fn send(
 
         tauri::async_runtime::spawn(async move {
             let gw = app.state::<Gateway>();
-            if let Err(e) = generate_title(gw.inner(), &sid, &user_text).await {
-                eprintln!("title skipped: {e}");
-            }
+            if generate_title(gw.inner(), &sid, &user_text).await.is_err() {}
             let _ = app.emit("sessions-changed", ());
         });
     }
@@ -607,7 +596,7 @@ pub fn sess_resolve_approval(
     let tx = gw
         .approvals
         .lock()
-        .map_err(|e| e.to_string())?
+        .map_err(|err| err.to_string())?
         .remove(&approval_id);
 
     match tx {

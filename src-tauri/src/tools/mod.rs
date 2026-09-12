@@ -76,7 +76,7 @@ pub fn parse_actions(text: &str) -> Vec<Action> {
     while let Some(start) = rest.find("<action") {
         let tail = &rest[start..];
         let end = match tail.find("</action>") {
-            Some(e) => e,
+            Some(err) => err,
             None => break,
         };
 
@@ -114,7 +114,6 @@ pub fn parse_actions(text: &str) -> Vec<Action> {
     out
 }
 
-/// The `>` closing the action tag, skipping over quoted attribute values.
 fn tag_end(blk: &str) -> Option<usize> {
     let b = blk.as_bytes();
     let mut i = 0usize;
@@ -153,9 +152,6 @@ fn coerce_val(v: &str) -> Value {
     }
 }
 
-/// Some models emit attribute-style actions —
-/// `<action tool="computer.click" x="96" y="740">` — turn those into the
-/// JSON args the executor expects.
 fn attrs_to_args(t: &str) -> Option<String> {
     let mut args = serde_json::Map::new();
     let b = t.as_bytes();
@@ -230,7 +226,6 @@ fn attrs_to_args(t: &str) -> Option<String> {
     }
 }
 
-/// JSON body wins; otherwise the args may live in the tag attributes.
 fn coerce_args(tag: &str, body: &str) -> String {
     let t = body.trim();
 
@@ -252,7 +247,7 @@ pub fn normalize_actions(text: &str) -> String {
         let tail = &rest[start..];
 
         let close = match tail.find(TOOL_CALL_CLOSE) {
-            Some(e) => e,
+            Some(err) => err,
             None => return out,
         };
 
@@ -318,7 +313,7 @@ fn collect_spans(body: &str, open: &str, close: &str) -> Vec<String> {
     while let Some(i) = rest.find(open) {
         let tail = &rest[i + open.len()..];
         let e = match tail.find(close) {
-            Some(e) => e,
+            Some(err) => err,
             None => break,
         };
 
@@ -522,8 +517,6 @@ pub fn clip(s: String) -> String {
     format!("{cut}\n...[truncated]")
 }
 
-/// Clipped output caches the full (already-redacted) text on disk and points
-/// the agent at it, so truncation never forces url guessing.
 pub fn page_text(text: &str) -> String {
     let clipped = clip_ends(text.to_string());
 
@@ -560,7 +553,6 @@ pub fn clip_ends(s: String) -> String {
     let head: String = s.chars().take(half).collect();
     let tail: String = s.chars().skip(n - half).collect();
 
-    // line boundary beats mid-line cut, unless it sacrifices too much
     let head = match head.rfind('\n') {
         Some(i) if head.len() - i - 1 <= 500 => head[..=i].to_string(),
         _ => head,

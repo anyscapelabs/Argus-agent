@@ -4,8 +4,11 @@ import { gwLogo } from "../lib/ipc";
 
 const LOGO_CACHE = new Map<string, string | null>();
 
-const toDataUri = (svg: string) =>
-  `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+const SVG_URI_PREFIX = "data:image/svg+xml;utf8,";
+
+function toDataUri(svg: string): string {
+  return `${SVG_URI_PREFIX}${encodeURIComponent(svg)}`;
+}
 
 export function useProviderLogo(id: string) {
   const [uri, setUri] = useState<string | null | undefined>(

@@ -52,15 +52,15 @@ fn stable_layer(conn: &Connection, web: bool) -> Result<String, String> {
 
     let mut stmt = conn
         .prepare("SELECT name, description FROM skills ORDER BY name")
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let rows = stmt
         .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let skills: Vec<(String, String)> = rows
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     if !skills.is_empty() {
         s.push_str(
@@ -112,7 +112,7 @@ pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String
              WHERE session_id = ?1 AND active = 1 AND seq > ?2
              ORDER BY seq",
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let rows = stmt
         .query_map(params![session_id, compact_seq], |r| {
@@ -122,11 +122,11 @@ pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String
                 images: vec![],
             })
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let msgs = rows
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let mut hasher = Sha256::new();
     hasher.update(system.as_bytes());
@@ -191,7 +191,7 @@ pub struct PromptPreview {
 
 #[tauri::command]
 pub fn prompt_preview(gw: State<'_, Gateway>, session_id: String) -> Result<PromptPreview, String> {
-    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     let p = project(&conn, &session_id)?;
 
     Ok(PromptPreview {

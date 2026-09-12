@@ -47,31 +47,33 @@ type SessionListProps = {
   onDelete: (sessionId: string) => void;
 };
 
-const getMenuItems = (
+function getMenuItems(
   sessionId: string,
   actions: {
     onArchive: (id: string) => void;
     onExport: (id: string) => void;
     onDelete: (id: string) => void;
   },
-): DropdownItem[] => [
-  {
-    label: "Archive",
-    Icon: LuArchive,
-    onClick: () => actions.onArchive(sessionId),
-  },
-  {
-    label: "Export",
-    Icon: LuDownload,
-    onClick: () => actions.onExport(sessionId),
-  },
-  {
-    label: "Delete",
-    Icon: LuTrash2,
-    danger: true,
-    onClick: () => actions.onDelete(sessionId),
-  },
-];
+): DropdownItem[] {
+  return [
+    {
+      label: "Archive",
+      Icon: LuArchive,
+      onClick: () => actions.onArchive(sessionId),
+    },
+    {
+      label: "Export",
+      Icon: LuDownload,
+      onClick: () => actions.onExport(sessionId),
+    },
+    {
+      label: "Delete",
+      Icon: LuTrash2,
+      danger: true,
+      onClick: () => actions.onDelete(sessionId),
+    },
+  ];
+}
 
 export default function SessionList({
   onSelect,

@@ -45,10 +45,10 @@ fn copy_tree(
     copied: &mut u64,
     next: &mut u64,
 ) -> Result<(), String> {
-    fs::create_dir_all(dst).map_err(|e| format!("{}: {e}", dst.display()))?;
+    fs::create_dir_all(dst).map_err(|err| format!("{}: {err}", dst.display()))?;
 
-    for entry in fs::read_dir(src).map_err(|e| format!("{}: {e}", src.display()))? {
-        let entry = entry.map_err(|e| e.to_string())?;
+    for entry in fs::read_dir(src).map_err(|err| format!("{}: {err}", src.display()))? {
+        let entry = entry.map_err(|err| err.to_string())?;
         let name = entry.file_name();
         let name = name.to_string_lossy().into_owned();
         let from = entry.path();
@@ -65,7 +65,7 @@ fn copy_tree(
             copy_tree(&from, &to, app, copied, next)?;
         } else {
             let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-            fs::copy(&from, &to).map_err(|e| format!("{}: {e}", from.display()))?;
+            fs::copy(&from, &to).map_err(|err| format!("{}: {err}", from.display()))?;
 
             *copied += size;
             if *copied >= *next {
@@ -86,10 +86,10 @@ pub fn sess_browser_import(app: AppHandle, profile: String) -> Result<(), String
     browser::close_profile(&profile);
 
     if dst.exists() {
-        fs::remove_dir_all(&dst).map_err(|e| format!("clearing old profile failed: {e}"))?;
+        fs::remove_dir_all(&dst).map_err(|err| format!("clearing old profile failed: {err}"))?;
     }
 
-    fs::create_dir_all(&dst).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&dst).map_err(|err| err.to_string())?;
 
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -109,11 +109,11 @@ pub fn sess_browser_import(app: AppHandle, profile: String) -> Result<(), String
             Ok(note) => {
                 let _ = app.emit("browser-import-done", Ok::<String, String>(note));
             }
-            Err(e) => {
+            Err(err) => {
                 let _ = fs::remove_dir_all(&dst);
                 let _ = app.emit(
                     "browser-import-done",
-                    Err::<String, String>(format!("import failed: {e}")),
+                    Err::<String, String>(format!("import failed: {err}")),
                 );
             }
         }

@@ -5,12 +5,10 @@ use super::ToolMeta;
 
 use crate::sessions::ext_install::data_dir;
 
-/// The only directory whose files the chat layer will attach as images.
 pub fn shot_dir() -> std::path::PathBuf {
     data_dir().join("screenshots")
 }
 
-// Gating lands with the Connectors card — every action is open for now.
 pub const META: &[ToolMeta] = &[
     ToolMeta {
         name: "computer.observe",

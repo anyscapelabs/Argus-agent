@@ -1,4 +1,3 @@
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use rusqlite::{params, Connection};
@@ -20,8 +19,6 @@ const MAX_STEPS: usize = 12;
 const RESULT_CLIP: usize = 4000;
 const TERM_TIMEOUT: u64 = 300;
 const DENIED_CODE: i64 = -2;
-
-static APPROVAL_SEQ: AtomicU64 = AtomicU64::new(0);
 
 const TITLE_SYS: &str =
     "You are the title generator for Argus, a personal AI agent the user chats with. \
@@ -133,13 +130,7 @@ fn auto_model(conn: &Connection) -> Result<String, String> {
 }
 
 fn approval_id() -> String {
-    let n = APPROVAL_SEQ.fetch_add(1, Ordering::Relaxed);
-    let t = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-
-    format!("ap{t}-{n}")
+    format!("ap{}", uuid::Uuid::new_v4().as_simple())
 }
 
 async fn ask_approval(
@@ -234,7 +225,7 @@ fn body_url(body: &str) -> String {
         .unwrap_or_default()
 }
 
-fn shot_marker(line: &str) -> Option<String> {
+pub fn shot_marker(line: &str) -> Option<String> {
     let p = line
         .split("screenshot: ")
         .nth(1)?
@@ -245,7 +236,7 @@ fn shot_marker(line: &str) -> Option<String> {
     (p.ends_with(".png") && p.contains("/screenshots/shot-")).then(|| p.to_string())
 }
 
-fn attach_shots(msgs: &mut [WireMsg]) {
+pub fn attach_shots(msgs: &mut [WireMsg]) {
     let mut left = 2usize;
 
     for m in msgs.iter_mut().rev() {
@@ -607,61 +598,5 @@ pub fn sess_resolve_approval(
             Ok(())
         }
         None => Err("unknown approval".into()),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn msg(content: &str) -> WireMsg {
-        WireMsg {
-            role: "user".into(),
-            content: content.into(),
-            images: vec![],
-        }
-    }
-
-    #[test]
-    fn attach_shots_caps_last_two_and_ignores_outside_paths() {
-        let mut msgs = vec![
-            msg("screenshot: /d/screenshots/shot-1.png\nimage 1"),
-            msg("screenshot: /d/screenshots/shot-2.png"),
-            msg("screenshot: /d/screenshots/shot-3.png"),
-            msg("no shot here"),
-            msg("screenshot: /etc/secret.png"),
-        ];
-
-        attach_shots(&mut msgs);
-
-        assert!(msgs[0].images.is_empty());
-        assert_eq!(msgs[1].images, vec!["/d/screenshots/shot-2.png"]);
-        assert_eq!(msgs[2].images, vec!["/d/screenshots/shot-3.png"]);
-        assert!(msgs[3].images.is_empty());
-        assert!(msgs[4].images.is_empty());
-    }
-
-    #[test]
-    fn shot_marker_found_inside_tool_result_wrapper() {
-        // Regression: the marker used to be required at line start, but tool
-        // results are wrapped — <tool-result ...>screenshot: /path — so no
-        // image was ever attached and the model only ever saw file paths.
-        let line = "<tool-result tool=\"computer.observe\" status=\"ok\">screenshot: \
-                    /home/u/.local/share/com.anyscapelabs.argus/screenshots/shot-1789212996301.png\n\
-                    image 1280x720 of screen</tool-result>";
-
-        assert_eq!(
-            shot_marker(line),
-            Some(
-                "/home/u/.local/share/com.anyscapelabs.argus/screenshots/shot-1789212996301.png"
-                    .into()
-            )
-        );
-
-        // a bare marker line still works
-        assert_eq!(
-            shot_marker("screenshot: /d/screenshots/shot-2.png"),
-            Some("/d/screenshots/shot-2.png".into())
-        );
     }
 }

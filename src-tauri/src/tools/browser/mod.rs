@@ -483,33 +483,11 @@ fn secret_re() -> Option<regex::Regex> {
     regex::Regex::new(SECRET_PAT).ok()
 }
 
-fn pct_decode(s: &str) -> String {
-    let b = s.as_bytes();
-    let mut out = Vec::with_capacity(b.len());
-    let mut i = 0;
-
-    while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            let hex = std::str::from_utf8(&b[i + 1..i + 3]).unwrap_or("");
-
-            if let Ok(v) = u8::from_str_radix(hex, 16) {
-                out.push(v);
-                i += 3;
-                continue;
-            }
-        }
-
-        out.push(b[i]);
-        i += 1;
-    }
-
-    String::from_utf8_lossy(&out).into_owned()
-}
-
 pub fn url_guard(url: &str) -> Result<(), String> {
     let Some(re) = secret_re() else { return Ok(()) };
+    let decoded = percent_encoding::percent_decode_str(url).decode_utf8_lossy();
 
-    if re.is_match(url) || re.is_match(&pct_decode(url)) {
+    if re.is_match(url) || re.is_match(&decoded) {
         return Err(
             "url looks like it carries a credential — remove the token from the url".into(),
         );

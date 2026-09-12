@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use url::Url;
 
-use super::oauth::url_encode;
 use super::{authed_get, authed_post};
 
 const BASE: &str = "https://gmail.googleapis.com/gmail/v1/users/me";
@@ -77,12 +77,11 @@ fn body_text(msg: &serde_json::Value) -> String {
 }
 
 pub async fn list_messages(query: &str, max: u64) -> Result<serde_json::Value, String> {
-    let v = authed_get(&format!(
-        "{BASE}/messages?q={}&maxResults={}",
-        url_encode(query),
-        max.clamp(1, 50)
-    ))
-    .await?;
+    let mut url = Url::parse(&format!("{BASE}/messages")).map_err(|err| err.to_string())?;
+    url.query_pairs_mut()
+        .append_pair("q", query)
+        .append_pair("maxResults", &max.clamp(1, 50).to_string());
+    let v = authed_get(url.as_str()).await?;
 
     let ids: Vec<String> = v
         .get("messages")

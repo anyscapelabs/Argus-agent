@@ -1,7 +1,19 @@
-use super::oauth::url_encode;
+use url::Url;
+
 use super::{authed_get, authed_post, authed_put};
 
 const BASE: &str = "https://sheets.googleapis.com/v4/spreadsheets";
+
+fn values_url(id: &str, range: &str) -> Result<Url, String> {
+    let mut url = Url::parse(BASE).map_err(|err| err.to_string())?;
+    url.path_segments_mut()
+        .map_err(|_| "bad sheets base".to_string())?
+        .push(id)
+        .push("values")
+        .push(range);
+
+    Ok(url)
+}
 
 pub async fn get_values(id: &str, range: &str) -> Result<serde_json::Value, String> {
     if id.trim().is_empty() {
@@ -12,12 +24,9 @@ pub async fn get_values(id: &str, range: &str) -> Result<serde_json::Value, Stri
         return Err("missing range".into());
     }
 
-    authed_get(&format!(
-        "{BASE}/{}/values/{}",
-        url_encode(id),
-        url_encode(range)
-    ))
-    .await
+    let url = values_url(id, range)?;
+
+    authed_get(url.as_str()).await
 }
 
 pub async fn update_values(
@@ -33,15 +42,11 @@ pub async fn update_values(
         return Err("missing range".into());
     }
 
-    authed_put(
-        &format!(
-            "{BASE}/{}/values/{}?valueInputOption=USER_ENTERED",
-            url_encode(id),
-            url_encode(range)
-        ),
-        &serde_json::json!({"values": values}),
-    )
-    .await
+    let mut url = values_url(id, range)?;
+    url.query_pairs_mut()
+        .append_pair("valueInputOption", "USER_ENTERED");
+
+    authed_put(url.as_str(), &serde_json::json!({"values": values})).await
 }
 
 pub async fn append_values(
@@ -57,15 +62,15 @@ pub async fn append_values(
         return Err("missing range".into());
     }
 
-    authed_post(
-        &format!(
-            "{BASE}/{}/values/{}:append?valueInputOption=USER_ENTERED",
-            url_encode(id),
-            url_encode(range)
-        ),
-        &serde_json::json!({"values": values}),
-    )
-    .await
+    let mut url = values_url(id, range)?;
+    url.path_segments_mut()
+        .map_err(|_| "bad sheets base".to_string())?
+        .pop()
+        .push(&format!("{range}:append"));
+    url.query_pairs_mut()
+        .append_pair("valueInputOption", "USER_ENTERED");
+
+    authed_post(url.as_str(), &serde_json::json!({"values": values})).await
 }
 
 pub async fn create_sheet(title: &str) -> Result<serde_json::Value, String> {

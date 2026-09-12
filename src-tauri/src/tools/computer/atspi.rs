@@ -327,18 +327,33 @@ pub async fn act(args: &Value) -> Result<String, String> {
     super::x11::refresh().await
 }
 
+pub fn ref_index(r: i64, len: usize) -> Option<usize> {
+    if r < 1 {
+        return None;
+    }
+
+    let i = r.wrapping_sub(1) as usize;
+
+    if i < len {
+        Some(i)
+    } else {
+        None
+    }
+}
+
 async fn resolve(args: &Value) -> Result<Elem, String> {
     let r = args
         .get("ref")
         .and_then(|v| v.as_i64())
-        .ok_or_else(|| "missing ref".to_string())? as usize;
+        .ok_or_else(|| "missing ref".to_string())?;
 
     let snap = SNAPSHOT.lock().await.clone();
+    let len = snap.len();
 
-    Ok(snap
-        .get(r.wrapping_sub(1))
-        .cloned()
-        .ok_or_else(|| "unknown ref — run computer.observe for a fresh list".to_string())?)
+    match ref_index(r, len) {
+        Some(i) => Ok(snap[i].clone()),
+        None => Err("unknown ref — run computer.observe for a fresh list".to_string()),
+    }
 }
 
 pub async fn focus_ref(args: &Value) -> Result<(), String> {
@@ -376,43 +391,4 @@ pub async fn focus_ref(args: &Value) -> Result<(), String> {
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    fn elem(name: &str) -> Elem {
-        Elem {
-            role: "push button".into(),
-            name: name.into(),
-            center: Some((10, 20)),
-            password: false,
-            actions: vec!["press".into()],
-            dest: ":1.1".into(),
-            path: "/org/test".into(),
-        }
-    }
-
-    async fn seed_snap() {
-        *SNAPSHOT.lock().await = vec![elem("first"), elem("second"), elem("third")];
-    }
-
-    #[tokio::test]
-    async fn resolve_is_one_based() {
-        seed_snap().await;
-
-        assert_eq!(resolve(&json!({"ref": 1})).await.unwrap().name, "first");
-        assert_eq!(resolve(&json!({"ref": 3})).await.unwrap().name, "third");
-    }
-
-    #[tokio::test]
-    async fn resolve_rejects_unknown_ref() {
-        seed_snap().await;
-
-        assert!(resolve(&json!({"ref": 0})).await.is_err());
-        assert!(resolve(&json!({"ref": 4})).await.is_err());
-        assert!(resolve(&json!({})).await.is_err());
-    }
 }

@@ -238,7 +238,8 @@ fn body_url(body: &str) -> String {
 /// Only screenshots written by the computer tools qualify — a model must not
 /// be able to attach arbitrary local files to a request.
 fn shot_marker(line: &str) -> Option<String> {
-    let p = line.strip_prefix("screenshot: ")?.trim();
+    // The marker rides inside a <tool-result> wrapper, so it may sit mid-line.
+    let p = line.split("screenshot: ").nth(1)?.split_whitespace().next()?.trim();
 
     (p.ends_with(".png") && p.contains("/screenshots/shot-")).then(|| p.to_string())
 }
@@ -642,5 +643,26 @@ mod tests {
         assert_eq!(msgs[2].images, vec!["/d/screenshots/shot-3.png"]);
         assert!(msgs[3].images.is_empty());
         assert!(msgs[4].images.is_empty());
+    }
+
+    #[test]
+    fn shot_marker_found_inside_tool_result_wrapper() {
+        // Regression: the marker used to be required at line start, but tool
+        // results are wrapped — <tool-result ...>screenshot: /path — so no
+        // image was ever attached and the model only ever saw file paths.
+        let line = "<tool-result tool=\"computer.observe\" status=\"ok\">screenshot: \
+                    /home/u/.local/share/com.anyscapelabs.argus/screenshots/shot-1789212996301.png\n\
+                    image 1280x720 of screen</tool-result>";
+
+        assert_eq!(
+            shot_marker(line),
+            Some("/home/u/.local/share/com.anyscapelabs.argus/screenshots/shot-1789212996301.png".into())
+        );
+
+        // a bare marker line still works
+        assert_eq!(
+            shot_marker("screenshot: /d/screenshots/shot-2.png"),
+            Some("/d/screenshots/shot-2.png".into())
+        );
     }
 }

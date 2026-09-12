@@ -30,6 +30,9 @@ const CMD_SESS_STREAM = "sess_chat_stream";
 const CMD_GOOGLE_STATUS = "google_status";
 const CMD_GOOGLE_CONN_URL = "google_connect_url";
 const CMD_GOOGLE_DISC = "google_disconnect";
+const CMD_GITHUB_STATUS = "github_status";
+const CMD_GITHUB_CONN = "github_connect";
+const CMD_GITHUB_DISC = "github_disconnect";
 
 const DEF_PERM = "ask";
 
@@ -292,4 +295,26 @@ export function googleConnectUrl(): Promise<{ url: string }> {
 
 export function googleDisconnect(): Promise<void> {
   return invoke<void>(CMD_GOOGLE_DISC);
+}
+
+export type GithubStatus = {
+  connected: boolean;
+  login: string | null;
+};
+
+export type GithubDevice = {
+  verificationUri: string;
+  userCode: string;
+};
+
+export function githubStatus(): Promise<GithubStatus> {
+  return invoke<GithubStatus>(CMD_GITHUB_STATUS);
+}
+
+export function githubConnect(): Promise<GithubDevice> {
+  return invoke<GithubDevice>(CMD_GITHUB_CONN);
+}
+
+export function githubDisconnect(): Promise<void> {
+  return invoke<void>(CMD_GITHUB_DISC);
 }

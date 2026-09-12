@@ -1,0 +1,4 @@
+{
+  "client_id": "YOUR_GITHUB_OAUTH_APP_CLIENT_ID",
+  "client_secret": "unused for device flow, may be empty"
+}

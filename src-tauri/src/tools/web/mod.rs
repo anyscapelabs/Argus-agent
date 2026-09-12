@@ -53,10 +53,12 @@ fn format_hits(hits: &[(String, String, String)]) -> Result<String, String> {
         );
     }
 
-    let mut out = String::new();
-    for (i, (title, url, snippet)) in hits.iter().take(MAX_RESULTS).enumerate() {
-        out.push_str(&format!("{}. {title}\n   {url}\n   {snippet}\n", i + 1));
-    }
+    let out: String = hits
+        .iter()
+        .take(MAX_RESULTS)
+        .enumerate()
+        .map(|(i, (title, url, snippet))| format!("{}. {title}\n   {url}\n   {snippet}\n", i + 1))
+        .collect();
 
     Ok(out)
 }
@@ -77,10 +79,8 @@ struct SearxngResp {
 
 async fn searxng_pool_search(query: &str) -> Option<Vec<(String, String, String)>> {
     for base in SEARXNG_POOL {
-        if let Some(hits) = searxng_fetch(base, query).await {
-            if !hits.is_empty() {
-                return Some(hits);
-            }
+        if let Some(hits) = searxng_fetch(base, query).await.filter(|h| !h.is_empty()) {
+            return Some(hits);
         }
     }
 
@@ -107,21 +107,13 @@ async fn searxng_fetch(base: &str, query: &str) -> Option<Vec<(String, String, S
         .filter_map(|r| {
             let title = strip(&r.title);
             let url = r.url.trim().to_string();
-            if title.is_empty() || url.is_empty() {
-                return None;
-            }
 
-            let snippet = strip(&r.content);
-            Some((title, url, snippet))
+            (!title.is_empty() && !url.is_empty()).then(|| (title, url, strip(&r.content)))
         })
         .take(MAX_RESULTS)
         .collect();
 
-    if hits.is_empty() {
-        None
-    } else {
-        Some(hits)
-    }
+    (!hits.is_empty()).then_some(hits)
 }
 
 async fn duck_search(query: &str) -> Result<String, String> {

@@ -19,9 +19,8 @@ pub fn rank(provs: &[Provider], avails: &[Avail], mode: &str, pinned: &str) -> V
     let mut out = avails.to_vec();
 
     let key = |a: &Avail| -> (i64, i64) {
-        let p = match provs.iter().find(|p| p.id == a.provider_id) {
-            Some(p) => p,
-            None => return (9_999, 9_999),
+        let Some(p) = provs.iter().find(|p| p.id == a.provider_id) else {
+            return (9_999, 9_999);
         };
 
         let mut r = 0i64;
@@ -61,20 +60,15 @@ pub struct StreamStats {
 
 fn key_for(prov: &Provider) -> Result<Option<String>, String> {
     match store::secret_get(&prov.id) {
-        Ok(t) => {
-            if t.is_none() && !adapters::is_local(&prov.base_url) {
-                return Err(format!(
-                    "no API key stored for {} — reconnect it in Providers settings",
-                    prov.name
-                ));
-            }
-
-            Ok(t)
-        }
         Err(_) => Err(format!(
             "could not read the stored key for {} — reconnect it in Providers settings",
             prov.name
         )),
+        Ok(None) if !adapters::is_local(&prov.base_url) => Err(format!(
+            "no API key stored for {} — reconnect it in Providers settings",
+            prov.name
+        )),
+        Ok(t) => Ok(t),
     }
 }
 
@@ -118,8 +112,7 @@ fn backoff_ms(status: Option<u16>, attempt: i64, retry_after: Option<u64>) -> u6
     let base = ladder[(attempt - 1).clamp(0, 8) as usize];
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.subsec_nanos() as u64)
-        .unwrap_or(0);
+        .map_or(0, |d| d.subsec_nanos() as u64);
 
     base + nanos % base / 4
 }

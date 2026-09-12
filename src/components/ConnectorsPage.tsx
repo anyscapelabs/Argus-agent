@@ -13,6 +13,9 @@ import {
 } from "react-icons/lu";
 
 import {
+  googleConnectUrl,
+  googleDisconnect,
+  googleStatus,
   sessBrowserImport,
   sessExtInstall,
   sessExtStatus,
@@ -61,8 +64,11 @@ const CONNECTORS: Connector[] = [
 
 type ExtState = "off" | "busy" | "granted" | "connected";
 type ImportState = "idle" | "busy" | "ok" | "err";
+type GoogleState = "off" | "busy" | "waiting" | "connected";
 
 const ON_KEY = "argus.ext.enabled";
+const GOOGLE_POLL_MS = 2_000;
+const GOOGLE_WAIT_MS = 5 * 60_000;
 
 function BrowserCard() {
   const [extState, setExtState] = useState<ExtState>(() =>
@@ -276,6 +282,156 @@ function BrowserCard() {
   );
 }
 
+function GoogleCard() {
+  const [state, setState] = useState<GoogleState>("off");
+  const [email, setEmail] = useState("");
+  const [note, setNote] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+
+    googleStatus()
+      .then((s) => {
+        if (!alive) return;
+
+        if (s.connected) {
+          setState("connected");
+          setEmail(s.email ?? "");
+          setNote("");
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (state !== "waiting") return;
+
+    const started = Date.now();
+    const poll = setInterval(async () => {
+      if (Date.now() - started > GOOGLE_WAIT_MS) {
+        clearInterval(poll);
+        setState("off");
+        setNote("Timed out waiting for Google — click Connect to retry.");
+        return;
+      }
+
+      try {
+        const s = await googleStatus();
+
+        if (s.connected) {
+          clearInterval(poll);
+          setState("connected");
+          setEmail(s.email ?? "");
+          setNote("");
+        }
+      } catch {}
+    }, GOOGLE_POLL_MS);
+
+    return () => clearInterval(poll);
+  }, [state]);
+
+  const connect = async () => {
+    setState("busy");
+    setNote("");
+
+    try {
+      const { url } = await googleConnectUrl();
+      await openUrl(url);
+      setState("waiting");
+      setNote("Approve in your browser, then come back here.");
+    } catch (err) {
+      setState("off");
+      setNote(String(err));
+    }
+  };
+
+  const disconnect = async () => {
+    setState("busy");
+
+    try {
+      await googleDisconnect();
+    } catch {}
+
+    setState("off");
+    setEmail("");
+    setNote("");
+  };
+
+  const on = state === "connected";
+  const line = on
+    ? email || "Connected — Gmail, Calendar, Drive, Docs and Sheets."
+    : state === "waiting"
+      ? note
+      : state === "busy"
+        ? "Opening Google…"
+        : (note || "Gmail, Calendar, Drive, Docs and Sheets via Google.");
+
+  return (
+    <div className="rounded-xl bg-transparent px-2 py-1 transition-colors hover:bg-bg-hover-primary">
+      <div className="flex items-center gap-4">
+        <div
+          className={
+            "flex h-12 w-12 shrink-0 items-center justify-center rounded-lg " +
+            "border border-border-primary bg-bg-primary text-xl " +
+            "text-text-primary"
+          }
+        >
+          <LuMail />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="truncate text-sm font-medium text-text-primary">
+              Google
+            </h3>
+            {on && (
+              <span className="h-2 w-2 shrink-0 rounded-full bg-green-500" />
+            )}
+          </div>
+          <p className="truncate text-xs text-text-secondary">{line}</p>
+        </div>
+        {state === "waiting" ? (
+          <button
+            type="button"
+            onClick={() => {
+              setState("off");
+              setNote("");
+            }}
+            className={
+              "shrink-0 rounded-full border border-border-primary px-3 py-1 " +
+              "text-xs text-text-secondary hover:text-text-primary cursor-pointer"
+            }
+          >
+            Cancel
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={on ? disconnect : connect}
+            disabled={state === "busy"}
+            className={
+              "relative h-6 w-11 shrink-0 rounded-full transition-colors cursor-pointer disabled:opacity-60 " +
+              `${on ? "bg-green-600" : "bg-bg-hover-primary border border-border-primary"}`
+            }
+            aria-pressed={on}
+            aria-label="Connect Google"
+          >
+            <span
+              className={
+                "absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all " +
+                `${on ? "left-[22px]" : "left-0.5"}`
+              }
+            />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ConnectorsPage() {
   return (
     <div className="mx-auto w-full max-w-2xl py-4">
@@ -303,6 +459,9 @@ export default function ConnectorsPage() {
       </div>
       <div className="mt-6">
         <BrowserCard />
+      </div>
+      <div className="mt-2">
+        <GoogleCard />
       </div>
       <div className="mt-2 grid grid-cols-2 gap-4">
         {CONNECTORS.map((connector) => (

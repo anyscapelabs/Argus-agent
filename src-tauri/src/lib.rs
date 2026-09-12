@@ -134,7 +134,10 @@ pub fn run() {
             gateway::gw_logs,
             prompt::prompt_preview,
             prompt::compressor::prompt_status,
-            prompt::compressor::prompt_compact
+            prompt::compressor::prompt_compact,
+            mcp::google::google_status,
+            mcp::google::google_connect_url,
+            mcp::google::google_disconnect
         ])
         .run(tauri::generate_context!());
 }

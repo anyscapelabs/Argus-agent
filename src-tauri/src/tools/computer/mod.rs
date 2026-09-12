@@ -65,4 +65,10 @@ pub const META: &[ToolMeta] = &[
         args: "{\"action\":\"activate\",\"id\":\"0x03c00007\"}",
         mutating: true,
     },
+    ToolMeta {
+        name: "computer.launch",
+        desc: "open an app by name from the installed applications, no clicking needed",
+        args: "{\"app\":\"files\"}",
+        mutating: true,
+    },
 ];

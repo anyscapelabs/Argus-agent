@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Google OAuth client secret (see src-tauri/src/mcp/google/config.example.json)
+src-tauri/src/mcp/google/config.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

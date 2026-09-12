@@ -1,4 +1,5 @@
 pub mod client;
+pub mod google;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};

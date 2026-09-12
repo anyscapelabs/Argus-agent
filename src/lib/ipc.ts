@@ -27,6 +27,9 @@ const CMD_SESS_EXT_IN = "sess_ext_install";
 const CMD_SESS_EXT_UN = "sess_ext_uninstall";
 const CMD_SESS_EXT_ST = "sess_ext_status";
 const CMD_SESS_STREAM = "sess_chat_stream";
+const CMD_GOOGLE_STATUS = "google_status";
+const CMD_GOOGLE_CONN_URL = "google_connect_url";
+const CMD_GOOGLE_DISC = "google_disconnect";
 
 const DEF_PERM = "ask";
 
@@ -272,4 +275,21 @@ export function sessChatStream(
   onEvent: Channel<StreamEvent>,
 ): Promise<void> {
   return invoke<void>(CMD_SESS_STREAM, { sessionId, content, onEvent });
+}
+
+export type GoogleStatus = {
+  connected: boolean;
+  email: string | null;
+};
+
+export function googleStatus(): Promise<GoogleStatus> {
+  return invoke<GoogleStatus>(CMD_GOOGLE_STATUS);
+}
+
+export function googleConnectUrl(): Promise<{ url: string }> {
+  return invoke<{ url: string }>(CMD_GOOGLE_CONN_URL);
+}
+
+export function googleDisconnect(): Promise<void> {
+  return invoke<void>(CMD_GOOGLE_DISC);
 }

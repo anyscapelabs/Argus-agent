@@ -162,3 +162,20 @@ async fn flags_sensitive_urls_and_labels() {
     );
     assert!(!browser::sensitive("terminal", &serde_json::json!({"command": "ls"})).await);
 }
+
+#[tokio::test]
+async fn run_stream_returns_when_shell_exits_even_if_pipe_held() {
+    let start = std::time::Instant::now();
+    let args: Value = serde_json::json!({"command": "echo start; (sleep 30 &) ; exit 0"});
+
+    let (out, code) = argus_lib::tools::shell::run_stream(&args, 0, None)
+        .await
+        .expect("run_stream");
+
+    assert_eq!(code, 0);
+    assert!(out.contains("start"), "got: {out}");
+    assert!(
+        start.elapsed().as_secs() < 20,
+        "hung on a pipe held by a detached child"
+    );
+}

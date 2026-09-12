@@ -1,20 +1,29 @@
 use std::process::Stdio;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use serde_json::Value;
 use tauri::ipc::Channel;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
+use tokio::sync::watch;
 
 use crate::gateway::schema::StreamEvent;
 
 const TERM_TIMEOUT: Duration = Duration::from_secs(120);
+const DRAIN: Duration = Duration::from_secs(2);
 
-async fn pump<R>(rd: R, idx: u32, chan: Option<Channel<StreamEvent>>) -> String
-where
+type Buf = Arc<StdMutex<String>>;
+
+async fn pump<R>(
+    rd: R,
+    idx: u32,
+    chan: Option<Channel<StreamEvent>>,
+    buf: Buf,
+    eof: watch::Sender<usize>,
+) where
     R: tokio::io::AsyncRead + Unpin,
 {
-    let mut all = String::new();
     let mut r = BufReader::new(rd);
     let mut chunk = Vec::new();
 
@@ -27,7 +36,10 @@ where
         }
 
         let s = String::from_utf8_lossy(&chunk);
-        all.push_str(&s);
+
+        if let Ok(mut g) = buf.lock() {
+            g.push_str(&s);
+        }
 
         if let Some(c) = &chan {
             let _ = c.send(StreamEvent::Term {
@@ -37,7 +49,11 @@ where
         }
     }
 
-    all
+    eof.send_modify(|n| *n += 1);
+}
+
+fn take(buf: &Buf) -> String {
+    std::mem::take(&mut buf.lock().unwrap_or_else(|p| p.into_inner()))
 }
 
 pub async fn run_stream(
@@ -60,33 +76,55 @@ pub async fn run_stream(
     let out = child.stdout.take().ok_or("no stdout")?;
     let err = child.stderr.take().ok_or("no stderr")?;
 
-    let t1 = tokio::spawn(pump(out, idx, chan.cloned()));
-    let t2 = tokio::spawn(pump(err, idx, chan.cloned()));
+    let out_buf: Buf = Arc::new(StdMutex::new(String::new()));
+    let err_buf: Buf = Arc::new(StdMutex::new(String::new()));
+    let (eof_tx, eof_rx) = watch::channel(0usize);
 
-    let run = async move {
-        let (o, e) = tokio::join!(t1, t2);
-        let o = o.unwrap_or_default();
-        let e = e.unwrap_or_default();
-        let st = child.wait().await.map_err(|err| err.to_string())?;
-        Ok::<(String, String, std::process::ExitStatus), String>((o, e, st))
-    };
+    let t1 = tokio::spawn(pump(
+        out,
+        idx,
+        chan.cloned(),
+        out_buf.clone(),
+        eof_tx.clone(),
+    ));
+    let t2 = tokio::spawn(pump(err, idx, chan.cloned(), err_buf.clone(), eof_tx));
 
-    let res = tokio::time::timeout(TERM_TIMEOUT, run).await;
+    // Wait for the shell itself — a GUI app it launched may hold the pipes
+    // for hours, and the command must not ride along.
+    let res = tokio::time::timeout(TERM_TIMEOUT, child.wait()).await;
 
-    let (out_txt, err_txt, code) = match res {
-        Ok(Ok((o, e, st))) => {
+    match res {
+        Ok(Ok(st)) => {
             let code = st.code().map(|c| c as i64).unwrap_or(-1);
-            (o, e, code)
+
+            let mut rx = eof_rx.clone();
+            let _ = tokio::time::timeout(DRAIN, rx.wait_for(|n| *n >= 2)).await;
+
+            t1.abort();
+            t2.abort();
+
+            let mut all = take(&out_buf);
+
+            let err_txt = take(&err_buf);
+            if !err_txt.trim().is_empty() {
+                all.push_str(&err_txt);
+            }
+
+            Ok((super::clip_ends(all), code))
         }
-        Ok(Err(e)) => return Err(e),
-        Err(_) => return Ok(("command timed out after 120s".into(), -1)),
-    };
+        Ok(Err(e)) => {
+            t1.abort();
+            t2.abort();
+            Err(e.to_string())
+        }
+        Err(_) => {
+            let _ = child.start_kill();
 
-    let mut all = out_txt;
+            let partial = take(&out_buf);
+            t1.abort();
+            t2.abort();
 
-    if !err_txt.trim().is_empty() {
-        all.push_str(&err_txt);
+            Ok((format!("{partial}\ncommand timed out after 120s"), -1))
+        }
     }
-
-    Ok((super::clip_ends(all), code))
 }

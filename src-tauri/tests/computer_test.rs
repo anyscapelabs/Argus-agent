@@ -30,3 +30,52 @@ fn ref_index_rejects_unknown() {
     assert_eq!(ref_index(4, 3), None);
     assert_eq!(ref_index(1, 0), None);
 }
+
+#[test]
+fn repeated_trips_on_third_identical_action() {
+    use argus_lib::sessions::chat::repeated;
+
+    let a = ("computer.click".to_string(), "{\"x\":1}".to_string());
+    let b = ("computer.screen".to_string(), "{}".to_string());
+    let seen = vec![a.clone(), a.clone()];
+
+    assert!(repeated(&seen, &a));
+    assert!(!repeated(&vec![a.clone()], &a));
+    assert!(!repeated(&vec![a.clone(), b.clone(), a.clone()], &a));
+    assert!(!repeated(&vec![], &a));
+}
+
+#[test]
+fn find_desktop_matches_stem_then_name() {
+    use argus_lib::tools::computer::x11::find_desktop;
+
+    let dir = std::env::temp_dir().join(format!("argus-launch-{}", std::process::id()));
+    let apps = dir.join("applications");
+    std::fs::create_dir_all(&apps).unwrap();
+    std::fs::write(
+        apps.join("argustestapp.desktop"),
+        "[Desktop Entry]\nName=Argus Test App\n",
+    )
+    .unwrap();
+    std::fs::write(
+        apps.join("other.desktop"),
+        "[Desktop Entry]\nName=Other Thing\n",
+    )
+    .unwrap();
+
+    let prev = std::env::var("XDG_DATA_DIRS").ok();
+    std::env::set_var("XDG_DATA_DIRS", &dir);
+
+    assert_eq!(
+        find_desktop("argustestapp").unwrap(),
+        "argustestapp.desktop"
+    );
+    assert_eq!(find_desktop("test app").unwrap(), "argustestapp.desktop");
+    assert!(find_desktop("no-such-app-xyz").is_err());
+
+    match prev {
+        Some(v) => std::env::set_var("XDG_DATA_DIRS", v),
+        None => std::env::remove_var("XDG_DATA_DIRS"),
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

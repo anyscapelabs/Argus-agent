@@ -115,7 +115,9 @@ pub async fn tree() -> Result<String, String> {
         }
 
         let path = app.path_as_str().to_string();
-        let app_proxy = accessible(c, &dest, &path).await?;
+        let Ok(app_proxy) = accessible(c, &dest, &path).await else {
+            continue;
+        };
         let app_name = app_proxy.name().await.unwrap_or_default();
 
         if daemon_app(&app_name) {

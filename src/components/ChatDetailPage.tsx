@@ -12,7 +12,7 @@ const SCROLL_PAGE_RATIO = 0.85;
 
 type Props = { sessionId: string };
 
-type TurnGroup = { user: MsgRow | null; agent: MsgRow[] };
+type TurnGroup = { usr: MsgRow | null; agent: MsgRow[] };
 
 function groupTurns(
   rows: MsgRow[],
@@ -23,12 +23,12 @@ function groupTurns(
 
   for (const r of rows) {
     if (r.role === "user" && !r.content.startsWith("<tool-result")) {
-      groups.push({ user: r, agent: [] });
+      groups.push({ usr: r, agent: [] });
       continue;
     }
 
     if (groups.length === 0) {
-      groups.push({ user: null, agent: [] });
+      groups.push({ usr: null, agent: [] });
     }
 
     groups[groups.length - 1].agent.push(r);
@@ -39,7 +39,7 @@ function groupTurns(
   }
 
   if (groups.length === 0) {
-    groups.push({ user: null, agent: [] });
+    groups.push({ usr: null, agent: [] });
   }
 
   groups[groups.length - 1].agent.push({
@@ -138,13 +138,13 @@ export default function ChatDetailPage({ sessionId }: Props) {
     sessionStore.send(sessionId, text);
   };
 
-  const retryFrom = (userMsgId: string) => {
+  const retryFrom = (usrMsgId: string) => {
     if (running) {
       return;
     }
 
     const row = rows.find(
-      (m) => m.id === userMsgId && m.role === "user",
+      (m) => m.id === usrMsgId && m.role === "user",
     );
     if (row === undefined) {
       return;
@@ -216,19 +216,19 @@ export default function ChatDetailPage({ sessionId }: Props) {
 
             return (
               <div
-                key={group.user?.id ?? `g-${gi}`}
+                key={group.usr?.id ?? `g-${gi}`}
                 className="flex flex-col gap-3"
               >
-                {group.user !== null && (
+                {group.usr !== null && (
                   <UserBubble
                     timestamp={Date.now()}
                     onRetry={() => {
-                      if (group.user !== null) {
-                        retryFrom(group.user.id);
+                      if (group.usr !== null) {
+                        retryFrom(group.usr.id);
                       }
                     }}
                   >
-                    {group.user.content}
+                    {group.usr.content}
                   </UserBubble>
                 )}
                 <AgentBubble
@@ -253,11 +253,11 @@ export default function ChatDetailPage({ sessionId }: Props) {
                     sessionStore.setVote(sessionId, last.id, v);
                   }}
                   onRetry={() => {
-                    if (group.user === null) {
+                    if (group.usr === null) {
                       return;
                     }
 
-                    retryFrom(group.user.id);
+                    retryFrom(group.usr.id);
                   }}
                 />
               </div>

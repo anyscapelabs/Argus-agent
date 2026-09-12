@@ -207,6 +207,93 @@ export default function ModelsPage({ onNavigate }: ModelsPageProps) {
     });
   }
 
+  function renderBody(): ReactNode {
+    if (loading || provLoading) {
+      return <p className="text-sm text-text-secondary">Loading models…</p>;
+    }
+
+    if (err) {
+      return <p className="text-sm text-red-400">{err}</p>;
+    }
+
+    if (visible.length === 0 && searching) {
+      return (
+        <EmptyState
+          icon={<LuSearchX size={18} />}
+          title="No models match"
+          body={`Nothing found for "${query.trim()}". Try a shorter or different name.`}
+          action={
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="rounded-full border border-border-primary bg-bg-hover-secondary px-4 py-1.5 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover-primary"
+            >
+              Clear search
+            </button>
+          }
+        />
+      );
+    }
+
+    if (visible.length === 0 && connectedIds.size === 0) {
+      return (
+        <EmptyState
+          icon={<LuPlug size={18} />}
+          title="No connected providers"
+          body="Models come from your connected providers. Connect one first, then sync the catalog to pull its models."
+          action={
+            <button
+              type="button"
+              onClick={() => onNavigate?.("providers")}
+              className="rounded-full border border-border-primary bg-bg-hover-secondary px-4 py-1.5 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover-primary"
+            >
+              Go to Providers
+            </button>
+          }
+        />
+      );
+    }
+
+    if (visible.length === 0) {
+      return (
+        <EmptyState
+          icon={<LuBoxes size={18} />}
+          title="No models yet"
+          body="Your connected providers have no models indexed. Sync the catalog to fetch the latest list."
+          action={
+            <button
+              type="button"
+              onClick={syncCatalog}
+              disabled={syncing}
+              className="flex items-center gap-1.5 rounded-full border border-border-primary bg-bg-hover-secondary px-4 py-1.5 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover-primary disabled:opacity-50"
+            >
+              {syncing ? "Syncing…" : "Sync catalog"}
+            </button>
+          }
+        />
+      );
+    }
+
+    return (
+      <div className="flex flex-col gap-2">
+        {visible.map(({ providerId, models }) => (
+          <ModelSection
+            key={providerId}
+            providerId={providerId}
+            name={
+              providers.find((p) => p.id === providerId)?.name ??
+              providerId
+            }
+            models={models}
+            open={isOpen(providerId)}
+            onToggleOpen={toggleOpen}
+            onToggleModel={toggle}
+          />
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <h2 className="text-sm font-semibold text-text-primary">Models</h2>
@@ -225,74 +312,7 @@ export default function ModelsPage({ onNavigate }: ModelsPageProps) {
         />
       </div>
 
-      {loading || provLoading ? (
-        <p className="text-sm text-text-secondary">Loading models…</p>
-      ) : err ? (
-        <p className="text-sm text-red-400">{err}</p>
-      ) : visible.length === 0 && searching ? (
-        <EmptyState
-          icon={<LuSearchX size={18} />}
-          title="No models match"
-          body={`Nothing found for "${query.trim()}". Try a shorter or different name.`}
-          action={
-            <button
-              type="button"
-              onClick={() => setQuery("")}
-              className="rounded-full border border-border-primary bg-bg-hover-secondary px-4 py-1.5 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover-primary"
-            >
-              Clear search
-            </button>
-          }
-        />
-      ) : visible.length === 0 && connectedIds.size === 0 ? (
-        <EmptyState
-          icon={<LuPlug size={18} />}
-          title="No connected providers"
-          body="Models come from your connected providers. Connect one first, then sync the catalog to pull its models."
-          action={
-            <button
-              type="button"
-              onClick={() => onNavigate?.("providers")}
-              className="rounded-full border border-border-primary bg-bg-hover-secondary px-4 py-1.5 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover-primary"
-            >
-              Go to Providers
-            </button>
-          }
-        />
-      ) : visible.length === 0 ? (
-        <EmptyState
-          icon={<LuBoxes size={18} />}
-          title="No models yet"
-          body="Your connected providers have no models indexed. Sync the catalog to fetch the latest list."
-          action={
-            <button
-              type="button"
-              onClick={syncCatalog}
-              disabled={syncing}
-              className="flex items-center gap-1.5 rounded-full border border-border-primary bg-bg-hover-secondary px-4 py-1.5 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover-primary disabled:opacity-50"
-            >
-              {syncing ? "Syncing…" : "Sync catalog"}
-            </button>
-          }
-        />
-      ) : (
-        <div className="flex flex-col gap-2">
-          {visible.map(({ providerId, models }) => (
-            <ModelSection
-              key={providerId}
-              providerId={providerId}
-              name={
-                providers.find((p) => p.id === providerId)?.name ??
-                providerId
-              }
-              models={models}
-              open={isOpen(providerId)}
-              onToggleOpen={toggleOpen}
-              onToggleModel={toggle}
-            />
-          ))}
-        </div>
-      )}
+      {renderBody()}
     </div>
   );
 }

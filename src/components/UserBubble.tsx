@@ -9,6 +9,9 @@ type UserBubbleProps = {
   onRetry?: () => void;
 };
 
+const COPY_RESET_MS = 1500;
+const EMPTY_TXT = "";
+
 export default function UserBubble({
   children,
   timestamp,
@@ -17,16 +20,17 @@ export default function UserBubble({
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
-    const txt = typeof children === "string" ? children : "";
+    const txt = typeof children === "string" ? children : EMPTY_TXT;
     if (txt.length === 0) return;
 
     try {
       await navigator.clipboard.writeText(txt);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
     } catch {
       return;
     }
+
+    setCopied(true);
+    setTimeout(() => setCopied(false), COPY_RESET_MS);
   };
 
   return (

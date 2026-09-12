@@ -86,7 +86,7 @@ pub fn utility_model(conn: &Connection) -> Result<String, String> {
 
 pub async fn compact(gw: &Gateway, session_id: &str) -> Result<Option<CompactionRecord>, String> {
     let (cfg, model_id, _compact_seq, prev_summary, window) = {
-        let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
         let cfg = CompressionCfg::load(&conn);
         let (model_id, compact_seq) = conn
             .query_row(
@@ -110,7 +110,7 @@ pub async fn compact(gw: &Gateway, session_id: &str) -> Result<Option<Compaction
                  WHERE session_id = ?1 AND active = 1 AND seq > ?2
                  ORDER BY seq",
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
 
         let rows = stmt
             .query_map(params![session_id, compact_seq], |r| {
@@ -120,11 +120,11 @@ pub async fn compact(gw: &Gateway, session_id: &str) -> Result<Option<Compaction
                     r.get::<_, String>(2)?,
                 ))
             })
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
 
         let window = rows
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
         (cfg, model_id, compact_seq, prev_summary, window)
     };
 
@@ -133,7 +133,7 @@ pub async fn compact(gw: &Gateway, session_id: &str) -> Result<Option<Compaction
     }
 
     let context = {
-        let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
         context_window(&conn, model_id.as_deref())
     };
 
@@ -179,7 +179,7 @@ pub async fn compact(gw: &Gateway, session_id: &str) -> Result<Option<Compaction
     }
 
     let util = {
-        let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
         utility_model(&conn)?
     };
 
@@ -235,18 +235,18 @@ this summary plus the most recent messages. Stay under {budget} tokens.\n\n\
     let tok_before = middle_tokens;
 
     {
-        let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
         conn.execute(
             "INSERT INTO summaries (id, session_id, covers_to, content, model_id) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![Uuid::new_v4().to_string(), session_id, covers_to, summary, util],
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
         conn.execute(
             "UPDATE sessions SET compact_seq = ?2, compactions = compactions + 1 WHERE id = ?1",
             params![session_id, covers_to],
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
     }
 
     Ok(Some(CompactionRecord {
@@ -259,7 +259,7 @@ this summary plus the most recent messages. Stay under {budget} tokens.\n\n\
 
 #[tauri::command]
 pub fn prompt_status(gw: State<'_, Gateway>, session_id: String) -> Result<ContextStatus, String> {
-    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     check(&conn, &session_id)
 }
 

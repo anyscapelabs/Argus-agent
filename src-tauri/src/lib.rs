@@ -1,5 +1,7 @@
+pub mod connectors;
 mod gateway;
 mod library;
+pub mod mcp;
 mod prompt;
 pub mod sessions;
 mod skills;
@@ -16,16 +18,18 @@ use gateway::{store, Gateway};
 pub fn run() {
     if std::env::args().any(|a| a == "--native-host") {
         let socket = sessions::ext_install::data_dir().join("native.sock");
-        let rt = tokio::runtime::Builder::new_multi_thread()
+        let Ok(rt) = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
-            .expect("tokio runtime"); // Loud fail: no runtime, no bridge
+        else {
+            return;
+        };
 
         rt.block_on(tools::browser::extpipe::run_stdio_host(socket));
         return;
     }
 
-    tauri::Builder::default()
+    let _ = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
@@ -35,6 +39,9 @@ pub fn run() {
             sessions::store::migrate(&conn)?;
             skills::store::migrate(&conn)?;
             library::store::migrate(&conn)?;
+            connectors::store::migrate(&conn)?;
+
+            let _ = mcp::sync_from(&conn);
 
             let skills_dir = skills::default_dir(&dir);
             std::fs::create_dir_all(&skills_dir)?;
@@ -129,6 +136,5 @@ pub fn run() {
             prompt::compressor::prompt_status,
             prompt::compressor::prompt_compact
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .run(tauri::generate_context!());
 }

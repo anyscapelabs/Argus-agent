@@ -2,8 +2,14 @@ import type { BlockNode } from "../../lib/agentXml";
 
 type Props = { block: BlockNode };
 
+const DEF_FILE = "untitled";
+const ADD_CLS = "text-emerald-300";
+const DEL_CLS = "text-red-300";
+const TXT_CLS = "text-text-primary";
+const BLANK_LN = " ";
+
 export default function DiffBlock({ block }: Props) {
-  const file = block.attrs.file ?? "untitled";
+  const file = block.attrs.file ?? DEF_FILE;
   const language = block.attrs.language;
   const raw = block.children.map((child) => child.value).join("");
   const lines = raw.split("\n");
@@ -24,18 +30,27 @@ export default function DiffBlock({ block }: Props) {
         )}
       </div>
       <pre className="overflow-x-auto p-3 font-mono text-xs leading-5 text-text-primary">
-        {lines.map((line, index) => {
+        {lines.map((line, idx) => {
           const isAdd = line.startsWith("+");
-          const isRemove = line.startsWith("-");
-          const className = isAdd
-            ? "text-emerald-300"
-            : isRemove
-              ? "text-red-300"
-              : "text-text-primary";
+          if (isAdd) {
+            return (
+              <div key={idx} className={`whitespace-pre ${ADD_CLS}`}>
+                {line || BLANK_LN}
+              </div>
+            );
+          }
+
+          if (line.startsWith("-")) {
+            return (
+              <div key={idx} className={`whitespace-pre ${DEL_CLS}`}>
+                {line || BLANK_LN}
+              </div>
+            );
+          }
 
           return (
-            <div key={index} className={`whitespace-pre ${className}`}>
-              {line || " "}
+            <div key={idx} className={`whitespace-pre ${TXT_CLS}`}>
+              {line || BLANK_LN}
             </div>
           );
         })}

@@ -144,7 +144,7 @@ fn handle_msg(v: Value) {
         true => Ok(v.get("data").cloned().unwrap_or(Value::Null)),
         false => Err(v
             .get("err")
-            .and_then(|e| e.as_str())
+            .and_then(|err| err.as_str())
             .unwrap_or("extension error")
             .to_string()),
     };
@@ -203,8 +203,6 @@ pub async fn request(method: &str, data: Value) -> Result<Value, String> {
     }
 }
 
-/// stdin/stdout native-messaging bridge: spawned by Chrome, forwards frames
-/// between the extension service worker and the running Argus process.
 pub async fn run_stdio_host(socket: PathBuf) {
     use tokio::io::{stdin, stdout};
 

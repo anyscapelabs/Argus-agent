@@ -51,8 +51,8 @@ export default function ProviderConnectModal({
 
     try {
       await onConnect(provider, key);
-    } catch (e) {
-      setErr(String(e));
+    } catch (err) {
+      setErr(String(err));
       setSaving(false);
       return;
     }
@@ -79,7 +79,7 @@ export default function ProviderConnectModal({
     >
       <div
         className="flex w-full max-w-[560px] min-h-[520px] flex-col rounded-xl border border-border-primary bg-bg-secondary p-6 shadow-4xl"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(evt) => evt.stopPropagation()}
       >
         <div className="flex items-center justify-between">
           <button

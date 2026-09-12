@@ -1,7 +1,7 @@
 use futures_util::StreamExt;
 use reqwest::Client;
 
-use super::{openai_msgs, retry_after_secs, sse_events, CallErr, DeltaSink, WireResp};
+use super::{openai_msgs, retry_after_secs, sse_events, CallError, DeltaSink, WireResp};
 use crate::gateway::schema::{StreamDone, WireMsg};
 
 pub async fn stream(
@@ -11,7 +11,7 @@ pub async fn stream(
     remote_id: &str,
     msgs: &[WireMsg],
     on_delta: DeltaSink<'_>,
-) -> Result<StreamDone, CallErr> {
+) -> Result<StreamDone, CallError> {
     let url = format!("{base_url}/chat/completions");
     let pl =
         serde_json::json!({ "model": remote_id, "messages": openai_msgs(msgs), "stream": true });
@@ -21,9 +21,9 @@ pub async fn stream(
         req = req.bearer_auth(t);
     }
 
-    let resp = req.send().await.map_err(|e| CallErr {
+    let resp = req.send().await.map_err(|err| CallError {
         status: None,
-        msg: e.to_string(),
+        msg: err.to_string(),
         retry_after: None,
     })?;
 
@@ -31,7 +31,7 @@ pub async fn stream(
     if status != 200 {
         let ra = retry_after_secs(&resp);
         let body = resp.text().await.unwrap_or_default();
-        return Err(CallErr {
+        return Err(CallError {
             status: Some(status),
             msg: body,
             retry_after: ra,
@@ -43,9 +43,9 @@ pub async fn stream(
     let mut stream = resp.bytes_stream();
 
     while let Some(chunk) = stream.next().await {
-        let bytes = chunk.map_err(|e| CallErr {
+        let bytes = chunk.map_err(|err| CallError {
             status: None,
-            msg: e.to_string(),
+            msg: err.to_string(),
             retry_after: None,
         })?;
 
@@ -65,9 +65,9 @@ pub async fn stream(
 
                 if let Some(c) = v["choices"][0]["delta"]["content"].as_str() {
                     if !c.is_empty() {
-                        on_delta(c).map_err(|e| CallErr {
+                        on_delta(c).map_err(|err| CallError {
                             status: None,
-                            msg: e,
+                            msg: err,
                             retry_after: None,
                         })?;
                         done.text.push_str(c);
@@ -94,7 +94,7 @@ pub async fn chat(
     tok: Option<String>,
     remote_id: &str,
     msgs: &[WireMsg],
-) -> Result<(WireResp, String), CallErr> {
+) -> Result<(WireResp, String), CallError> {
     let url = format!("{base_url}/chat/completions");
     let pl =
         serde_json::json!({ "model": remote_id, "messages": openai_msgs(msgs), "stream": false });
@@ -107,32 +107,32 @@ pub async fn chat(
     send(req).await
 }
 
-pub async fn send(req: reqwest::RequestBuilder) -> Result<(WireResp, String), CallErr> {
-    let resp = req.send().await.map_err(|e| CallErr {
+pub async fn send(req: reqwest::RequestBuilder) -> Result<(WireResp, String), CallError> {
+    let resp = req.send().await.map_err(|err| CallError {
         status: None,
-        msg: e.to_string(),
+        msg: err.to_string(),
         retry_after: None,
     })?;
 
     let status = resp.status().as_u16();
     let ra = retry_after_secs(&resp);
-    let body = resp.text().await.map_err(|e| CallErr {
+    let body = resp.text().await.map_err(|err| CallError {
         status: Some(status),
-        msg: e.to_string(),
+        msg: err.to_string(),
         retry_after: None,
     })?;
 
     if status != 200 {
-        return Err(CallErr {
+        return Err(CallError {
             status: Some(status),
             msg: body,
             retry_after: ra,
         });
     }
 
-    let wire: WireResp = serde_json::from_str(&body).map_err(|e| CallErr {
+    let wire: WireResp = serde_json::from_str(&body).map_err(|err| CallError {
         status: Some(status),
-        msg: e.to_string(),
+        msg: err.to_string(),
         retry_after: None,
     })?;
 

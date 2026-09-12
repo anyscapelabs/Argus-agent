@@ -40,7 +40,7 @@ fn run(bin: &str, args: &[&str]) -> Result<String, String> {
     let out = Command::new(bin)
         .args(args)
         .output()
-        .map_err(|e| format!("{bin}: {e}"))?;
+        .map_err(|err| format!("{bin}: {err}"))?;
 
     if !out.status.success() {
         return Err(format!(
@@ -82,8 +82,6 @@ async fn set_shot(shot_w: i64, shot_h: i64) -> Result<(), String> {
     Ok(())
 }
 
-/// Tier 2 view: the accessibility tree plus the window list. Cheap text —
-/// the default perception, no pixels.
 pub async fn observe() -> Result<String, String> {
     let tree = super::atspi::tree().await?;
 
@@ -97,30 +95,24 @@ pub async fn observe() -> Result<String, String> {
     ))
 }
 
-/// Tier 3 view: a real screenshot, only when the tree is not enough.
 pub async fn screen() -> Result<String, String> {
     check_tools()?;
 
     let dir = super::shot_dir();
-    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    std::fs::create_dir_all(&dir).map_err(|err| format!("{}: {err}", dir.display()))?;
 
     let ts = stamp();
     let full = dir.join(format!("shot-full-{ts}.png"));
     let shot = dir.join(format!("shot-{ts}.png"));
 
-    run("import", &["-window", "root", full.to_str().unwrap()])?;
-    run(
-        "convert",
-        &[
-            full.to_str().unwrap(),
-            "-resize",
-            "1280x>",
-            shot.to_str().unwrap(),
-        ],
-    )?;
+    let full_str = full.to_str().ok_or_else(|| "bad shot path".to_string())?;
+    let shot_str = shot.to_str().ok_or_else(|| "bad shot path".to_string())?;
+
+    run("import", &["-window", "root", full_str])?;
+    run("convert", &[full_str, "-resize", "1280x>", shot_str])?;
     let _ = std::fs::remove_file(&full);
 
-    let ident = run("identify", &["-format", "%w %h", shot.to_str().unwrap()])?;
+    let ident = run("identify", &["-format", "%w %h", shot_str])?;
     let (w, h) = dims(&ident)?;
     set_shot(w, h).await?;
 
@@ -133,8 +125,6 @@ pub async fn screen() -> Result<String, String> {
     ))
 }
 
-/// Screenshot-space coords validated against the last capture, mapped to the
-/// real screen.
 async fn coords(args: &Value) -> Result<(String, String), String> {
     let g = SHOT.lock().await;
     let s = g
@@ -157,8 +147,6 @@ async fn coords(args: &Value) -> Result<(String, String), String> {
     Ok((rx.to_string(), ry.to_string()))
 }
 
-/// Synthetic click at real screen coordinates — the tier-2 fallback when an
-/// element exposes no action of its own.
 pub async fn click_xy(x: i32, y: i32) -> Result<(), String> {
     check_tools()?;
 
@@ -203,7 +191,6 @@ pub async fn type_text(args: &Value) -> Result<String, String> {
         .filter(|s| !s.is_empty())
         .ok_or("missing text")?;
 
-    // A ref focuses the field first — and password fields never get typed.
     super::atspi::focus_ref(args).await?;
 
     run("xdotool", &["type", "--delay", "20", "--", text])?;

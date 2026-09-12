@@ -12,7 +12,7 @@ pub fn write(args: &Value) -> Result<String, String> {
         let _ = std::fs::create_dir_all(parent);
     }
 
-    std::fs::write(&p, content).map_err(|e| format!("{p}: {e}"))?;
+    std::fs::write(&p, content).map_err(|err| format!("{p}: {err}"))?;
 
     Ok(format!("wrote {p} ({} bytes)", content.len()))
 }

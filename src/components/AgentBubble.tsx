@@ -284,15 +284,25 @@ function renderInline(nodes: InlineNode[]): React.ReactNode {
 
       if (isClose) {
         const idx = stk.findLastIndex((s: StackItem) => s.tag === name);
-        if (idx !== -1) {
-          stk.splice(idx, 1);
+        if (idx === -1) {
+          cur = m.index + raw.length;
+          continue;
         }
-      } else if (!isSelf) {
-        if (name === "link") {
-          stk.push({ tag: name, href });
-        } else {
-          stk.push({ tag: name });
-        }
+
+        stk.splice(idx, 1);
+        cur = m.index + raw.length;
+        continue;
+      }
+
+      if (isSelf) {
+        cur = m.index + raw.length;
+        continue;
+      }
+
+      if (name === "link") {
+        stk.push({ tag: name, href });
+      } else {
+        stk.push({ tag: name });
       }
 
       cur = m.index + raw.length;

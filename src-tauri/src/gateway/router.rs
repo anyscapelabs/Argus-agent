@@ -71,19 +71,16 @@ fn key_for(prov: &Provider) -> Result<Option<String>, String> {
 
             Ok(t)
         }
-        Err(e) => {
-            eprintln!("keyring read failed for {}: {e}", prov.id);
-            Err(format!(
-                "could not read the stored key for {} — reconnect it in Providers settings",
-                prov.name
-            ))
-        }
+        Err(_) => Err(format!(
+            "could not read the stored key for {} — reconnect it in Providers settings",
+            prov.name
+        )),
     }
 }
 
 fn resolve(gw: &Gateway, req: &ChatReq) -> Result<Resolved, String> {
     let (mode, pinned, provs, avails) = {
-        let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
         let mode = store::kv_get(&conn, "routing_mode").unwrap_or_else(|| "prefer_free".into());
         let pinned = store::kv_get(&conn, "pinned_provider").unwrap_or_default();
         let provs = store::list_providers(&conn)?;
@@ -190,7 +187,7 @@ pub async fn run_opts(gw: &Gateway, req: &ChatReq, max_attempts: i64) -> Result<
                 };
 
                 {
-                    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+                    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
                     store::log_req(&conn, &log)?;
                 }
 
@@ -206,7 +203,7 @@ pub async fn run_opts(gw: &Gateway, req: &ChatReq, max_attempts: i64) -> Result<
                 });
             }
 
-            Err(e) => {
+            Err(err) => {
                 let log = ReqLog {
                     model_id: Some(req.model.clone()),
                     provider_id: Some(prov.id.clone()),
@@ -217,34 +214,34 @@ pub async fn run_opts(gw: &Gateway, req: &ChatReq, max_attempts: i64) -> Result<
                     tok_in: None,
                     tok_out: None,
                     cost: None,
-                    err_msg: Some(e.msg.clone()),
+                    err_msg: Some(err.msg.clone()),
                     req_json: req_json.clone(),
                     resp_json: None,
                     prefix_hash: req.prefix_hash.clone(),
                 };
 
                 {
-                    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+                    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
                     let _ = store::log_req(&conn, &log);
                 }
 
                 let msg = if attempt >= max_attempts {
-                    format!("gave up after {attempt} attempts: {}", e.msg)
+                    format!("gave up after {attempt} attempts: {}", err.msg)
                 } else {
-                    e.msg.clone()
+                    err.msg.clone()
                 };
 
-                if !e.retryable() || attempt >= max_attempts {
+                if !err.retryable() || attempt >= max_attempts {
                     return Err(msg);
                 }
 
-                if e.status == Some(429) {
-                    same_429 = if rate_body.as_deref() == Some(e.msg.as_str()) {
+                if err.status == Some(429) {
+                    same_429 = if rate_body.as_deref() == Some(err.msg.as_str()) {
                         same_429 + 1
                     } else {
                         1
                     };
-                    rate_body = Some(e.msg.clone());
+                    rate_body = Some(err.msg.clone());
 
                     if same_429 >= 3 {
                         return Err(
@@ -254,9 +251,9 @@ pub async fn run_opts(gw: &Gateway, req: &ChatReq, max_attempts: i64) -> Result<
                 }
 
                 tokio::time::sleep(Duration::from_millis(backoff_ms(
-                    e.status,
+                    err.status,
                     attempt,
-                    e.retry_after,
+                    err.retry_after,
                 )))
                 .await;
             }
@@ -307,8 +304,8 @@ pub async fn stream_run(
                     sent_delta = true;
                     Ok(())
                 }
-                Err(e) => {
-                    chan_err = Some(e.to_string());
+                Err(err) => {
+                    chan_err = Some(err.to_string());
                     Ok(())
                 }
             }
@@ -350,7 +347,7 @@ pub async fn stream_run(
                 };
 
                 {
-                    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+                    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
                     store::log_req(&conn, &log)?;
                 }
 
@@ -363,7 +360,7 @@ pub async fn stream_run(
                     tok_out,
                     cost,
                 })
-                .map_err(|e| e.to_string())?;
+                .map_err(|err| err.to_string())?;
 
                 return Ok(StreamStats {
                     text: done.text,
@@ -374,7 +371,7 @@ pub async fn stream_run(
                 });
             }
 
-            Err(e) => {
+            Err(err) => {
                 let log = ReqLog {
                     model_id: Some(req.model.clone()),
                     provider_id: Some(prov.id.clone()),
@@ -385,34 +382,34 @@ pub async fn stream_run(
                     tok_in: None,
                     tok_out: None,
                     cost: None,
-                    err_msg: Some(e.msg.clone()),
+                    err_msg: Some(err.msg.clone()),
                     req_json: req_json.clone(),
                     resp_json: None,
                     prefix_hash: req.prefix_hash.clone(),
                 };
 
                 {
-                    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+                    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
                     let _ = store::log_req(&conn, &log);
                 }
 
-                if !e.retryable() || attempt >= MAX_ATTEMPTS {
+                if !err.retryable() || attempt >= MAX_ATTEMPTS {
                     let msg = if attempt >= MAX_ATTEMPTS {
-                        format!("all {attempt} attempts failed: {}", e.msg)
+                        format!("all {attempt} attempts failed: {}", err.msg)
                     } else {
-                        e.msg.clone()
+                        err.msg.clone()
                     };
                     let _ = chan.send(StreamEvent::Err { msg: msg.clone() });
                     return Err(msg);
                 }
 
-                if e.status == Some(429) {
-                    same_429 = if rate_body.as_deref() == Some(e.msg.as_str()) {
+                if err.status == Some(429) {
+                    same_429 = if rate_body.as_deref() == Some(err.msg.as_str()) {
                         same_429 + 1
                     } else {
                         1
                     };
-                    rate_body = Some(e.msg.clone());
+                    rate_body = Some(err.msg.clone());
 
                     if same_429 >= 3 {
                         let msg =
@@ -428,9 +425,9 @@ pub async fn stream_run(
                 }
 
                 tokio::time::sleep(Duration::from_millis(backoff_ms(
-                    e.status,
+                    err.status,
                     attempt,
-                    e.retry_after,
+                    err.retry_after,
                 )))
                 .await;
             }

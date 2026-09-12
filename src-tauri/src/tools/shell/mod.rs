@@ -71,7 +71,7 @@ pub async fn run_stream(
         c.current_dir(super::expand(cwd));
     }
 
-    let mut child = c.spawn().map_err(|e| e.to_string())?;
+    let mut child = c.spawn().map_err(|err| err.to_string())?;
 
     let out = child.stdout.take().ok_or("no stdout")?;
     let err = child.stderr.take().ok_or("no stderr")?;
@@ -89,8 +89,6 @@ pub async fn run_stream(
     ));
     let t2 = tokio::spawn(pump(err, idx, chan.cloned(), err_buf.clone(), eof_tx));
 
-    // Wait for the shell itself — a GUI app it launched may hold the pipes
-    // for hours, and the command must not ride along.
     let res = tokio::time::timeout(TERM_TIMEOUT, child.wait()).await;
 
     match res {
@@ -112,10 +110,10 @@ pub async fn run_stream(
 
             Ok((super::clip_ends(all), code))
         }
-        Ok(Err(e)) => {
+        Ok(Err(err)) => {
             t1.abort();
             t2.abort();
-            Err(e.to_string())
+            Err(err.to_string())
         }
         Err(_) => {
             let _ = child.start_kill();

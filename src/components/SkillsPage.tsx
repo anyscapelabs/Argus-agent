@@ -47,7 +47,7 @@ export default function SkillsPage({ onAddSkill }: SkillsPageProps) {
         <h1 className="text-2xl font-medium text-text-primary">Skills</h1>
         <button
           type="button"
-          onClick={onAddSkill ?? (() => console.log("add skill"))}
+          onClick={onAddSkill ?? (() => {})}
           className={
             "inline-flex items-center justify-center gap-1 rounded-lg " +
             "bg-accent px-2 py-1 text-xs font-medium text-bg-primary " +

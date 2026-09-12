@@ -55,31 +55,3 @@ pub fn load() -> Result<GoogleCfg, String> {
         app_path.display()
     ))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn scopes_cover_all_five_services() {
-        let joined = SCOPES.join(" ");
-
-        for s in [
-            "gmail.modify",
-            "/auth/calendar",
-            "/auth/drive",
-            "/auth/documents",
-            "/auth/spreadsheets",
-        ] {
-            assert!(joined.contains(s), "missing {s}");
-        }
-    }
-
-    #[test]
-    fn example_config_parses() {
-        let raw = include_str!("config.example.json");
-        let cfg: GoogleCfg = serde_json::from_str(raw).unwrap();
-
-        assert!(!cfg.client_id.is_empty());
-    }
-}

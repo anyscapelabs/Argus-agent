@@ -10,7 +10,7 @@ use tauri::State;
 use crate::gateway::schema::{ChatReq, WireMsg};
 use crate::gateway::{store as gw_store, Gateway};
 
-const BASE: &str = "You are Argus, a personal AI agent operating on the user's machine.\n\
+pub const BASE: &str = "You are Argus, a personal AI agent operating on the user's machine.\n\
 Rules:\n\
 1. Act, don't just suggest. Say plainly what you did.\n\
 2. Never invent file contents, command output, URLs, or tool results.\n\
@@ -203,21 +203,4 @@ pub fn prompt_preview(gw: State<'_, Gateway>, session_id: String) -> Result<Prom
         ctx_tokens: p.ctx_tokens,
         compact_seq: p.compact_seq,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn base_rules_are_numbered_and_honest_about_permissions() {
-        assert!(BASE.contains("1. Act, don't just suggest."), "{BASE}");
-        assert!(BASE.contains("Permission modes: ask, never."), "{BASE}");
-        assert!(!BASE.contains("allow_once"), "{BASE}");
-    }
-
-    #[test]
-    fn base_bans_faking_tool_output() {
-        assert!(BASE.contains("never fake tool output"), "{BASE}");
-    }
 }

@@ -1,8 +1,8 @@
 pub mod connectors;
-mod gateway;
+pub mod gateway;
 mod library;
 pub mod mcp;
-mod prompt;
+pub mod prompt;
 pub mod sessions;
 mod skills;
 pub mod tools;

@@ -64,11 +64,11 @@ pub struct CompactionRecord {
     pub summary_model: String,
 }
 
-const SUMMARY_SYS: &str = "You compress conversation history. Output only the summary, following this template exactly:\n\
+const SUMMARY_SYS: &str = "You compress conversation history. Output only the summary: no code fences, no extra text. Follow this template exactly:\n\
 ## Goal\n## Constraints & Preferences\n## Progress\n### Done\n### In Progress\n### Blocked\n\
 ## Key Decisions\n## Relevant Files\n## Next Steps\n## Critical Context\n\
 Keep every heading; write `none` under a heading with no content. Omit greetings and small talk. \
-Preserve exact file paths, commands, names, and numbers. Stay under the stated token budget.";
+Preserve exact file paths, commands, names, and numbers. Only use facts from the transcript — never invent paths, commands, or outcomes. Stay under the stated token budget.";
 
 pub fn utility_model(conn: &Connection) -> Result<String, String> {
     conn.query_row(
@@ -184,6 +184,7 @@ pub async fn compact(gw: &Gateway, session_id: &str) -> Result<Option<Compaction
     };
 
     let budget = (middle_tokens * 2 / 10).clamp(200, 2000);
+    let words = budget * 3 / 4;
 
     let mut transcript = String::new();
     for (seq, role, content) in middle {
@@ -197,12 +198,12 @@ pub async fn compact(gw: &Gateway, session_id: &str) -> Result<Option<Compaction
         Some(prev) => format!(
             "An earlier summary of this conversation follows. Update it in place with the new transcript: \
 move finished items from In Progress to Done, add new decisions and files, drop stale ones. \
-Do not start from scratch. Stay under {budget} tokens.\n\n\
+Do not start from scratch. Stay under {budget} tokens (about {words} words).\n\n\
 <previous_summary>\n{prev}\n</previous_summary>\n\n<new_transcript>\n{transcript}\n</new_transcript>"
         ),
         None => format!(
             "Summarize the conversation transcript below for a continuation agent that will read only \
-this summary plus the most recent messages. Stay under {budget} tokens.\n\n\
+this summary plus the most recent messages. Stay under {budget} tokens (about {words} words).\n\n\
 <transcript>\n{transcript}\n</transcript>"
         ),
     };

@@ -287,6 +287,11 @@ Available tools:\n",
         s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));
     }
 
+    s.push_str(
+        "To open a GUI app, detach it so the command returns at once: append \
+         >/dev/null 2>&1 & — xdg-open and similar block until the app closes.\n",
+    );
+
     s.push_str("Browser tools:\n");
     for t in browser::META {
         s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));

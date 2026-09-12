@@ -1,7 +1,7 @@
 use futures_util::StreamExt;
 use reqwest::Client;
 
-use super::{retry_after_secs, sse_events, CallErr, DeltaSink, WireResp};
+use super::{openai_msgs, retry_after_secs, sse_events, CallErr, DeltaSink, WireResp};
 use crate::gateway::schema::{StreamDone, WireMsg};
 
 pub async fn stream(
@@ -13,7 +13,8 @@ pub async fn stream(
     on_delta: DeltaSink<'_>,
 ) -> Result<StreamDone, CallErr> {
     let url = format!("{base_url}/chat/completions");
-    let pl = serde_json::json!({ "model": remote_id, "messages": msgs, "stream": true });
+    let pl =
+        serde_json::json!({ "model": remote_id, "messages": openai_msgs(msgs), "stream": true });
 
     let mut req = http.post(&url).json(&pl);
     if let Some(t) = tok {
@@ -95,7 +96,8 @@ pub async fn chat(
     msgs: &[WireMsg],
 ) -> Result<(WireResp, String), CallErr> {
     let url = format!("{base_url}/chat/completions");
-    let pl = serde_json::json!({ "model": remote_id, "messages": msgs, "stream": false });
+    let pl =
+        serde_json::json!({ "model": remote_id, "messages": openai_msgs(msgs), "stream": false });
 
     let mut req = http.post(&url).json(&pl);
     if let Some(t) = tok {

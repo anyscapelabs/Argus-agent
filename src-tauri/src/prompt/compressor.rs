@@ -213,10 +213,12 @@ this summary plus the most recent messages. Stay under {budget} tokens.\n\n\
             WireMsg {
                 role: "system".into(),
                 content: SUMMARY_SYS.into(),
+                images: vec![],
             },
             WireMsg {
                 role: "user".into(),
                 content: user,
+                images: vec![],
             },
         ],
         prefix_hash: None,

@@ -119,6 +119,7 @@ pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String
             Ok(WireMsg {
                 role: r.get(0)?,
                 content: r.get(1)?,
+                images: vec![],
             })
         })
         .map_err(|e| e.to_string())?;
@@ -163,6 +164,7 @@ impl Projection {
         let mut msgs = vec![WireMsg {
             role: "system".into(),
             content: self.system.clone(),
+            images: vec![],
         }];
         msgs.extend(self.msgs.iter().cloned());
 

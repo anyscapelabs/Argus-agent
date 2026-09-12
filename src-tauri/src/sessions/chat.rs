@@ -59,10 +59,12 @@ async fn generate_title(gw: &Gateway, session_id: &str, content: &str) -> Result
         WireMsg {
             role: "system".into(),
             content: TITLE_SYS.into(),
+            images: vec![],
         },
         WireMsg {
             role: "user".into(),
             content: truncate_chars(content, 500),
+            images: vec![],
         },
     ];
 
@@ -233,6 +235,31 @@ fn body_url(body: &str) -> String {
         .unwrap_or_default()
 }
 
+/// Only screenshots written by the computer tools qualify — a model must not
+/// be able to attach arbitrary local files to a request.
+fn shot_marker(line: &str) -> Option<String> {
+    let p = line.strip_prefix("screenshot: ")?.trim();
+
+    (p.ends_with(".png") && p.contains("/screenshots/shot-")).then(|| p.to_string())
+}
+
+/// Attach at most the last two screenshots as image parts; older markers
+/// stay as text only.
+fn attach_shots(msgs: &mut [WireMsg]) {
+    let mut left = 2usize;
+
+    for m in msgs.iter_mut().rev() {
+        let paths: Vec<String> = m.content.lines().filter_map(shot_marker).collect();
+
+        if paths.is_empty() || left == 0 {
+            continue;
+        }
+
+        m.images = paths;
+        left -= 1;
+    }
+}
+
 fn sanitize_tags(s: &str) -> String {
     let mut t = s.to_string();
     t = t
@@ -307,11 +334,13 @@ pub async fn send(
             }
 
             let mut r = p.chat_req();
+            attach_shots(&mut r.msgs);
 
             if let Some(n) = &nudge {
                 r.msgs.push(WireMsg {
                     role: "user".into(),
                     content: n.clone(),
+                    images: vec![],
                 });
             }
 
@@ -581,5 +610,37 @@ pub fn sess_resolve_approval(
             Ok(())
         }
         None => Err("unknown approval".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn msg(content: &str) -> WireMsg {
+        WireMsg {
+            role: "user".into(),
+            content: content.into(),
+            images: vec![],
+        }
+    }
+
+    #[test]
+    fn attach_shots_caps_last_two_and_ignores_outside_paths() {
+        let mut msgs = vec![
+            msg("screenshot: /d/screenshots/shot-1.png\nimage 1"),
+            msg("screenshot: /d/screenshots/shot-2.png"),
+            msg("screenshot: /d/screenshots/shot-3.png"),
+            msg("no shot here"),
+            msg("screenshot: /etc/secret.png"),
+        ];
+
+        attach_shots(&mut msgs);
+
+        assert!(msgs[0].images.is_empty());
+        assert_eq!(msgs[1].images, vec!["/d/screenshots/shot-2.png"]);
+        assert_eq!(msgs[2].images, vec!["/d/screenshots/shot-3.png"]);
+        assert!(msgs[3].images.is_empty());
+        assert!(msgs[4].images.is_empty());
     }
 }

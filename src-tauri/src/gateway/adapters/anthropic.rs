@@ -1,7 +1,7 @@
 use futures_util::StreamExt;
 use reqwest::Client;
 
-use super::{retry_after_secs, sse_events, CallErr, DeltaSink, WireResp};
+use super::{anthropic_content, retry_after_secs, sse_events, CallErr, DeltaSink, WireResp};
 use crate::gateway::schema::{StreamDone, WireMsg};
 
 fn payload(remote_id: &str, msgs: &[WireMsg], streaming: bool) -> serde_json::Value {
@@ -13,7 +13,7 @@ fn payload(remote_id: &str, msgs: &[WireMsg], streaming: bool) -> serde_json::Va
             sys.push_str(&m.content);
             sys.push('\n');
         } else {
-            turns.push(serde_json::json!({ "role": m.role, "content": m.content }));
+            turns.push(serde_json::json!({ "role": m.role, "content": anthropic_content(m) }));
         }
     }
 
@@ -31,7 +31,10 @@ fn payload(remote_id: &str, msgs: &[WireMsg], streaming: bool) -> serde_json::Va
 
     let n = turns.len();
     for i in n.saturating_sub(3)..n {
-        let text = turns[i]["content"].as_str().unwrap_or_default().to_string();
+        let Some(text) = turns[i]["content"].as_str() else {
+            continue;
+        };
+
         pl["messages"][i]["content"] = serde_json::json!([
             { "type": "text", "text": text, "cache_control": { "type": "ephemeral" } }
         ]);

@@ -179,3 +179,38 @@ async fn run_stream_returns_when_shell_exits_even_if_pipe_held() {
         "hung on a pipe held by a detached child"
     );
 }
+
+#[test]
+fn coerces_attribute_style_actions_to_json_args() {
+    let t = r#"do it <action tool="computer.click" x="96" y="740" double="false"></action> done"#;
+    let acts = parse_actions(t);
+
+    assert_eq!(acts.len(), 1);
+    assert_eq!(acts[0].tool, "computer.click");
+    let args: Value = serde_json::from_str(&acts[0].args).expect("coerced json");
+    assert_eq!(args["x"], 96);
+    assert_eq!(args["y"], 740);
+    assert_eq!(args["double"], false);
+}
+
+#[test]
+fn empty_and_quoted_attribute_args() {
+    let acts = parse_actions(r#"<action tool="computer.observe"></action>"#);
+    assert_eq!(acts.len(), 1);
+    assert_eq!(acts[0].args, "{}");
+
+    let acts = parse_actions(r#"<action tool='computer.type' text="hello world">junk</action>"#);
+    assert_eq!(acts[0].tool, "computer.type");
+    let args: Value = serde_json::from_str(&acts[0].args).expect("coerced json");
+    assert_eq!(args["text"], "hello world");
+
+    let acts = parse_actions(r#"<action tool="computer.type" text="say > ok">junk</action>"#);
+    let args: Value = serde_json::from_str(&acts[0].args).expect("coerced json");
+    assert_eq!(args["text"], "say > ok");
+}
+
+#[test]
+fn json_body_actions_stay_untouched() {
+    let acts = parse_actions(r#"<action tool="computer.click">{"x":100,"y":200}</action>"#);
+    assert_eq!(acts[0].args, r#"{"x":100,"y":200}"#);
+}

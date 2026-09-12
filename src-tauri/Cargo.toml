@@ -23,6 +23,7 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.36", features = ["bundled"] }
+base64 = "0.22"
 reqwest = { version = "0.12", features = ["json", "stream", "gzip", "brotli"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "process", "net", "io-util", "io-std"] }

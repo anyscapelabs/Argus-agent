@@ -1,6 +1,4 @@
 pub mod browser;
-pub mod browser_ext;
-pub mod extpipe;
 pub mod fs;
 pub mod grep;
 pub mod shell;

@@ -1,4 +1,3 @@
-use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
@@ -36,10 +35,11 @@ fn check_tools() -> Result<(), String> {
     ))
 }
 
-fn run(bin: &str, args: &[&str]) -> Result<String, String> {
-    let out = Command::new(bin)
+async fn run(bin: &str, args: &[&str]) -> Result<String, String> {
+    let out = tokio::process::Command::new(bin)
         .args(args)
         .output()
+        .await
         .map_err(|err| format!("{bin}: {err}"))?;
 
     if !out.status.success() {
@@ -69,7 +69,7 @@ fn dims(s: &str) -> Result<(i64, i64), String> {
 }
 
 async fn set_shot(shot_w: i64, shot_h: i64) -> Result<(), String> {
-    let geom = run("xdotool", &["getdisplaygeometry"])?;
+    let geom = run("xdotool", &["getdisplaygeometry"]).await?;
     let (screen_w, screen_h) = dims(&geom)?;
 
     *SHOT.lock().await = Some(Shot {
@@ -85,7 +85,7 @@ async fn set_shot(shot_w: i64, shot_h: i64) -> Result<(), String> {
 pub async fn observe() -> Result<String, String> {
     let tree = super::atspi::tree().await?;
 
-    let wins = run("wmctrl", &["l"]).unwrap_or_default();
+    let wins = run("wmctrl", &["l"]).await.unwrap_or_default();
     let wins: String = wins.lines().take(40).collect::<Vec<_>>().join("\n");
 
     Ok(format!(
@@ -108,15 +108,15 @@ pub async fn screen() -> Result<String, String> {
     let full_str = full.to_str().ok_or_else(|| "bad shot path".to_string())?;
     let shot_str = shot.to_str().ok_or_else(|| "bad shot path".to_string())?;
 
-    run("import", &["-window", "root", full_str])?;
-    run("convert", &[full_str, "-resize", "1280x>", shot_str])?;
+    run("import", &["-window", "root", full_str]).await?;
+    run("convert", &[full_str, "-resize", "1280x>", shot_str]).await?;
     let _ = std::fs::remove_file(&full);
 
-    let ident = run("identify", &["-format", "%w %h", shot_str])?;
+    let ident = run("identify", &["-format", "%w %h", shot_str]).await?;
     let (w, h) = dims(&ident)?;
     set_shot(w, h).await?;
 
-    let wins = run("wmctrl", &["l"]).unwrap_or_default();
+    let wins = run("wmctrl", &["l"]).await.unwrap_or_default();
     let wins: String = wins.lines().take(40).collect::<Vec<_>>().join("\n");
 
     Ok(format!(
@@ -129,14 +129,14 @@ async fn coords(args: &Value) -> Result<(String, String), String> {
     let g = SHOT.lock().await;
     let s = g
         .as_ref()
-        .ok_or("no screenshot yet — run computer.observe first")?;
+        .ok_or("no screenshot yet — run computer.screen first")?;
 
     let x = args.get("x").and_then(|v| v.as_f64()).ok_or("missing x")?;
     let y = args.get("y").and_then(|v| v.as_f64()).ok_or("missing y")?;
 
     if x < 0.0 || y < 0.0 || x >= s.w as f64 || y >= s.h as f64 {
         return Err(format!(
-            "x,y outside the screenshot ({}x{}) — run computer.observe for a fresh one",
+            "x,y outside the screenshot ({}x{}) — run computer.screen for a fresh one",
             s.w, s.h
         ));
     }
@@ -151,8 +151,18 @@ pub async fn click_xy(x: i32, y: i32) -> Result<(), String> {
     check_tools()?;
 
     let (xs, ys) = (x.to_string(), y.to_string());
-    run("xdotool", &["mousemove", &xs, &ys, "click", "1"])?;
+    run("xdotool", &["mousemove", &xs, &ys, "click", "1"]).await?;
     Ok(())
+}
+
+pub async fn refresh() -> Result<String, String> {
+    match screen().await {
+        Ok(shot) => {
+            let tree = super::atspi::tree().await.unwrap_or_default();
+            Ok(format!("{shot}\n{tree}"))
+        }
+        Err(_) => observe().await,
+    }
 }
 
 pub async fn click(args: &Value) -> Result<String, String> {
@@ -177,9 +187,9 @@ pub async fn click(args: &Value) -> Result<String, String> {
     }
 
     a.push(&button);
-    run("xdotool", &a)?;
+    run("xdotool", &a).await?;
 
-    observe().await
+    refresh().await
 }
 
 pub async fn type_text(args: &Value) -> Result<String, String> {
@@ -193,8 +203,9 @@ pub async fn type_text(args: &Value) -> Result<String, String> {
 
     super::atspi::focus_ref(args).await?;
 
-    run("xdotool", &["type", "--delay", "20", "--", text])?;
-    observe().await
+    run("xdotool", &["type", "--delay", "20", "--", text]).await?;
+
+    refresh().await
 }
 
 pub async fn key(args: &Value) -> Result<String, String> {
@@ -213,8 +224,9 @@ pub async fn key(args: &Value) -> Result<String, String> {
         return Err("key must be a combo like Return, ctrl+c, alt+Tab".into());
     }
 
-    run("xdotool", &["key", "--", k])?;
-    observe().await
+    run("xdotool", &["key", "--", k]).await?;
+
+    refresh().await
 }
 
 pub async fn scroll(args: &Value) -> Result<String, String> {
@@ -242,9 +254,9 @@ pub async fn scroll(args: &Value) -> Result<String, String> {
 
     a.extend(["click".into(), "--repeat".into(), amount, btn.into()]);
     let refs: Vec<&str> = a.iter().map(|s| s.as_str()).collect();
-    run("xdotool", &refs)?;
+    run("xdotool", &refs).await?;
 
-    observe().await
+    refresh().await
 }
 
 pub async fn window(args: &Value) -> Result<String, String> {
@@ -266,13 +278,54 @@ pub async fn window(args: &Value) -> Result<String, String> {
 
     match action {
         "activate" => {
-            run("wmctrl", &["-i", "-a", id])?;
+            run("wmctrl", &["-i", "-a", id]).await?;
         }
         "close" => {
-            run("wmctrl", &["-i", "-c", id])?;
+            run("wmctrl", &["-i", "-c", id]).await?;
         }
         _ => return Err("action must be activate or close".into()),
     }
 
-    observe().await
+    refresh().await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    async fn seed_shot() {
+        *SHOT.lock().await = Some(Shot {
+            w: 640,
+            h: 360,
+            screen_w: 1280,
+            screen_h: 720,
+        });
+    }
+
+    #[tokio::test]
+    async fn coords_scale_screenshot_to_screen() {
+        seed_shot().await;
+
+        let got = coords(&json!({"x": 320.0, "y": 180.0})).await.unwrap();
+        assert_eq!(got, ("640".to_string(), "360".to_string()));
+    }
+
+    #[tokio::test]
+    async fn coords_reject_outside_bounds() {
+        seed_shot().await;
+
+        let err = coords(&json!({"x": 700.0, "y": 10.0})).await.unwrap_err();
+        assert!(err.contains("computer.screen"), "guides to screen: {err}");
+    }
+
+    #[tokio::test]
+    async fn coords_without_screenshot_guides_to_screen() {
+        *SHOT.lock().await = None;
+
+        let err = coords(&json!({"x": 1.0, "y": 1.0})).await.unwrap_err();
+        assert!(err.contains("computer.screen"), "guides to screen: {err}");
+
+        seed_shot().await;
+    }
 }

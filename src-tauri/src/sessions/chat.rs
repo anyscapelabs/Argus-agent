@@ -133,6 +133,10 @@ fn approval_id() -> String {
     format!("ap{}", uuid::Uuid::new_v4().as_simple())
 }
 
+pub fn repeated(recent: &[(String, String)], key: &(String, String)) -> bool {
+    recent.iter().rev().take_while(|p| *p == key).count() >= 2
+}
+
 async fn ask_approval(
     gw: &Gateway,
     chan: &Channel<StreamEvent>,
@@ -316,6 +320,7 @@ pub async fn send(
     let mut act_base = 0usize;
     let mut nudge: Option<String> = None;
     let mut nudged = false;
+    let mut recent: Vec<(String, String)> = vec![];
 
     for _step in 0..MAX_STEPS {
         let mut req = {
@@ -399,7 +404,11 @@ pub async fn send(
             let sensitive = is_browser && tools::browser::sensitive(&a.tool, &args_v).await;
             let needs_ask = (perm == "ask" && tools::is_mutating(&a.tool)) || sensitive;
 
-            let mut allow = !needs_ask;
+            let key = (a.tool.clone(), a.args.clone());
+            let looped = repeated(&recent, &key);
+            recent.push(key);
+
+            let mut allow = !needs_ask && !looped;
             let mut denied = false;
 
             if !allow {
@@ -420,7 +429,14 @@ pub async fn send(
                 }
             }
 
-            let (status, body, code) = if denied {
+            let (status, body, code) = if looped {
+                (
+                    "err",
+                    "same action 3 times without visible progress — change approach or ask the user"
+                        .to_string(),
+                    -1,
+                )
+            } else if denied {
                 ("err", "action denied by user".to_string(), DENIED_CODE)
             } else {
                 match tools::exec(

@@ -354,6 +354,7 @@ pub async fn exec(
         "computer.key" => computer::x11::key(&args).await,
         "computer.scroll" => computer::x11::scroll(&args).await,
         "computer.window" => computer::x11::window(&args).await,
+        "computer.launch" => computer::x11::launch(&args).await,
         _ => Err("unknown tool".into()),
     }
 }
@@ -445,16 +446,18 @@ cheapest and most reliable first — never jump straight to pixels:\n\
 1. Native surface first. Before GUI-automating any app, check whether a \
 structured tool already covers it: shell commands go through terminal (never \
 automate a terminal window), web through the browser tools, files through \
-terminal/fs. If the app has a CLI, use it. GUI automation is for apps with \
-no other surface.\n\
+terminal/fs. If the app has a CLI, use it. To open an app, use \
+computer.launch with its name — never hunt for its icon on screen. GUI \
+automation is for apps with no other surface.\n\
 2. Accessibility tree by default. computer.observe reads every window as \
 structured text with element refs. Those [n] refs work only in computer.act \
 and computer.type — never use one in a browser.* tool. Act by ref with \
 computer.act (press, toggle, select) — it runs the app's own action, no \
 coordinates involved. \
 computer.type takes a ref to focus a field. After every action the result \
-is a fresh screenshot and tree: verify before the next step, one action \
-per step. Resolve \
+is a fresh screenshot and tree: verify the action worked before the next \
+step, one action per step. If an action changed nothing, do not repeat it — \
+switch tiers or ask the user. Resolve \
 the right window first with computer.window when several overlap — never \
 act on 'whatever is focused'.\n\
 3. Pixels last. computer.screen + computer.click only when the tree cannot \

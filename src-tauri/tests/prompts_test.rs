@@ -40,6 +40,7 @@ fn skill_read_is_listed_and_read_only() {
     assert!(!is_mutating("skill.read"));
     assert!(is_mutating("computer.act"));
     assert!(is_mutating("computer.click"));
+    assert!(is_mutating("computer.launch"));
     assert!(!is_mutating("computer.observe"));
 }
 

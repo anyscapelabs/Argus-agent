@@ -58,6 +58,28 @@ fn stamp() -> u128 {
         .map_or(0, |d| d.as_millis())
 }
 
+fn prune_shots(dir: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut shots: Vec<_> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.starts_with("shot-") && n.ends_with(".png"))
+                .unwrap_or(false)
+        })
+        .collect();
+
+    shots.sort();
+
+    for old in shots.iter().take(shots.len().saturating_sub(20)) {
+        let _ = std::fs::remove_file(old);
+    }
+}
+
 fn dims(s: &str) -> Result<(i64, i64), String> {
     let mut it = s.split_whitespace().filter_map(|v| v.parse::<i64>().ok());
 
@@ -110,6 +132,7 @@ pub async fn screen() -> Result<String, String> {
     run("import", &["-window", "root", full_str]).await?;
     run("convert", &[full_str, "-resize", "1280x>", shot_str]).await?;
     let _ = std::fs::remove_file(&full);
+    prune_shots(&dir);
 
     let ident = run("identify", &["-format", "%w %h", shot_str]).await?;
     let (w, h) = dims(&ident)?;
@@ -298,6 +321,130 @@ pub async fn window(args: &Value) -> Result<String, String> {
         }
         _ => return Err("action must be activate or close".into()),
     }
+
+    refresh().await
+}
+
+pub fn app_dirs() -> Vec<std::path::PathBuf> {
+    let mut dirs = vec![std::path::PathBuf::from("/usr/share/applications")];
+
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.is_empty() {
+            dirs.push(std::path::PathBuf::from(home).join(".local/share/applications"));
+        }
+    }
+
+    if let Ok(extra) = std::env::var("XDG_DATA_DIRS") {
+        dirs.extend(
+            extra
+                .split(':')
+                .filter(|d| !d.is_empty())
+                .map(|d| std::path::PathBuf::from(d).join("applications")),
+        );
+    }
+
+    dirs
+}
+
+pub fn desktop_name(path: &std::path::Path) -> Option<String> {
+    std::fs::read_to_string(path).ok()?.lines().find_map(|l| {
+        l.strip_prefix("Name=")
+            .filter(|n| !n.is_empty())
+            .map(|n| n.to_string())
+    })
+}
+
+pub fn find_desktop(want: &str) -> Result<String, String> {
+    let w = want.to_lowercase();
+    let mut fuzzy: Option<String> = None;
+    let mut known: Vec<String> = vec![];
+
+    for dir in app_dirs() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+
+            if path.extension().and_then(|e| e.to_str()) != Some("desktop") {
+                continue;
+            }
+
+            let stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or_default()
+                .to_lowercase();
+
+            if stem == w {
+                return Ok(path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or_default()
+                    .to_string());
+            }
+
+            let name = desktop_name(&path).unwrap_or_default();
+
+            if known.len() < 12 && !name.is_empty() {
+                known.push(name.clone());
+            }
+
+            if fuzzy.is_none() && (stem.contains(&w) || name.to_lowercase().contains(&w)) {
+                fuzzy = path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.to_string());
+            }
+        }
+    }
+
+    if let Some(f) = fuzzy {
+        return Ok(f);
+    }
+
+    Err(format!(
+        "no app matching '{want}' (e.g. {})",
+        known.join(", ")
+    ))
+}
+
+pub async fn launch(args: &Value) -> Result<String, String> {
+    let want = args
+        .get("app")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or("missing app")?;
+    let file = find_desktop(want)?;
+
+    if have("gtk-launch") {
+        tokio::process::Command::new("gtk-launch")
+            .arg(&file)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map_err(|err| format!("gtk-launch: {err}"))?;
+    } else if have("gio") {
+        let full = app_dirs()
+            .iter()
+            .map(|d| d.join(&file))
+            .find(|p| p.is_file())
+            .ok_or("app file vanished")?;
+        tokio::process::Command::new("gio")
+            .arg("launch")
+            .arg(&full)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map_err(|err| format!("gio: {err}"))?;
+    } else {
+        return Err("app launching needs gtk-launch or gio".into());
+    }
+
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
 
     refresh().await
 }

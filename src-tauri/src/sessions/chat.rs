@@ -29,7 +29,8 @@ Write a short session title for the user's message. Reply with only the title: \
 3 to 6 words, no quotes, no trailing punctuation.";
 
 const NUDGE: &str = "Continue: your last reply said you were acting, but it contained no \
-<action> block, so nothing actually ran. Emit the correct action block now. If you \
+<action> block, so nothing actually ran. Emit the block now and end your reply right \
+after it: <action tool=\"...\">{\"arg\":\"...\"}</action>. If you \
 cannot act, say so plainly — never describe an action without running it.";
 
 pub fn claims_action(text: &str) -> bool {
@@ -431,6 +432,7 @@ pub async fn send(
                 ("err", "action denied by user".to_string(), DENIED_CODE)
             } else {
                 match tools::exec(
+                    gw,
                     &a.tool,
                     &a.args,
                     &perm,

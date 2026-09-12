@@ -44,6 +44,12 @@ const TOOLS: &[ToolMeta] = &[
         args: "{\"path\":\"...\",\"content\":\"...\"}",
         mutating: true,
     },
+    ToolMeta {
+        name: "skill.read",
+        desc: "read one skill's full body by name from the Skills index",
+        args: "{\"name\":\"...\"}",
+        mutating: false,
+    },
 ];
 
 const WEB_TOOLS: &[ToolMeta] = &[
@@ -325,6 +331,7 @@ fn collect_spans(body: &str, open: &str, close: &str) -> Vec<String> {
 }
 
 pub async fn exec(
+    gw: &crate::gateway::Gateway,
     name: &str,
     args_json: &str,
     permission: &str,
@@ -365,6 +372,16 @@ pub async fn exec(
         }
         "grep" => grep::run(&args).await,
         "fs.write" => fs::write(&args),
+        "skill.read" => {
+            let name = args
+                .get("name")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .ok_or("missing name")?;
+            let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+            let sk = crate::skills::store::get_skill(&conn, &gw.skills_dir, name)?;
+            Ok(format!("{}\n{}", sk.description, sk.body))
+        }
         "web.search" => web::search(&args).await,
         "web.read" => web::read(&args).await,
         "browser.open" => browser::open(&args).await,
@@ -398,23 +415,31 @@ pub fn is_mutating(name: &str) -> bool {
 pub fn section(web: bool) -> String {
     let mut s = String::from(
         "\n\n## Tools\n\
-You work in steps. To run a tool, end your reply with an action block:\n\
+Work in steps:\n\
+1. To run a tool, end your reply with one or more action blocks:\n\
 <action tool=\"fs.write\">{\"path\":\"~/notes.txt\",\"content\":\"hello\"}</action>\n\
-Args are a JSON object between the tags, exactly like the example. Never put \
-args as tag attributes, never self-close the tag.\n\
-Several action blocks in one reply run in order. Results come back as the next \
-message wrapped in <tool-result tool=\"...\" status=\"ok|err\">output</tool-result>. \
-Then continue: act again or write the final answer with no action block.\n\
-When a result arrives you will SEE it — until then you know nothing about the \
-outcome, so after writing your action block(s) end the reply. Never describe \
-what a tool returned and never say an action worked before its result message \
-arrives; never narrate screenshots you were not given.\n\
-Never invent tool output, never claim a tool ran without an action block, never \
-wrap an action block inside another tag. Never use <tool_call> or any other tool-call \
-format — the action block is the only way to run a tool.\n\
-If a tool result has status err, never run the same action again. Tell the user \
-what failed in plain words and what would fix it.\n\
-Terminal commands may need the user's approval; if one is denied, never retry it.\n\
+2. Args are one JSON object between the tags: double quotes, no trailing commas, no comments.\n\
+3. After your action block(s), end the reply. Each result arrives as the next message:\n\
+<tool-result tool=\"...\" status=\"ok|err\">output</tool-result>\n\
+Until it arrives you know nothing about the outcome — never describe a result first.\n\
+4. Then continue: act again, or write the final answer with no action block.\n\
+\n\
+A full round looks like this. You write:\n\
+I will check the file.\n\
+<action tool=\"terminal\">{\"command\":\"cat ~/notes.txt\",\"cwd\":\".\"}</action>\n\
+The next message is:\n\
+<tool-result tool=\"terminal\" status=\"ok\">exit 0\nhello</tool-result>\n\
+So your reply is: The file says hello.\n\
+\n\
+Rules:\n\
+- Independent reads may share one reply; desktop actions run one per reply.\n\
+- A result with status err (including \"action denied by user\") ends that line of action: \
+explain the failure and what would fix it, never repeat the same call.\n\
+- Never narrate a screenshot you were not given, and never claim a tool ran \
+without its result message.\n\
+- The action block is the only way to run a tool: never <tool_call> or any other \
+tool-call format, never args as tag attributes, never a self-closed tag, never \
+an action block nested inside another tag.\n\
 Available tools:\n",
     );
 
@@ -423,8 +448,11 @@ Available tools:\n",
     }
 
     s.push_str(
-        "To open a GUI app, detach it so the command returns at once: append \
-         >/dev/null 2>&1 & — xdg-open and similar block until the app closes.\n",
+        "Terminal rules:\n\
+1. Some commands pause for user approval first.\n\
+2. To open a GUI app, detach it so the command returns at once: end the \
+command with >/dev/null 2>&1 & — xdg-open and similar block until the app closes.\n\
+3. Never automate a terminal window with GUI tools; run the command here instead.\n",
     );
 
     s.push_str("Browser tools:\n");
@@ -432,7 +460,8 @@ Available tools:\n",
         s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));
     }
     s.push_str(
-        "Browser refs are the [n] numbers from the last snapshot; after every page \
+        "Browser refs are the [n] numbers from the last browser snapshot, and they \
+work only in browser.* tools — never use one in a computer.* tool. After every page \
 change re-check the list before using a ref, and re-read if a ref is stale. \
 Never type passwords or payment details into the browser yourself — if a page \
 asks you to log in or pay, tell the user to do it inside the Argus browser \
@@ -462,8 +491,10 @@ automate a terminal window), web through the browser tools, files through \
 terminal/fs. If the app has a CLI, use it. GUI automation is for apps with \
 no other surface.\n\
 2. Accessibility tree by default. computer.observe reads every window as \
-structured text with element refs. Act by ref with computer.act (press, \
-toggle, select) — it runs the app's own action, no coordinates involved. \
+structured text with element refs. Those [n] refs work only in computer.act \
+and computer.type — never use one in a browser.* tool. Act by ref with \
+computer.act (press, toggle, select) — it runs the app's own action, no \
+coordinates involved. \
 computer.type takes a ref to focus a field. After every action the result \
 is a fresh screenshot and tree: verify before the next step, one action \
 per step. Resolve \
@@ -488,8 +519,8 @@ refused in code; tell the user to enter it themselves.\n",
             "Cite what you used: after web.search or web.read, mention the source url in the reply.\n\
 For static pages — docs, pricing, articles — prefer web.read: plain fetch, faster, \
 fewer bot checks; use the browser only when a page needs interaction (clicking, \
-forms, JS apps). If search or a page serves a bot-check or rate-limit page, wait \
-a moment and retry once with different wording, or switch engine.\n",
+forms, JS apps). If search or a page serves a bot-check or rate-limit page, \
+retry once with different wording, or switch engine.\n",
         );
     }
 
@@ -565,4 +596,46 @@ pub fn clip_ends(s: String) -> String {
     };
 
     format!("{head}\n...[truncated]...\n{tail}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn section_teaches_the_full_round() {
+        let s = section(false);
+
+        assert!(s.contains("A full round looks like this"), "{s}");
+        assert!(s.contains("<action tool=\"terminal\">"), "{s}");
+        assert!(s.contains("<tool-result tool=\"terminal\""), "{s}");
+        assert!(s.contains("action denied by user"), "{s}");
+        assert!(s.contains("one per reply"), "{s}");
+    }
+
+    #[test]
+    fn section_keeps_ref_namespaces_apart() {
+        let s = section(false);
+
+        assert!(s.contains("only in browser.* tools"), "{s}");
+        assert!(s.contains("only in computer.act"), "{s}");
+    }
+
+    #[test]
+    fn skill_read_is_listed_and_read_only() {
+        let s = section(false);
+
+        assert!(s.contains("skill.read"), "{s}");
+        assert!(!is_mutating("skill.read"));
+        assert!(is_mutating("computer.act"));
+        assert!(is_mutating("computer.click"));
+        assert!(!is_mutating("computer.observe"));
+    }
+
+    #[test]
+    fn terminal_detach_rule_survives() {
+        let s = section(false);
+
+        assert!(s.contains(">/dev/null 2>&1 &"), "{s}");
+    }
 }

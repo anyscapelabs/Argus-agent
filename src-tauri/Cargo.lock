@@ -56,6 +56,7 @@ dependencies = [
  "chromiumoxide",
  "futures-util",
  "keyring",
+ "percent-encoding",
  "regex",
  "reqwest 0.12.28",
  "rusqlite",
@@ -66,6 +67,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "tokio",
+ "url",
  "uuid",
 ]
 

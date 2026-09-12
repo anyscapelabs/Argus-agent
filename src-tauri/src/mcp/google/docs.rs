@@ -1,7 +1,17 @@
-use super::oauth::url_encode;
+use url::Url;
+
 use super::{authed_get, authed_post};
 
 const BASE: &str = "https://docs.googleapis.com/v1/documents";
+
+fn doc_url(doc_id: &str) -> Result<Url, String> {
+    let mut url = Url::parse(BASE).map_err(|err| err.to_string())?;
+    url.path_segments_mut()
+        .map_err(|_| "bad docs base".to_string())?
+        .push(doc_id);
+
+    Ok(url)
+}
 
 fn para_text(el: &serde_json::Value) -> String {
     el.get("paragraph")
@@ -24,7 +34,7 @@ pub async fn get_doc(doc_id: &str) -> Result<serde_json::Value, String> {
         return Err("missing doc id".into());
     }
 
-    let d = authed_get(&format!("{BASE}/{}", url_encode(doc_id))).await?;
+    let d = authed_get(doc_url(doc_id)?.as_str()).await?;
 
     let text: String = d
         .get("body")
@@ -57,7 +67,7 @@ pub async fn append_text(doc_id: &str, text: &str) -> Result<serde_json::Value, 
         return Err("missing text".into());
     }
 
-    let d = authed_get(&format!("{BASE}/{}", url_encode(doc_id))).await?;
+    let d = authed_get(doc_url(doc_id)?.as_str()).await?;
     let end = d
         .get("body")
         .and_then(|b| b.get("content"))
@@ -69,8 +79,15 @@ pub async fn append_text(doc_id: &str, text: &str) -> Result<serde_json::Value, 
         .max(1) as i64
         - 1;
 
+    let mut batch = doc_url(doc_id)?;
+    batch
+        .path_segments_mut()
+        .map_err(|_| "bad docs base".to_string())?
+        .pop()
+        .push(&format!("{doc_id}:batchUpdate"));
+
     authed_post(
-        &format!("{BASE}/{}:batchUpdate", url_encode(doc_id)),
+        batch.as_str(),
         &serde_json::json!({
             "requests": [{"insertText": {"location": {"index": end}, "text": text}}],
         }),

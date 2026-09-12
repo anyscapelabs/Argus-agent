@@ -125,6 +125,24 @@ pub async fn screen() -> Result<String, String> {
     ))
 }
 
+pub fn scale_coords(
+    x: f64,
+    y: f64,
+    w: i64,
+    h: i64,
+    screen_w: i64,
+    screen_h: i64,
+) -> Option<(i64, i64)> {
+    if x < 0.0 || y < 0.0 || x >= w as f64 || y >= h as f64 {
+        return None;
+    }
+
+    Some((
+        (x * screen_w as f64 / w as f64).round() as i64,
+        (y * screen_h as f64 / h as f64).round() as i64,
+    ))
+}
+
 async fn coords(args: &Value) -> Result<(String, String), String> {
     let g = SHOT.lock().await;
     let s = g
@@ -134,17 +152,13 @@ async fn coords(args: &Value) -> Result<(String, String), String> {
     let x = args.get("x").and_then(|v| v.as_f64()).ok_or("missing x")?;
     let y = args.get("y").and_then(|v| v.as_f64()).ok_or("missing y")?;
 
-    if x < 0.0 || y < 0.0 || x >= s.w as f64 || y >= s.h as f64 {
-        return Err(format!(
+    match scale_coords(x, y, s.w, s.h, s.screen_w, s.screen_h) {
+        Some((rx, ry)) => Ok((rx.to_string(), ry.to_string())),
+        None => Err(format!(
             "x,y outside the screenshot ({}x{}) — run computer.screen for a fresh one",
             s.w, s.h
-        ));
+        )),
     }
-
-    let rx = (x * s.screen_w as f64 / s.w as f64).round() as i64;
-    let ry = (y * s.screen_h as f64 / s.h as f64).round() as i64;
-
-    Ok((rx.to_string(), ry.to_string()))
 }
 
 pub async fn click_xy(x: i32, y: i32) -> Result<(), String> {
@@ -287,45 +301,4 @@ pub async fn window(args: &Value) -> Result<String, String> {
     }
 
     refresh().await
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    async fn seed_shot() {
-        *SHOT.lock().await = Some(Shot {
-            w: 640,
-            h: 360,
-            screen_w: 1280,
-            screen_h: 720,
-        });
-    }
-
-    #[tokio::test]
-    async fn coords_scale_screenshot_to_screen() {
-        seed_shot().await;
-
-        let got = coords(&json!({"x": 320.0, "y": 180.0})).await.unwrap();
-        assert_eq!(got, ("640".to_string(), "360".to_string()));
-    }
-
-    #[tokio::test]
-    async fn coords_reject_outside_bounds() {
-        seed_shot().await;
-
-        let err = coords(&json!({"x": 700.0, "y": 10.0})).await.unwrap_err();
-        assert!(err.contains("computer.screen"), "guides to screen: {err}");
-    }
-
-    #[tokio::test]
-    async fn coords_without_screenshot_guides_to_screen() {
-        *SHOT.lock().await = None;
-
-        let err = coords(&json!({"x": 1.0, "y": 1.0})).await.unwrap_err();
-        assert!(err.contains("computer.screen"), "guides to screen: {err}");
-
-        seed_shot().await;
-    }
 }

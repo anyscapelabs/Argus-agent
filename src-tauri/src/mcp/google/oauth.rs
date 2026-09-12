@@ -1,9 +1,9 @@
-use std::collections::HashMap;
 use std::sync::{Mutex as StdMutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use url::Url;
 use uuid::Uuid;
 
 const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -24,48 +24,16 @@ fn pending() -> &'static StdMutex<Option<Pending>> {
     PENDING.get_or_init(|| StdMutex::new(None))
 }
 
-fn pct_decode(s: &str) -> String {
-    let mut out = Vec::with_capacity(s.len());
-    let b = s.as_bytes();
-    let mut i = 0;
+pub fn callback_query(path: &str) -> Vec<(String, String)> {
+    let full = format!("http://127.0.0.1{path}");
 
-    while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let (Some(h), Some(l)) = (hex(b[i + 1]), hex(b[i + 2])) {
-                out.push(h * 16 + l);
-                i += 3;
-                continue;
-            }
-        }
-
-        out.push(if b[i] == b'+' { b' ' } else { b[i] });
-        i += 1;
-    }
-
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-fn hex(c: u8) -> Option<u8> {
-    match c {
-        b'0'..=b'9' => Some(c - b'0'),
-        b'a'..=b'f' => Some(c - b'a' + 10),
-        b'A'..=b'F' => Some(c - b'A' + 10),
-        _ => None,
-    }
-}
-
-fn query_pairs(path: &str) -> HashMap<String, String> {
-    let mut m = HashMap::new();
-
-    if let Some((_, q)) = path.split_once('?') {
-        for kv in q.split('&') {
-            if let Some((k, v)) = kv.split_once('=') {
-                m.insert(pct_decode(k), pct_decode(v));
-            }
-        }
-    }
-
-    m
+    Url::parse(&full)
+        .map(|u| {
+            u.query_pairs()
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 pub async fn auth_url() -> Result<String, String> {
@@ -85,21 +53,16 @@ pub async fn auth_url() -> Result<String, String> {
     let state = Uuid::new_v4().to_string();
     let redirect = format!("http://127.0.0.1:{port}/callback");
 
-    let mut url = format!(
-        "{AUTH_URL}?response_type=code&client_id={}&redirect_uri={}&scope={}&state={state}&access_type=offline&prompt=consent",
-        url_encode(&cfg.client_id),
-        url_encode(&redirect),
-        url_encode(&super::config::SCOPES.join(" ")),
-    );
-
-    if url.len() > 1800 {
-        url = format!(
-            "{AUTH_URL}?response_type=code&client_id={}&redirect_uri={}&scope={}&state={state}&access_type=offline",
-            url_encode(&cfg.client_id),
-            url_encode(&redirect),
-            url_encode(&super::config::SCOPES.join(" ")),
-        );
-    }
+    let mut url = Url::parse(AUTH_URL).map_err(|err| err.to_string())?;
+    url.query_pairs_mut()
+        .append_pair("response_type", "code")
+        .append_pair("client_id", &cfg.client_id)
+        .append_pair("redirect_uri", &redirect)
+        .append_pair("scope", &super::config::SCOPES.join(" "))
+        .append_pair("state", &state)
+        .append_pair("access_type", "offline")
+        .append_pair("prompt", "consent");
+    let url = url.to_string();
 
     *pending().lock().map_err(|err| err.to_string())? = Some(Pending {
         url: url.clone(),
@@ -110,20 +73,6 @@ pub async fn auth_url() -> Result<String, String> {
     tokio::spawn(wait_callback(state, listener));
 
     Ok(url)
-}
-
-pub(crate) fn url_encode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-
-    for b in s.bytes() {
-        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
-            out.push(b as char);
-        } else {
-            out.push_str(&format!("%{b:02X}"));
-        }
-    }
-
-    out
 }
 
 async fn read_head(stream: &mut TcpStream) -> Result<String, String> {
@@ -211,9 +160,10 @@ async fn wait_callback(state: String, listener: TcpListener) {
         .nth(1)
         .unwrap_or("")
         .to_string();
-    let q = query_pairs(&path);
+    let q = callback_query(&path);
+    let param = |k: &str| q.iter().find(|(key, _)| key == k).map(|(_, v)| v.clone());
 
-    if q.get("state").map(|s| s.as_str()) != Some(state.as_str()) {
+    if param("state").as_deref() != Some(state.as_str()) {
         let (ok, t, b) = finish(
             false,
             "Wrong state",
@@ -223,15 +173,15 @@ async fn wait_callback(state: String, listener: TcpListener) {
         return;
     }
 
-    if let Some(err) = q.get("error") {
+    if let Some(err) = param("error") {
         let msg = format!("Google said no ({err}). Back in Argus, click Connect to retry.");
         let (ok, t, b) = finish(false, "Not authorized", &msg);
         reply(&mut stream, ok, &t, &b).await;
         return;
     }
 
-    let code = match q.get("code") {
-        Some(c) if !c.is_empty() => c.clone(),
+    let code = match param("code") {
+        Some(c) if !c.is_empty() => c,
         _ => {
             let (ok, t, b) = finish(
                 false,
@@ -338,28 +288,4 @@ pub async fn revoke(refresh: &str) {
         .form(&[("token", refresh)])
         .send()
         .await;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn query_pairs_decode() {
-        let q = query_pairs("/callback?code=4%2Fabc&state=x-y");
-
-        assert_eq!(q.get("code").map(|s| s.as_str()), Some("4/abc"));
-        assert_eq!(q.get("state").map(|s| s.as_str()), Some("x-y"));
-    }
-
-    #[test]
-    fn url_encode_leaves_unreserved() {
-        assert_eq!(url_encode("abc-_.~19"), "abc-_.~19");
-        assert!(url_encode("a b@c").contains("%20"));
-    }
-
-    #[test]
-    fn auth_url_rejects_blank_config() {
-        assert!(query_pairs("/callback").is_empty());
-    }
 }

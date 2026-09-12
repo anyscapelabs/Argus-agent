@@ -1,26 +1,39 @@
-use super::oauth::url_encode;
+use url::Url;
+
 use super::{authed_delete, authed_get, authed_post};
 
 const BASE: &str = "https://www.googleapis.com/calendar/v3/calendars";
+
+fn cal_id(calendar_id: &str) -> String {
+    if calendar_id.trim().is_empty() {
+        "primary".to_string()
+    } else {
+        calendar_id.to_string()
+    }
+}
+
+fn events_url(calendar_id: &str) -> Result<Url, String> {
+    let mut url = Url::parse(BASE).map_err(|err| err.to_string())?;
+    url.path_segments_mut()
+        .map_err(|_| "bad calendar base".to_string())?
+        .push(&cal_id(calendar_id))
+        .push("events");
+
+    Ok(url)
+}
 
 pub async fn list_events(
     calendar_id: &str,
     time_min: &str,
     max: u64,
 ) -> Result<serde_json::Value, String> {
-    let cal = if calendar_id.trim().is_empty() {
-        "primary"
-    } else {
-        calendar_id
-    };
-
-    let v = authed_get(&format!(
-        "{BASE}/{}/events?timeMin={}&maxResults={}&singleEvents=true&orderBy=startTime",
-        url_encode(cal),
-        url_encode(time_min),
-        max.clamp(1, 50)
-    ))
-    .await?;
+    let mut url = events_url(calendar_id)?;
+    url.query_pairs_mut()
+        .append_pair("timeMin", time_min)
+        .append_pair("maxResults", &max.clamp(1, 50).to_string())
+        .append_pair("singleEvents", "true")
+        .append_pair("orderBy", "startTime");
+    let v = authed_get(url.as_str()).await?;
 
     let items: Vec<serde_json::Value> = v
         .get("items")
@@ -58,14 +71,10 @@ pub async fn create_event(
         return Err("missing start or end".into());
     }
 
-    let cal = if calendar_id.trim().is_empty() {
-        "primary"
-    } else {
-        calendar_id
-    };
+    let url = events_url(calendar_id)?;
 
     authed_post(
-        &format!("{BASE}/{}/events", url_encode(cal)),
+        url.as_str(),
         &serde_json::json!({
             "summary": summary,
             "description": description,
@@ -81,16 +90,10 @@ pub async fn delete_event(calendar_id: &str, event_id: &str) -> Result<(), Strin
         return Err("missing event id".into());
     }
 
-    let cal = if calendar_id.trim().is_empty() {
-        "primary"
-    } else {
-        calendar_id
-    };
+    let mut url = events_url(calendar_id)?;
+    url.path_segments_mut()
+        .map_err(|_| "bad calendar base".to_string())?
+        .push(event_id);
 
-    authed_delete(&format!(
-        "{BASE}/{}/events/{}",
-        url_encode(cal),
-        url_encode(event_id)
-    ))
-    .await
+    authed_delete(url.as_str()).await
 }

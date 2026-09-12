@@ -4,8 +4,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::Value;
 use tokio::sync::Mutex as AsyncMutex;
 
-use crate::sessions::ext_install::data_dir;
-
 struct Shot {
     w: i64,
     h: i64,
@@ -84,10 +82,26 @@ async fn set_shot(shot_w: i64, shot_h: i64) -> Result<(), String> {
     Ok(())
 }
 
+/// Tier 2 view: the accessibility tree plus the window list. Cheap text —
+/// the default perception, no pixels.
 pub async fn observe() -> Result<String, String> {
+    let tree = super::atspi::tree().await?;
+
+    let wins = run("wmctrl", &["l"]).unwrap_or_default();
+    let wins: String = wins.lines().take(40).collect::<Vec<_>>().join("\n");
+
+    Ok(format!(
+        "{tree}\nWindows:\n{wins}\n\nAct on elements by ref (computer.act) or \
+         focus a window first (computer.window) when several share a screen. \
+         Run computer.screen only when you truly need pixels."
+    ))
+}
+
+/// Tier 3 view: a real screenshot, only when the tree is not enough.
+pub async fn screen() -> Result<String, String> {
     check_tools()?;
 
-    let dir = data_dir().join("screenshots");
+    let dir = super::shot_dir();
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
 
     let ts = stamp();
@@ -143,6 +157,16 @@ async fn coords(args: &Value) -> Result<(String, String), String> {
     Ok((rx.to_string(), ry.to_string()))
 }
 
+/// Synthetic click at real screen coordinates — the tier-2 fallback when an
+/// element exposes no action of its own.
+pub async fn click_xy(x: i32, y: i32) -> Result<(), String> {
+    check_tools()?;
+
+    let (xs, ys) = (x.to_string(), y.to_string());
+    run("xdotool", &["mousemove", &xs, &ys, "click", "1"])?;
+    Ok(())
+}
+
 pub async fn click(args: &Value) -> Result<String, String> {
     check_tools()?;
     let (x, y) = coords(args).await?;
@@ -178,6 +202,9 @@ pub async fn type_text(args: &Value) -> Result<String, String> {
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .ok_or("missing text")?;
+
+    // A ref focuses the field first — and password fields never get typed.
+    super::atspi::focus_ref(args).await?;
 
     run("xdotool", &["type", "--delay", "20", "--", text])?;
     observe().await

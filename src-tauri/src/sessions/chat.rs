@@ -239,7 +239,12 @@ fn body_url(body: &str) -> String {
 /// be able to attach arbitrary local files to a request.
 fn shot_marker(line: &str) -> Option<String> {
     // The marker rides inside a <tool-result> wrapper, so it may sit mid-line.
-    let p = line.split("screenshot: ").nth(1)?.split_whitespace().next()?.trim();
+    let p = line
+        .split("screenshot: ")
+        .nth(1)?
+        .split_whitespace()
+        .next()?
+        .trim();
 
     (p.ends_with(".png") && p.contains("/screenshots/shot-")).then(|| p.to_string())
 }
@@ -656,7 +661,10 @@ mod tests {
 
         assert_eq!(
             shot_marker(line),
-            Some("/home/u/.local/share/com.anyscapelabs.argus/screenshots/shot-1789212996301.png".into())
+            Some(
+                "/home/u/.local/share/com.anyscapelabs.argus/screenshots/shot-1789212996301.png"
+                    .into()
+            )
         );
 
         // a bare marker line still works

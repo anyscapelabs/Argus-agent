@@ -32,4 +32,5 @@ uuid = { version = "1", features = ["v4"] }
 sha2 = "0.10"
 regex = "1"
 chromiumoxide = "0.9"
+atspi = "0.30"
 

@@ -97,6 +97,7 @@ pub async fn tree() -> Result<String, String> {
 
     let root = accessible(c, ROOT_DEST, ROOT_PATH).await?;
     let count = root.child_count().await.unwrap_or(0);
+    let mut g = 0usize;
 
     for i in 0..count.min(30) {
         if elems.len() >= MAX_ELEMS {
@@ -133,10 +134,15 @@ pub async fn tree() -> Result<String, String> {
             &mut out,
             &mut per_app,
             &mut pn,
+            &mut g,
         )
         .await;
 
         elems.append(&mut per_app);
+
+        if elems.len() >= MAX_ELEMS {
+            break;
+        }
     }
 
     elems.truncate(MAX_ELEMS);
@@ -197,6 +203,7 @@ fn walk<'a>(
     out: &'a mut String,
     elems: &'a mut Vec<Elem>,
     n: &'a mut usize,
+    g: &'a mut usize,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
     Box::pin(async move {
         if depth > MAX_DEPTH || *n >= MAX_PER_APP {
@@ -221,7 +228,8 @@ fn walk<'a>(
             let center = node_center(c, dest, path).await;
             let actions = node_actions(c, dest, path).await;
             *n += 1;
-            let idx = *n;
+            *g += 1;
+            let idx = *g;
 
             let mut line = format!(
                 "{indent}[{idx}] {role} '{}'",
@@ -267,12 +275,10 @@ fn walk<'a>(
             };
 
             let kd = kid.name_as_str().unwrap_or_default().to_string();
-            if kd.is_empty() {
-                continue;
-            }
+            let kd = if kd.is_empty() { dest.to_string() } else { kd };
 
             let sub = format!("{indent}  ");
-            walk(c, &kd, kid.path_as_str(), &sub, depth + 1, out, elems, n).await;
+            walk(c, &kd, kid.path_as_str(), &sub, depth + 1, out, elems, n, g).await;
         }
     })
 }
@@ -318,7 +324,7 @@ pub async fn act(args: &Value) -> Result<String, String> {
         ));
     }
 
-    tree().await
+    super::x11::refresh().await
 }
 
 async fn resolve(args: &Value) -> Result<Elem, String> {
@@ -370,4 +376,43 @@ pub async fn focus_ref(args: &Value) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn elem(name: &str) -> Elem {
+        Elem {
+            role: "push button".into(),
+            name: name.into(),
+            center: Some((10, 20)),
+            password: false,
+            actions: vec!["press".into()],
+            dest: ":1.1".into(),
+            path: "/org/test".into(),
+        }
+    }
+
+    async fn seed_snap() {
+        *SNAPSHOT.lock().await = vec![elem("first"), elem("second"), elem("third")];
+    }
+
+    #[tokio::test]
+    async fn resolve_is_one_based() {
+        seed_snap().await;
+
+        assert_eq!(resolve(&json!({"ref": 1})).await.unwrap().name, "first");
+        assert_eq!(resolve(&json!({"ref": 3})).await.unwrap().name, "third");
+    }
+
+    #[tokio::test]
+    async fn resolve_rejects_unknown_ref() {
+        seed_snap().await;
+
+        assert!(resolve(&json!({"ref": 0})).await.is_err());
+        assert!(resolve(&json!({"ref": 4})).await.is_err());
+        assert!(resolve(&json!({})).await.is_err());
+    }
 }

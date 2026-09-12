@@ -7,9 +7,9 @@ use super::catalog;
 use super::schema::{Avail, ChatModel, ModelEntry, Provider, ProviderModel, ReqLog};
 
 pub fn open(db_path: &Path) -> Result<Connection, String> {
-    let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+    let conn = Connection::open(db_path).map_err(|err| err.to_string())?;
     conn.execute_batch(super::schema::MIGRATE)
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
     ensure_cols(&conn)?;
     seed_chk(&conn)?;
     reconcile_connected(&conn)?;
@@ -21,12 +21,12 @@ fn reconcile_connected(conn: &Connection) -> Result<(), String> {
     let unnamed: Vec<String> = {
         let mut stmt = conn
             .prepare("SELECT id FROM providers WHERE name = ''")
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
         let map = stmt
             .query_map([], |r| r.get::<_, String>(0))
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
         map.collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?
+            .map_err(|err| err.to_string())?
     };
 
     for id in &unnamed {
@@ -34,22 +34,22 @@ fn reconcile_connected(conn: &Connection) -> Result<(), String> {
             "DELETE FROM model_providers WHERE provider_id = ?1",
             params![id],
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
         conn.execute("DELETE FROM providers WHERE id = ?1", params![id])
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
     }
 
     let rows: Vec<(String, bool)> = {
         let mut stmt = conn
             .prepare("SELECT id, connected FROM providers")
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
         let map = stmt
             .query_map([], |r| {
                 Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? != 0))
             })
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
         map.collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?
+            .map_err(|err| err.to_string())?
     };
 
     for (id, connected) in rows {
@@ -78,7 +78,7 @@ fn ensure_cols(conn: &Connection) -> Result<(), String> {
             "ALTER TABLE providers RENAME COLUMN enabled TO connected",
             [],
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
     }
 
     for col in [
@@ -90,7 +90,7 @@ fn ensure_cols(conn: &Connection) -> Result<(), String> {
         let name = col.split_whitespace().next().unwrap_or(col);
         if !has("providers", name) {
             conn.execute(&format!("ALTER TABLE providers ADD COLUMN {col}"), [])
-                .map_err(|e| e.to_string())?;
+                .map_err(|err| err.to_string())?;
         }
     }
 
@@ -99,12 +99,12 @@ fn ensure_cols(conn: &Connection) -> Result<(), String> {
             "ALTER TABLE models ADD COLUMN enabled INTEGER NOT NULL DEFAULT 0",
             [],
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
     }
 
     if !has("request_log", "prefix_hash") {
         conn.execute("ALTER TABLE request_log ADD COLUMN prefix_hash TEXT", [])
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
     }
 
     Ok(())
@@ -141,7 +141,7 @@ pub fn upsert_provider(conn: &Connection, p: &Provider) -> Result<(), String> {
             p.doc_url
         ],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     Ok(())
 }
@@ -153,7 +153,7 @@ pub fn sync_provider(conn: &Connection, p: &Provider) -> Result<(), String> {
          ON CONFLICT(id) DO UPDATE SET name=?2, compatible=?3, base_url=?4, logo_url=?5, doc_url=?6",
         params![p.id, p.name, p.compatible, p.base_url, p.logo_url, p.doc_url],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     Ok(())
 }
@@ -163,7 +163,7 @@ pub fn set_connected(conn: &Connection, id: &str, on: bool) -> Result<(), String
         "UPDATE providers SET connected = ?2 WHERE id = ?1",
         params![id, on as i64],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     Ok(())
 }
@@ -171,7 +171,7 @@ pub fn set_connected(conn: &Connection, id: &str, on: bool) -> Result<(), String
 pub fn list_providers(conn: &Connection) -> Result<Vec<Provider>, String> {
     let mut stmt = conn
         .prepare("SELECT id, name, compatible, base_url, api_key_ref, connected, free, priority, logo_url, doc_url FROM providers ORDER BY priority")
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let rows = stmt
         .query_map([], |r| {
@@ -188,10 +188,10 @@ pub fn list_providers(conn: &Connection) -> Result<Vec<Provider>, String> {
                 doc_url: r.get(9)?,
             })
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())
+        .map_err(|err| err.to_string())
 }
 
 pub fn add_model(conn: &Connection, m: &ModelEntry) -> Result<(), String> {
@@ -201,7 +201,7 @@ pub fn add_model(conn: &Connection, m: &ModelEntry) -> Result<(), String> {
          ON CONFLICT(id) DO UPDATE SET display_name=?2, family=?3, capabilities=?4, suggested_tier=?5",
         params![m.id, m.display_name, m.family, m.capabilities, m.suggested_tier],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     Ok(())
 }
@@ -209,7 +209,7 @@ pub fn add_model(conn: &Connection, m: &ModelEntry) -> Result<(), String> {
 pub fn list_models(conn: &Connection) -> Result<Vec<ModelEntry>, String> {
     let mut stmt = conn
         .prepare("SELECT id, display_name, family, capabilities, suggested_tier FROM models ORDER BY family, id")
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let rows = stmt
         .query_map([], |r| {
@@ -221,10 +221,10 @@ pub fn list_models(conn: &Connection) -> Result<Vec<ModelEntry>, String> {
                 suggested_tier: r.get(4)?,
             })
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())
+        .map_err(|err| err.to_string())
 }
 
 pub fn link_model(conn: &Connection, a: &Avail) -> Result<(), String> {
@@ -240,7 +240,7 @@ pub fn link_model(conn: &Connection, a: &Avail) -> Result<(), String> {
             a.cost_out
         ],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     Ok(())
 }
@@ -253,7 +253,7 @@ pub fn list_provider_models(conn: &Connection) -> Result<Vec<ProviderModel>, Str
              JOIN models m ON m.id = mp.model_id
              ORDER BY mp.provider_id, m.display_name",
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let rows = stmt
         .query_map([], |r| {
@@ -267,10 +267,10 @@ pub fn list_provider_models(conn: &Connection) -> Result<Vec<ProviderModel>, Str
                 cost_out: r.get(6)?,
             })
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())
+        .map_err(|err| err.to_string())
 }
 
 pub fn list_chat_models(conn: &Connection) -> Result<Vec<ChatModel>, String> {
@@ -283,7 +283,7 @@ pub fn list_chat_models(conn: &Connection) -> Result<Vec<ChatModel>, String> {
              WHERE m.enabled = 1 AND p.connected = 1
              ORDER BY p.name, m.display_name",
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let rows = stmt
         .query_map([], |r| {
@@ -294,10 +294,10 @@ pub fn list_chat_models(conn: &Connection) -> Result<Vec<ChatModel>, String> {
                 provider_name: r.get(3)?,
             })
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())
+        .map_err(|err| err.to_string())
 }
 
 pub fn set_model_enabled(conn: &Connection, model_id: &str, on: bool) -> Result<(), String> {
@@ -305,7 +305,7 @@ pub fn set_model_enabled(conn: &Connection, model_id: &str, on: bool) -> Result<
         "UPDATE models SET enabled = ?2 WHERE id = ?1",
         params![model_id, on as i64],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     Ok(())
 }
@@ -319,7 +319,7 @@ pub fn list_avail(conn: &Connection, model_id: &str) -> Result<Vec<Avail>, Strin
              JOIN models m ON m.id = mp.model_id
              WHERE mp.model_id = ?1 AND p.connected = 1 AND m.enabled = 1",
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let rows = stmt
         .query_map(params![model_id], |r| {
@@ -331,10 +331,10 @@ pub fn list_avail(conn: &Connection, model_id: &str) -> Result<Vec<Avail>, Strin
                 cost_out: r.get(4)?,
             })
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())
+        .map_err(|err| err.to_string())
 }
 
 pub fn log_req(conn: &Connection, l: &ReqLog) -> Result<(), String> {
@@ -357,7 +357,7 @@ pub fn log_req(conn: &Connection, l: &ReqLog) -> Result<(), String> {
             l.prefix_hash
         ],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     Ok(())
 }
@@ -368,7 +368,7 @@ pub fn list_logs(conn: &Connection, limit: i64) -> Result<Vec<ReqLog>, String> {
             "SELECT model_id, provider_id, remote_model_id, attempt, status, latency_ms, tok_in, tok_out, cost, err_msg, req_json, resp_json, prefix_hash
              FROM request_log ORDER BY id DESC LIMIT ?1",
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let rows = stmt
         .query_map(params![limit], |r| {
@@ -388,10 +388,10 @@ pub fn list_logs(conn: &Connection, limit: i64) -> Result<Vec<ReqLog>, String> {
                 prefix_hash: r.get(12)?,
             })
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())
+        .map_err(|err| err.to_string())
 }
 
 pub fn kv_get(conn: &Connection, k: &str) -> Option<String> {
@@ -408,30 +408,30 @@ pub fn kv_set(conn: &Connection, k: &str, v: &str) -> Result<(), String> {
         "INSERT INTO kv (k, v) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET v=?2",
         params![k, v],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     Ok(())
 }
 
 pub fn secret_set(provider_id: &str, tok: &str) -> Result<(), String> {
-    let entry = Entry::new("argus-gw", provider_id).map_err(|e| e.to_string())?;
-    entry.set_password(tok).map_err(|e| e.to_string())
+    let entry = Entry::new("argus-gw", provider_id).map_err(|err| err.to_string())?;
+    entry.set_password(tok).map_err(|err| err.to_string())
 }
 
 pub fn secret_get(provider_id: &str) -> Result<Option<String>, String> {
-    let entry = Entry::new("argus-gw", provider_id).map_err(|e| e.to_string())?;
+    let entry = Entry::new("argus-gw", provider_id).map_err(|err| err.to_string())?;
     match entry.get_password() {
         Ok(v) => Ok(Some(v)),
         Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(e.to_string()),
+        Err(err) => Err(err.to_string()),
     }
 }
 
 pub fn secret_del(provider_id: &str) -> Result<(), String> {
-    let entry = Entry::new("argus-gw", provider_id).map_err(|e| e.to_string())?;
+    let entry = Entry::new("argus-gw", provider_id).map_err(|err| err.to_string())?;
     match entry.delete_credential() {
         Ok(()) => Ok(()),
         Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(e.to_string()),
+        Err(err) => Err(err.to_string()),
     }
 }

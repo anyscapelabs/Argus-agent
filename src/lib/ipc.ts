@@ -1,5 +1,39 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
+const CMD_GW_LIST_PROV = "gw_list_providers";
+const CMD_GW_PROV_MODS = "gw_provider_models";
+const CMD_GW_CHAT_MODS = "gw_chat_models";
+const CMD_GW_SET_MOD = "gw_set_model_enabled";
+const CMD_GW_CONN = "gw_connect";
+const CMD_GW_DISC = "gw_disconnect";
+const CMD_GW_SYNC = "gw_sync_providers";
+const CMD_GW_LOGO = "gw_logo";
+const CMD_GW_ROUTE = "gw_set_routing";
+const CMD_SESS_CREATE = "sess_create_session";
+const CMD_SESS_LIST = "sess_list_sessions";
+const CMD_SESS_DEL = "sess_delete_session";
+const CMD_SESS_SAVE = "sess_save_session";
+const CMD_SESS_PERM = "sess_set_permission";
+const CMD_SESS_MOD = "sess_set_model";
+const CMD_SESS_WEB = "sess_set_web_search";
+const CMD_SESS_EXP = "sess_export_json";
+const CMD_SESS_MSGS = "sess_list_messages";
+const CMD_SESS_VOTE = "sess_set_vote";
+const CMD_SESS_SUP = "sess_supersede_from";
+const CMD_SESS_CLEAN = "sess_clean_dangling";
+const CMD_SESS_APPR = "sess_resolve_approval";
+const CMD_SESS_IMPORT = "sess_browser_import";
+const CMD_SESS_EXT_IN = "sess_ext_install";
+const CMD_SESS_EXT_UN = "sess_ext_uninstall";
+const CMD_SESS_EXT_ST = "sess_ext_status";
+const CMD_SESS_STREAM = "sess_chat_stream";
+
+const DEF_PERM = "ask";
+
+export class IpcError extends Error {}
+export class SessIpcError extends IpcError {}
+export class GwIpcError extends IpcError {}
+
 export type Provider = {
   id: string;
   name: string;
@@ -35,34 +69,47 @@ export type ChatModel = {
   providerName: string;
 };
 
-export const gwListProviders = () =>
-  invoke<Provider[]>("gw_list_providers");
+export function gwListProviders(): Promise<Provider[]> {
+  return invoke<Provider[]>(CMD_GW_LIST_PROV);
+}
 
-export const gwProviderModels = () =>
-  invoke<ProviderModel[]>("gw_provider_models");
+export function gwProviderModels(): Promise<ProviderModel[]> {
+  return invoke<ProviderModel[]>(CMD_GW_PROV_MODS);
+}
 
-export const gwChatModels = () =>
-  invoke<ChatModel[]>("gw_chat_models");
+export function gwChatModels(): Promise<ChatModel[]> {
+  return invoke<ChatModel[]>(CMD_GW_CHAT_MODS);
+}
 
-export const gwSetModelEnabled = (
+export function gwSetModelEnabled(
   modelId: string,
   enabled: boolean,
-) => invoke<void>("gw_set_model_enabled", { modelId, enabled });
+): Promise<void> {
+  return invoke<void>(CMD_GW_SET_MOD, { modelId, enabled });
+}
 
-export const gwConnect = (providerId: string, tok?: string) =>
-  invoke<void>("gw_connect", { providerId, tok: tok ?? null });
+export function gwConnect(
+  providerId: string,
+  apiKey?: string,
+): Promise<void> {
+  return invoke<void>(CMD_GW_CONN, { providerId, tok: apiKey ?? null });
+}
 
-export const gwDisconnect = (providerId: string) =>
-  invoke<void>("gw_disconnect", { providerId });
+export function gwDisconnect(providerId: string): Promise<void> {
+  return invoke<void>(CMD_GW_DISC, { providerId });
+}
 
-export const gwSyncProviders = () =>
-  invoke<SyncStats>("gw_sync_providers");
+export function gwSyncProviders(): Promise<SyncStats> {
+  return invoke<SyncStats>(CMD_GW_SYNC);
+}
 
-export const gwLogo = (providerId: string) =>
-  invoke<string | null>("gw_logo", { providerId });
+export function gwLogo(providerId: string): Promise<string | null> {
+  return invoke<string | null>(CMD_GW_LOGO, { providerId });
+}
 
-export const gwSetRouting = (mode: string, pinned: string) =>
-  invoke<void>("gw_set_routing", { mode, pinned });
+export function gwSetRouting(mode: string, pinned: string): Promise<void> {
+  return invoke<void>(CMD_GW_ROUTE, { mode, pinned });
+}
 
 export type SessionRow = {
   id: string;
@@ -114,13 +161,13 @@ export type StreamEvent =
   | { type: "term_end"; idx: number; code: number }
   | { type: "approval"; id: string; idx: number; command: string };
 
-export const sessCreateSession = (
+export function sessCreateSession(
   title: string,
   modelId: string | null,
-  permission: string = "ask",
+  permission: string = DEF_PERM,
   webSearch: boolean = false,
-) =>
-  invoke<SessionRow>("sess_create_session", {
+): Promise<SessionRow> {
+  return invoke<SessionRow>(CMD_SESS_CREATE, {
     req: {
       title,
       model_id: modelId,
@@ -129,73 +176,100 @@ export const sessCreateSession = (
       web_search: webSearch,
     },
   });
+}
 
-export const sessListSessions = () =>
-  invoke<SessionRow[]>("sess_list_sessions");
+export function sessListSessions(): Promise<SessionRow[]> {
+  return invoke<SessionRow[]>(CMD_SESS_LIST);
+}
 
-export const sessDeleteSession = (sessionId: string) =>
-  invoke<void>("sess_delete_session", { sessionId });
+export function sessDeleteSession(sessionId: string): Promise<void> {
+  return invoke<void>(CMD_SESS_DEL, { sessionId });
+}
 
-export const sessSaveSession = (session: SessionRow) =>
-  invoke<void>("sess_save_session", { session });
+export function sessSaveSession(session: SessionRow): Promise<void> {
+  return invoke<void>(CMD_SESS_SAVE, { session });
+}
 
-export const sessSetPermission = (
+export function sessSetPermission(
   sessionId: string,
   permission: string,
-) => invoke<void>("sess_set_permission", { sessionId, permission });
+): Promise<void> {
+  return invoke<void>(CMD_SESS_PERM, { sessionId, permission });
+}
 
-export const sessSetModel = (
+export function sessSetModel(
   sessionId: string,
   modelId: string | null,
-) => invoke<void>("sess_set_model", { sessionId, modelId });
+): Promise<void> {
+  return invoke<void>(CMD_SESS_MOD, { sessionId, modelId });
+}
 
-export const sessSetWebSearch = (sessionId: string, on: boolean) =>
-  invoke<void>("sess_set_web_search", { sessionId, on });
+export function sessSetWebSearch(
+  sessionId: string,
+  on: boolean,
+): Promise<void> {
+  return invoke<void>(CMD_SESS_WEB, { sessionId, on });
+}
 
-export const sessExportJson = (sessionId: string) =>
-  invoke<string>("sess_export_json", { sessionId });
+export function sessExportJson(sessionId: string): Promise<string> {
+  return invoke<string>(CMD_SESS_EXP, { sessionId });
+}
 
-export const sessListMessages = (sessionId: string) =>
-  invoke<MsgRow[]>("sess_list_messages", { sessionId });
+export function sessListMessages(sessionId: string): Promise<MsgRow[]> {
+  return invoke<MsgRow[]>(CMD_SESS_MSGS, { sessionId });
+}
 
-export const sessSetVote = (
+export function sessSetVote(
   sessionId: string,
   msgId: string,
   vote: "up" | "down" | null,
-) => invoke<void>("sess_set_vote", { sessionId, msgId, vote });
+): Promise<void> {
+  return invoke<void>(CMD_SESS_VOTE, { sessionId, msgId, vote });
+}
 
-export const sessSupersedeFrom = (
+export function sessSupersedeFrom(
   sessionId: string,
   seq: number,
-) => invoke<void>("sess_supersede_from", { sessionId, seq });
+): Promise<void> {
+  return invoke<void>(CMD_SESS_SUP, { sessionId, seq });
+}
 
-export const sessCleanDangling = (sessionId: string) =>
-  invoke<number>("sess_clean_dangling", { sessionId });
+export function sessCleanDangling(sessionId: string): Promise<number> {
+  return invoke<number>(CMD_SESS_CLEAN, { sessionId });
+}
 
-export const sessResolveApproval = (
+export function sessResolveApproval(
   approvalId: string,
   allow: boolean,
-) => invoke<void>("sess_resolve_approval", { approvalId, allow });
+): Promise<void> {
+  return invoke<void>(CMD_SESS_APPR, { approvalId, allow });
+}
 
-export const sessBrowserImport = (profile: string) =>
-  invoke<void>("sess_browser_import", { profile });
+export function sessBrowserImport(profile: string): Promise<void> {
+  return invoke<void>(CMD_SESS_IMPORT, { profile });
+}
 
 export type ExtInstall = {
   extId: string;
   extPath: string;
 };
 
-export const sessExtInstall = () =>
-  invoke<ExtInstall>("sess_ext_install");
+export function sessExtInstall(): Promise<ExtInstall> {
+  return invoke<ExtInstall>(CMD_SESS_EXT_IN);
+}
 
-export const sessExtUninstall = () =>
-  invoke<void>("sess_ext_uninstall");
+export function sessExtUninstall(): Promise<void> {
+  return invoke<void>(CMD_SESS_EXT_UN);
+}
 
-export const sessExtStatus = () =>
-  invoke<boolean>("sess_ext_status");
+export function sessExtStatus(): Promise<boolean> {
+  return invoke<boolean>(CMD_SESS_EXT_ST);
+}
 
-export const sessChatStream = (
+export function sessChatStream(
   sessionId: string,
   content: string,
   onEvent: Channel<StreamEvent>,
-) => invoke<void>("sess_chat_stream", { sessionId, content, onEvent });
+): Promise<void> {
+  return invoke<void>(CMD_SESS_STREAM, { sessionId, content, onEvent });
+}

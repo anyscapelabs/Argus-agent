@@ -47,9 +47,6 @@ fn src_dir() -> PathBuf {
     PathBuf::from("extension")
 }
 
-/// Chrome derives an unpacked extension's id from the sha256 of its absolute
-/// path — hex digits mapped to a-p. Deterministic, so we can pin the host
-/// manifest to it before the user ever loads the extension.
 pub fn unpacked_id(dir: &Path) -> String {
     let hash = Sha256::digest(dir.to_string_lossy().as_bytes());
     let hex = format!("{:x}", hash);
@@ -61,17 +58,17 @@ pub fn unpacked_id(dir: &Path) -> String {
 }
 
 fn copy_tree(src: &Path, dst: &Path) -> Result<(), String> {
-    fs::create_dir_all(dst).map_err(|e| format!("{}: {e}", dst.display()))?;
+    fs::create_dir_all(dst).map_err(|err| format!("{}: {err}", dst.display()))?;
 
-    for entry in fs::read_dir(src).map_err(|e| format!("{}: {e}", src.display()))? {
-        let entry = entry.map_err(|e| e.to_string())?;
+    for entry in fs::read_dir(src).map_err(|err| format!("{}: {err}", src.display()))? {
+        let entry = entry.map_err(|err| err.to_string())?;
         let from = entry.path();
         let to = dst.join(entry.file_name());
 
         if from.is_dir() {
             copy_tree(&from, &to)?;
         } else {
-            fs::copy(&from, &to).map_err(|e| format!("{}: {e}", from.display()))?;
+            fs::copy(&from, &to).map_err(|err| format!("{}: {err}", from.display()))?;
         }
     }
 
@@ -79,12 +76,12 @@ fn copy_tree(src: &Path, dst: &Path) -> Result<(), String> {
 }
 
 fn write_wrapper(exe: &Path, path: &Path) -> Result<(), String> {
-    let mut f = fs::File::create(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut f = fs::File::create(path).map_err(|err| format!("{}: {err}", path.display()))?;
 
-    writeln!(f, "#!/bin/sh").map_err(|e| e.to_string())?;
-    writeln!(f, "exec \"{}\" --native-host", exe.display()).map_err(|e| e.to_string())?;
+    writeln!(f, "#!/bin/sh").map_err(|err| err.to_string())?;
+    writeln!(f, "exec \"{}\" --native-host", exe.display()).map_err(|err| err.to_string())?;
 
-    fs::set_permissions(path, PermissionsExt::from_mode(0o755)).map_err(|e| e.to_string())
+    fs::set_permissions(path, PermissionsExt::from_mode(0o755)).map_err(|err| err.to_string())
 }
 
 fn write_host_manifest(wrapper: &Path, ext_id: &str) -> Result<usize, String> {
@@ -110,7 +107,7 @@ fn write_host_manifest(wrapper: &Path, ext_id: &str) -> Result<usize, String> {
         }
 
         let file = host_dir.join(format!("{HOST_NAME}.json"));
-        let body = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
+        let body = serde_json::to_string_pretty(&manifest).map_err(|err| err.to_string())?;
 
         if fs::write(&file, body).is_ok() {
             done += 1;
@@ -145,9 +142,6 @@ fn chrome_bin() -> Option<&'static str> {
     None
 }
 
-/// Best-effort silent activation: works when Chrome isn't running and the
-/// build still honours --load-extension. Branded Chrome 137+ ignores the
-/// flag — the fallback is the guided chrome://extensions step.
 fn launch_chrome(ext_dir: &Path) {
     if chrome_running() {
         return;
@@ -162,20 +156,18 @@ fn launch_chrome(ext_dir: &Path) {
         .spawn();
 }
 
-/// All file work: copy extension, compute id, register host. Safe to re-run
-/// on every startup — repairs the wrapper path after binary changes.
 pub fn install_core(data: &Path) -> Result<ExtInstall, String> {
     let ext_dir = data.join("extension");
 
     if ext_dir.exists() {
-        fs::remove_dir_all(&ext_dir).map_err(|e| e.to_string())?;
+        fs::remove_dir_all(&ext_dir).map_err(|err| err.to_string())?;
     }
 
     copy_tree(&src_dir(), &ext_dir)?;
 
     let ext_id = unpacked_id(&ext_dir);
     let wrapper = data.join("native-host.sh");
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe = std::env::current_exe().map_err(|err| err.to_string())?;
 
     write_wrapper(&exe, &wrapper)?;
     write_host_manifest(&wrapper, &ext_id)?;
@@ -191,7 +183,7 @@ pub fn sess_ext_install(app: AppHandle) -> Result<ExtInstall, String> {
     let data = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("app data dir: {e}"))?;
+        .map_err(|err| format!("app data dir: {err}"))?;
 
     let res = install_core(&data)?;
 
@@ -204,8 +196,6 @@ pub fn real_enabled() -> bool {
     data_dir().join("extension.enabled").is_file()
 }
 
-/// Agent-side gate for real-browser actions: connect the extension or fail
-/// closed with the exact fix. Chrome only opens when the agent acts.
 pub async fn ensure_real() -> Result<(), String> {
     if extpipe::connected() {
         return Ok(());

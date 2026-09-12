@@ -146,7 +146,6 @@ pub struct ReqLog {
 pub struct WireMsg {
     pub role: String,
     pub content: String,
-    /// Local screenshot paths the adapters attach as image parts.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<String>,
 }

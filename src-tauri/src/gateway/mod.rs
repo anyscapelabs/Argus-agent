@@ -26,31 +26,31 @@ pub struct Gateway {
 
 #[tauri::command]
 pub fn gw_list_providers(gw: State<'_, Gateway>) -> Result<Vec<Provider>, String> {
-    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     store::list_providers(&conn)
 }
 
 #[tauri::command]
 pub fn gw_upsert_provider(gw: State<'_, Gateway>, prov: Provider) -> Result<(), String> {
-    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     store::upsert_provider(&conn, &prov)
 }
 
 #[tauri::command]
 pub fn gw_list_models(gw: State<'_, Gateway>) -> Result<Vec<ModelEntry>, String> {
-    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     store::list_models(&conn)
 }
 
 #[tauri::command]
 pub fn gw_provider_models(gw: State<'_, Gateway>) -> Result<Vec<ProviderModel>, String> {
-    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     store::list_provider_models(&conn)
 }
 
 #[tauri::command]
 pub fn gw_chat_models(gw: State<'_, Gateway>) -> Result<Vec<ChatModel>, String> {
-    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     store::list_chat_models(&conn)
 }
 
@@ -60,19 +60,19 @@ pub fn gw_set_model_enabled(
     model_id: String,
     enabled: bool,
 ) -> Result<(), String> {
-    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     store::set_model_enabled(&conn, &model_id, enabled)
 }
 
 #[tauri::command]
 pub fn gw_add_model(gw: State<'_, Gateway>, model: ModelEntry) -> Result<(), String> {
-    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     store::add_model(&conn, &model)
 }
 
 #[tauri::command]
 pub fn gw_link_model(gw: State<'_, Gateway>, avail: Avail) -> Result<(), String> {
-    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     store::link_model(&conn, &avail)
 }
 
@@ -83,7 +83,7 @@ pub async fn gw_connect(
     tok: Option<String>,
 ) -> Result<(), String> {
     let prov = {
-        let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
         let provs = store::list_providers(&conn)?;
         provs
             .into_iter()
@@ -98,7 +98,7 @@ pub async fn gw_connect(
     adapters::verify_key(&gw.http, &prov, &t).await?;
     store::secret_set(&provider_id, &t)?;
 
-    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     store::set_connected(&conn, &provider_id, true)
 }
 
@@ -106,13 +106,13 @@ pub async fn gw_connect(
 pub fn gw_disconnect(gw: State<'_, Gateway>, provider_id: String) -> Result<(), String> {
     store::secret_del(&provider_id)?;
 
-    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     store::set_connected(&conn, &provider_id, false)
 }
 
 #[tauri::command]
 pub fn gw_set_routing(gw: State<'_, Gateway>, mode: String, pinned: String) -> Result<(), String> {
-    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     store::kv_set(&conn, "routing_mode", &mode)?;
     store::kv_set(&conn, "pinned_provider", &pinned)
 }
@@ -137,20 +137,22 @@ async fn sync_from_models_dev(gw: &Gateway) -> Result<SyncStats, String> {
         .get("https://models.dev/api.json")
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     if !resp.status().is_success() {
         return Err(format!("models.dev sync failed: {}", resp.status()));
     }
 
-    let v: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let v: serde_json::Value = resp.json().await.map_err(|err| err.to_string())?;
     let provs = v.as_object().ok_or("bad catalog payload")?;
 
     let mut stats = SyncStats::default();
 
     {
-        let conn = gw.conn.lock().map_err(|e| e.to_string())?;
-        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|err| err.to_string())?;
 
         for (pid, p) in provs {
             let base_url = match p["api"].as_str() {
@@ -223,11 +225,11 @@ async fn sync_from_models_dev(gw: &Gateway) -> Result<SyncStats, String> {
             }
         }
 
-        tx.commit().map_err(|e| e.to_string())?;
+        tx.commit().map_err(|err| err.to_string())?;
     }
 
     {
-        let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
         store::kv_set(&conn, "catalog_synced_at", &now_secs().to_string())?;
     }
 
@@ -251,7 +253,7 @@ pub async fn gw_logo(
     }
 
     let url = {
-        let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
         let provs = store::list_providers(&conn)?;
         match provs.iter().find(|p| p.id == provider_id) {
             Some(p) => match &p.logo_url {
@@ -267,7 +269,7 @@ pub async fn gw_logo(
         _ => return Ok(None),
     };
 
-    let text = resp.text().await.map_err(|e| e.to_string())?;
+    let text = resp.text().await.map_err(|err| err.to_string())?;
     let _ = std::fs::create_dir_all(&gw.logos_dir);
     let _ = std::fs::write(&path, &text);
 
@@ -300,9 +302,7 @@ pub async fn maybe_sync_catalog(gw: &Gateway) {
         return;
     }
 
-    if let Err(e) = sync_from_models_dev(gw).await {
-        eprintln!("catalog sync skipped: {e}");
-    }
+    if sync_from_models_dev(gw).await.is_err() {}
 }
 
 fn per_1k(v: &serde_json::Value) -> f64 {
@@ -320,6 +320,6 @@ fn per_1k(v: &serde_json::Value) -> f64 {
 
 #[tauri::command]
 pub fn gw_logs(gw: State<'_, Gateway>, limit: Option<i64>) -> Result<Vec<schema::ReqLog>, String> {
-    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     store::list_logs(&conn, limit.unwrap_or(100))
 }

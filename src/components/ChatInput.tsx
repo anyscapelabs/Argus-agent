@@ -72,25 +72,25 @@ export default function ChatInput({
     {
       label: "Add files or photos",
       Icon: RiAttachment2,
-      onClick: () => console.log("attach"),
+      onClick: () => {},
     },
     {
       label: "Add from library",
       Icon: LuLibrary,
       hasSubmenu: true,
-      onClick: () => console.log("library"),
+      onClick: () => {},
     },
     {
       label: "Add project",
       Icon: LuFolderOpen,
       hasSubmenu: true,
-      onClick: () => console.log("project"),
+      onClick: () => {},
     },
     {
       label: "Connector",
       Icon: LuPlug,
       hasSubmenu: true,
-      onClick: () => console.log("connector"),
+      onClick: () => {},
     },
     {
       label: "Web search",
@@ -242,7 +242,7 @@ export default function ChatInput({
           <button
             type="button"
             aria-label="Voice input"
-            onClick={() => console.log("mic")}
+            onClick={() => {}}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-bg-hover-primary hover:text-text-primary"
           >
             <LuMic size={16} />

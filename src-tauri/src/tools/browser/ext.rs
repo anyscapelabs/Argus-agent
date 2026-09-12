@@ -236,8 +236,6 @@ pub async fn close(_args: &Value) -> Result<String, String> {
     Ok("browser tab closed".into())
 }
 
-/// Sensitive check against the live extension session — same policy as the
-/// CDP pool: current URL or target label matching login/checkout patterns.
 pub async fn sensitive(args: &Value) -> bool {
     let named = args
         .get("profile")

@@ -23,11 +23,11 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
 
     if legacy > 0 {
         conn.execute_batch("DROP TABLE IF EXISTS skills; DROP TABLE IF EXISTS skills_fts;")
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
     }
 
     conn.execute_batch(super::schema::MIGRATE)
-        .map_err(|e| e.to_string())
+        .map_err(|err| err.to_string())
 }
 
 fn row_skill(r: &rusqlite::Row) -> rusqlite::Result<Skill> {
@@ -85,10 +85,10 @@ fn body_hash(body: &str) -> String {
 }
 
 fn ftime(path: &Path) -> Result<i64, String> {
-    let meta = fs::metadata(path).map_err(|e| e.to_string())?;
+    let meta = fs::metadata(path).map_err(|err| err.to_string())?;
     Ok(meta
         .modified()
-        .map_err(|e| e.to_string())?
+        .map_err(|err| err.to_string())?
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0))
@@ -119,12 +119,12 @@ fn parse_md(content: &str) -> Result<(String, String, String), String> {
 
 fn write_md(dir: &Path, name: &str, description: &str, body: &str) -> Result<(), String> {
     let content = format!("---\nname: {name}\ndescription: {description}\n---\n\n{body}\n");
-    fs::write(md_path(dir, name), content).map_err(|e| e.to_string())
+    fs::write(md_path(dir, name), content).map_err(|err| err.to_string())
 }
 
 fn index_upsert(conn: &Connection, dir: &Path, name: &str) -> Result<(), String> {
     let path = md_path(dir, name);
-    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let content = fs::read_to_string(&path).map_err(|err| err.to_string())?;
     let (fname, desc, body) = parse_md(&content)?;
 
     if fname != name {
@@ -139,14 +139,14 @@ fn index_upsert(conn: &Connection, dir: &Path, name: &str) -> Result<(), String>
          ON CONFLICT(name) DO UPDATE SET description=?2, body=?3, file_mtime=?4, body_hash=?5",
         params![name, desc, body, ftime(&path)?, body_hash(&body)],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     Ok(())
 }
 
 fn delete_row(conn: &Connection, name: &str) -> Result<(), String> {
     conn.execute("DELETE FROM skills WHERE name = ?1", params![name])
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     Ok(())
 }
@@ -155,13 +155,13 @@ pub fn sync(conn: &Connection, dir: &Path) -> Result<usize, String> {
     let mut seen: HashSet<String> = HashSet::new();
 
     let entries = match fs::read_dir(dir) {
-        Ok(e) => e,
+        Ok(err) => err,
         Err(_) => return Ok(0),
     };
 
     for entry in entries {
         let path = match entry {
-            Ok(e) => e.path(),
+            Ok(err) => err.path(),
             Err(_) => continue,
         };
 
@@ -184,12 +184,12 @@ pub fn sync(conn: &Connection, dir: &Path) -> Result<usize, String> {
     let all: Vec<String> = {
         let mut stmt = conn
             .prepare("SELECT name FROM skills")
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
         let rows = stmt
             .query_map([], |r| r.get(0))
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
         rows.collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?
+            .map_err(|err| err.to_string())?
     };
 
     for name in all {
@@ -224,7 +224,7 @@ pub fn create_skill(conn: &Connection, dir: &Path, s: &NewSkill) -> Result<Skill
          ON CONFLICT(name) DO NOTHING",
         params![s.name, source, s.origin],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     index_upsert(conn, dir, &s.name)?;
     get_skill(conn, dir, &s.name)
@@ -246,7 +246,7 @@ pub fn get_skill(conn: &Connection, dir: &Path, name: &str) -> Result<Skill, Str
             |r| r.get(0),
         )
         .optional()
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     if stored != Some(on_disk) {
         index_upsert(conn, dir, name)?;
@@ -262,7 +262,7 @@ fn fetch_one(conn: &Connection, name: &str) -> Result<Skill, String> {
         row_skill,
     )
     .optional()
-    .map_err(|e| e.to_string())?
+    .map_err(|err| err.to_string())?
     .ok_or_else(|| format!("skill '{name}' not found"))
 }
 
@@ -271,11 +271,13 @@ pub fn list_skills(conn: &Connection) -> Result<Vec<Skill>, String> {
         .prepare(&format!(
             "SELECT {COLS}, {JOIN_STATS} ORDER BY COALESCE(st.last_used_at, s.created_at) DESC"
         ))
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
-    let rows = stmt.query_map([], row_skill).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], row_skill)
+        .map_err(|err| err.to_string())?;
     rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())
+        .map_err(|err| err.to_string())
 }
 
 pub fn update_skill(
@@ -298,8 +300,8 @@ pub fn update_skill(
 pub fn delete_skill(conn: &Connection, dir: &Path, name: &str) -> Result<(), String> {
     match fs::remove_file(md_path(dir, name)) {
         Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(e.to_string()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => return Err(err.to_string()),
     }
 
     delete_row(conn, name)
@@ -311,7 +313,7 @@ pub fn touch_skill(conn: &Connection, name: &str) -> Result<(), String> {
          ON CONFLICT(name) DO UPDATE SET use_count = use_count + 1, last_used_at = datetime('now')",
         params![name],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     Ok(())
 }
@@ -332,11 +334,11 @@ pub fn search_skills(conn: &Connection, query: &str, limit: i64) -> Result<Vec<S
          WHERE s.rowid IN (SELECT rowid FROM skills_fts WHERE skills_fts MATCH ?1 ORDER BY bm25(skills_fts) LIMIT ?2)"
     );
 
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(&sql).map_err(|err| err.to_string())?;
     let rows = stmt
         .query_map(params![fts_q, limit], row_skill)
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())
+        .map_err(|err| err.to_string())
 }

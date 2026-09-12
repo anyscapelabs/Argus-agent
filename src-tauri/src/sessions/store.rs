@@ -5,7 +5,7 @@ use super::schema::{Folder, Msg, NewMsg, NewSession, Session};
 
 pub fn migrate(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(super::schema::MIGRATE)
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let has_vote: bool = conn
         .query_row(
@@ -14,11 +14,11 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
             |r| r.get::<_, i64>(0),
         )
         .map(|n| n > 0)
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     if !has_vote {
         conn.execute("ALTER TABLE messages ADD COLUMN vote TEXT", [])
-            .map_err(|e| e.to_string())?;
+            .map_err(|err| err.to_string())?;
     }
 
     let has_web: bool = conn
@@ -28,18 +28,18 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
             |r| r.get::<_, i64>(0),
         )
         .map(|n| n > 0)
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     if !has_web {
         conn.execute(
             "ALTER TABLE sessions ADD COLUMN web_search INTEGER NOT NULL DEFAULT 0",
             [],
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
     }
 
     conn.pragma_update(None, "foreign_keys", true)
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     Ok(())
 }
@@ -72,7 +72,7 @@ pub fn create_session(conn: &Connection, req: &NewSession) -> Result<Session, St
         "INSERT INTO sessions (id, title, model_id, permission, folder_id, web_search) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![id, req.title, req.model_id, perm, req.folder_id, req.web_search],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     get_session(conn, &id)
 }
@@ -84,7 +84,7 @@ pub fn get_session(conn: &Connection, id: &str) -> Result<Session, String> {
         row_session,
     )
     .optional()
-    .map_err(|e| e.to_string())?
+    .map_err(|err| err.to_string())?
     .ok_or_else(|| "session not found".into())
 }
 
@@ -96,16 +96,16 @@ pub fn list_sessions(conn: &Connection, folder_id: Option<&str>) -> Result<Vec<S
         None => format!("SELECT {SESSION_COLS} FROM sessions ORDER BY updated_at DESC"),
     };
 
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(&sql).map_err(|err| err.to_string())?;
 
     let rows = match folder_id {
         Some(fid) => stmt.query_map(params![fid], row_session),
         None => stmt.query_map([], row_session),
     }
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())
+        .map_err(|err| err.to_string())
 }
 
 pub fn save_session(conn: &Connection, s: &Session) -> Result<(), String> {
@@ -125,7 +125,7 @@ pub fn save_session(conn: &Connection, s: &Session) -> Result<(), String> {
             s.web_search
         ],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     Ok(())
 }
@@ -135,7 +135,7 @@ pub fn touch_session(conn: &Connection, id: &str, ctx_tokens: i64) -> Result<(),
         "UPDATE sessions SET ctx_tokens=?2, updated_at=datetime('now') WHERE id=?1",
         params![id, ctx_tokens],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     Ok(())
 }
@@ -145,7 +145,7 @@ pub fn set_permission(conn: &Connection, id: &str, permission: &str) -> Result<(
         "UPDATE sessions SET permission=?2, updated_at=datetime('now') WHERE id=?1",
         params![id, permission],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     Ok(())
 }
@@ -155,7 +155,7 @@ pub fn set_model(conn: &Connection, id: &str, model_id: Option<&str>) -> Result<
         "UPDATE sessions SET model_id=?2, updated_at=datetime('now') WHERE id=?1",
         params![id, model_id],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     Ok(())
 }
@@ -165,7 +165,7 @@ pub fn set_web_search(conn: &Connection, id: &str, on: bool) -> Result<(), Strin
         "UPDATE sessions SET web_search=?2, updated_at=datetime('now') WHERE id=?1",
         params![id, on],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     Ok(())
 }
@@ -176,7 +176,8 @@ pub fn delete_session(conn: &Connection, id: &str) -> Result<(), String> {
         "DELETE FROM summaries WHERE session_id = ?1",
         "DELETE FROM sessions WHERE id = ?1",
     ] {
-        conn.execute(sql, params![id]).map_err(|e| e.to_string())?;
+        conn.execute(sql, params![id])
+            .map_err(|err| err.to_string())?;
     }
 
     Ok(())
@@ -210,7 +211,7 @@ pub fn add_msg(conn: &Connection, m: &NewMsg) -> Result<Msg, String> {
             params![m.session_id],
             |r| r.get(0),
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     conn.execute(
         "INSERT INTO messages (id, session_id, seq, role, content, model_id, provider_id, tok_in, tok_out)
@@ -227,7 +228,7 @@ pub fn add_msg(conn: &Connection, m: &NewMsg) -> Result<Msg, String> {
             m.tok_out
         ],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     get_msg(conn, &id)
 }
@@ -239,7 +240,7 @@ pub fn get_msg(conn: &Connection, id: &str) -> Result<Msg, String> {
         row_msg,
     )
     .optional()
-    .map_err(|e| e.to_string())?
+    .map_err(|err| err.to_string())?
     .ok_or_else(|| "msg not found".into())
 }
 
@@ -248,14 +249,14 @@ pub fn list_msgs(conn: &Connection, session_id: &str) -> Result<Vec<Msg>, String
         .prepare(&format!(
             "SELECT {MSG_COLS} FROM messages WHERE session_id = ?1 AND active = 1 ORDER BY seq"
         ))
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let rows = stmt
         .query_map(params![session_id], row_msg)
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())
+        .map_err(|err| err.to_string())
 }
 
 pub fn set_vote(
@@ -268,7 +269,7 @@ pub fn set_vote(
         "UPDATE messages SET vote = ?3 WHERE id = ?2 AND session_id = ?1",
         params![session_id, msg_id, vote],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     Ok(())
 }
@@ -278,7 +279,7 @@ pub fn supersede_from(conn: &Connection, session_id: &str, seq: i64) -> Result<(
         "UPDATE messages SET active = 0 WHERE session_id = ?1 AND seq >= ?2",
         params![session_id, seq],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     Ok(())
 }
@@ -293,7 +294,7 @@ pub fn clean_dangling(conn: &Connection, session_id: &str) -> Result<usize, Stri
            AND a.role = 'assistant' AND a.active = 1)",
         params![session_id],
     )
-    .map_err(|e| e.to_string())
+    .map_err(|err| err.to_string())
 }
 
 pub fn create_folder(conn: &Connection, name: &str) -> Result<Folder, String> {
@@ -303,7 +304,7 @@ pub fn create_folder(conn: &Connection, name: &str) -> Result<Folder, String> {
         "INSERT INTO folders (id, name) VALUES (?1, ?2)",
         params![id, name],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|err| err.to_string())?;
 
     conn.query_row(
         "SELECT id, name, created_at FROM folders WHERE id = ?1",
@@ -316,13 +317,13 @@ pub fn create_folder(conn: &Connection, name: &str) -> Result<Folder, String> {
             })
         },
     )
-    .map_err(|e| e.to_string())
+    .map_err(|err| err.to_string())
 }
 
 pub fn list_folders(conn: &Connection) -> Result<Vec<Folder>, String> {
     let mut stmt = conn
         .prepare("SELECT id, name, created_at FROM folders ORDER BY created_at")
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let rows = stmt
         .query_map([], |r| {
@@ -332,10 +333,10 @@ pub fn list_folders(conn: &Connection) -> Result<Vec<Folder>, String> {
                 created_at: r.get(2)?,
             })
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())
+        .map_err(|err| err.to_string())
 }
 
 pub fn export_json(conn: &Connection, id: &str) -> Result<String, String> {
@@ -345,17 +346,17 @@ pub fn export_json(conn: &Connection, id: &str) -> Result<String, String> {
         .prepare(
             "SELECT role, content FROM messages WHERE session_id = ?1 AND active = 1 ORDER BY seq",
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let rows = stmt
         .query_map(params![id], |r| {
             Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let msgs = rows
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let messages: Vec<serde_json::Value> = msgs
         .into_iter()
@@ -370,5 +371,5 @@ pub fn export_json(conn: &Connection, id: &str) -> Result<String, String> {
         "model": session.model_id,
         "messages": messages,
     }))
-    .map_err(|e| e.to_string())
+    .map_err(|err| err.to_string())
 }

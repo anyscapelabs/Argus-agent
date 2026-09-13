@@ -127,3 +127,46 @@ pub fn sess_list_folders(gw: State<'_, Gateway>) -> Result<Vec<Folder>, String> 
     let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     store::list_folders(&conn)
 }
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewAgentPrefs {
+    pub model_id: Option<String>,
+    pub permission: String,
+    pub web_search: bool,
+}
+
+#[tauri::command]
+pub fn newagent_prefs(gw: State<'_, Gateway>) -> Result<NewAgentPrefs, String> {
+    use crate::gateway::store as gw_store;
+
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+
+    Ok(NewAgentPrefs {
+        model_id: gw_store::kv_get(&conn, "newagent.model").filter(|m| !m.is_empty()),
+        permission: gw_store::kv_get(&conn, "newagent.permission").unwrap_or_else(|| "ask".into()),
+        web_search: gw_store::kv_get(&conn, "newagent.websearch").as_deref() == Some("1"),
+    })
+}
+
+#[tauri::command]
+pub fn set_newagent_prefs(
+    gw: State<'_, Gateway>,
+    model_id: Option<String>,
+    permission: String,
+    web_search: bool,
+) -> Result<(), String> {
+    use crate::gateway::store as gw_store;
+
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+
+    gw_store::kv_set(&conn, "newagent.model", model_id.as_deref().unwrap_or(""))?;
+    gw_store::kv_set(&conn, "newagent.permission", &permission)?;
+    gw_store::kv_set(
+        &conn,
+        "newagent.websearch",
+        if web_search { "1" } else { "0" },
+    )?;
+
+    Ok(())
+}

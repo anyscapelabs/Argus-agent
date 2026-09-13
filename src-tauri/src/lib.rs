@@ -111,6 +111,8 @@ pub fn run() {
             sessions::sess_supersede_from,
             sessions::sess_create_folder,
             sessions::sess_list_folders,
+            sessions::newagent_prefs,
+            sessions::set_newagent_prefs,
             sessions::chat::sess_chat_stream,
             sessions::chat::sess_resolve_approval,
             sessions::browser_import::sess_browser_import,

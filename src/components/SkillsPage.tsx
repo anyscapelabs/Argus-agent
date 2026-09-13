@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { FiChevronDown } from "react-icons/fi";
-import { LuSearch } from "react-icons/lu";
+import { LuSearch, LuSparkles } from "react-icons/lu";
 
 import type { Skill } from "../lib/ipc";
 import { skillDelete, skillList, skillSearch } from "../lib/ipc";
@@ -100,6 +100,23 @@ export default function SkillsPage({ onAddSkill }: SkillsPageProps) {
       </div>
       {err !== null && (
         <p className="mt-4 text-sm text-red-400">{err}</p>
+      )}
+      {err === null && skills.length === 0 && (
+        <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-bg-hover-secondary text-text-secondary">
+            <LuSparkles size={18} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-medium text-text-primary">
+              {query.trim() === "" ? "No skills yet" : "No skills match"}
+            </p>
+            <p className="max-w-xs text-xs leading-relaxed text-text-secondary">
+              {query.trim() === ""
+                ? "Ask Argus to remember something reusable and it will show up here."
+                : `Nothing found for "${query.trim()}". Try a shorter or different name.`}
+            </p>
+          </div>
+        </div>
       )}
       <div className="mt-6 grid grid-cols-2 gap-4">
         {skills.map((skill) => (

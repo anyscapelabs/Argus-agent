@@ -16,6 +16,8 @@ dist-ssr
 src-tauri/src/mcp/google/config.json
 # GitHub OAuth client id (see src-tauri/src/mcp/github/config.example.json)
 src-tauri/src/mcp/github/config.json
+# Per-service settings with secrets (see each service config.example.json)
+src-tauri/src/mcp/*/config.json
 
 # Editor directories and files
 .vscode/*

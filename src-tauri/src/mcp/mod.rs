@@ -1,6 +1,19 @@
 pub mod client;
+pub mod discord;
+pub mod figma;
 pub mod github;
+pub mod gitlab;
 pub mod google;
+pub mod ha;
+pub mod linear;
+pub mod notion;
+pub mod outlook;
+pub mod slack;
+pub mod spotify;
+pub mod telegram;
+pub mod todoist;
+pub mod trello;
+pub mod vault;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 

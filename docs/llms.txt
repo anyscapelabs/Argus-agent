@@ -1,0 +1,15 @@
+# Argus docs index for LLMs
+
+- [Docs index](README.md): map of all pages.
+- [Quickstart](getting-started/quickstart.md): install, providers, first chat.
+- [Chat](user-guide/chat.md): sessions, ask/never modes, approvals, loop guard.
+- [Providers](user-guide/providers.md): models.dev catalog, routing, keyring keys.
+- [Connectors](user-guide/connectors.md): all 14 services, auth shapes, bring-your-own credentials.
+- [Computer use](user-guide/computer-use.md): X11 tiers, launch/act/pixels, safety rules.
+- [Skills](user-guide/skills.md): skill index and on-demand bodies, library files.
+- [Security](user-guide/security.md): approvals, keyring matrix, redaction, untrusted content.
+- [Architecture](developer-guide/architecture.md): repo map, agent loop, prompt assembly, SQLite schema.
+- [Adding connectors](developer-guide/adding-connectors.md): vault, flows, event logging, frontend cards.
+- [Contributing](developer-guide/contributing.md): build/test/format commands and code rules.
+- [Environment](reference/environment.md): every ARGUS_* variable.
+- [Troubleshooting](help/troubleshooting.md): X11, AT-SPI, keyring, OAuth, Notion, Discord fixes.

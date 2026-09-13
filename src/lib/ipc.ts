@@ -345,3 +345,21 @@ export function skillGet(name: string): Promise<Skill> {
 export function skillDelete(name: string): Promise<void> {
   return invoke<void>("skill_delete", { name });
 }
+
+export type NewAgentPrefs = {
+  modelId: string | null;
+  permission: string;
+  webSearch: boolean;
+};
+
+export function newagentPrefs(): Promise<NewAgentPrefs> {
+  return invoke<NewAgentPrefs>("newagent_prefs");
+}
+
+export function setNewagentPrefs(prefs: {
+  modelId: string | null;
+  permission: string;
+  webSearch: boolean;
+}): Promise<void> {
+  return invoke<void>("set_newagent_prefs", prefs);
+}

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { useChatModels } from "../hooks/useChatModels";
 import type { ChatModel } from "../lib/ipc";
+import { newagentPrefs, setNewagentPrefs } from "../lib/ipc";
 import ChatInput from "./ChatInput";
 
 type NewAgentPageProps = {
@@ -15,10 +16,6 @@ type NewAgentPageProps = {
   onPromptUsed?: () => void;
 };
 
-const MODEL_KEY = "argus.newagent.model";
-const PERM_KEY = "argus.newagent.permission";
-const WEB_KEY = "argus.newagent.websearch";
-
 export default function NewAgentPage({
   onSend,
   initialPrompt = "",
@@ -26,18 +23,30 @@ export default function NewAgentPage({
 }: NewAgentPageProps) {
   const [draft, setDraft] = useState("");
   const { models } = useChatModels();
-  const [modelId, setModelId] = useState<string | null>(() =>
-    localStorage.getItem(MODEL_KEY),
-  );
-  const [permission, setPermission] = useState(
-    () => localStorage.getItem(PERM_KEY) ?? "ask",
-  );
-  const [webSearch, setWebSearch] = useState(
-    () => localStorage.getItem(WEB_KEY) === "true",
-  );
+  const [modelId, setModelId] = useState<string | null>(null);
+  const [permission, setPermission] = useState("ask");
+  const [webSearch, setWebSearch] = useState(false);
   const model = modelId
     ? (models.find((m) => m.modelId === modelId) ?? null)
     : null;
+
+  useEffect(() => {
+    let alive = true;
+
+    newagentPrefs()
+      .then((p) => {
+        if (!alive) return;
+
+        setModelId(p.modelId);
+        setPermission(p.permission);
+        setWebSearch(p.webSearch);
+      })
+      .catch(() => {});
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (initialPrompt !== "") {
@@ -45,6 +54,14 @@ export default function NewAgentPage({
       onPromptUsed?.();
     }
   }, []);
+
+  const save = (next: {
+    modelId: string | null;
+    permission: string;
+    webSearch: boolean;
+  }) => {
+    setNewagentPrefs(next).catch(() => {});
+  };
 
   return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-6 pb-40">
@@ -58,22 +75,17 @@ export default function NewAgentPage({
         onModelChange={(next) => {
           const id = next?.modelId ?? null;
           setModelId(id);
-
-          if (id === null) {
-            localStorage.removeItem(MODEL_KEY);
-          } else {
-            localStorage.setItem(MODEL_KEY, id);
-          }
+          save({ modelId: id, permission, webSearch });
         }}
         permission={permission}
         onPermissionChange={(next) => {
           setPermission(next);
-          localStorage.setItem(PERM_KEY, next);
+          save({ modelId, permission: next, webSearch });
         }}
         webSearch={webSearch}
         onWebSearchChange={(next) => {
           setWebSearch(next);
-          localStorage.setItem(WEB_KEY, String(next));
+          save({ modelId, permission, webSearch: next });
         }}
         onSubmit={() => {
           const txt = draft.trim();

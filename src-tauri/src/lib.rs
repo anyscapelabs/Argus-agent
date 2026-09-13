@@ -140,7 +140,16 @@ pub fn run() {
             mcp::google::google_disconnect,
             mcp::github::github_status,
             mcp::github::github_connect,
-            mcp::github::github_disconnect
+            mcp::github::github_disconnect,
+            mcp::vault::conn_save_token,
+            mcp::vault::conn_has_token,
+            mcp::vault::conn_remove_token,
+            mcp::outlook::outlook_status,
+            mcp::outlook::outlook_connect,
+            mcp::outlook::outlook_disconnect,
+            mcp::spotify::spotify_status,
+            mcp::spotify::spotify_connect_url,
+            mcp::spotify::spotify_disconnect
         ])
         .run(tauri::generate_context!());
 }

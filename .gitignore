@@ -29,3 +29,6 @@ src-tauri/src/mcp/*/config.json
 *.njsproj
 *.sln
 *.sw?
+
+# Private agent rulebook — never commit
+agents.md

@@ -76,6 +76,8 @@ async fn poll(device_code: String, interval: u64) {
     let wait = Duration::from_secs(interval.max(5));
     let started = Instant::now();
 
+    let mut outcome = "ended without token".to_string();
+
     loop {
         if started.elapsed() > POLL_CAP {
             break;
@@ -109,6 +111,7 @@ async fn poll(device_code: String, interval: u64) {
                 continue;
             }
 
+            outcome = err.to_string();
             break;
         }
 
@@ -116,6 +119,8 @@ async fn poll(device_code: String, interval: u64) {
             let tok = tok.to_string();
 
             if super::tokens::save_token(&tok).await.is_ok() {
+                outcome = "connected".to_string();
+
                 if let Ok(me) = super::authed_get(USER_URL).await {
                     if let Some(login) = me.get("login").and_then(|l| l.as_str()) {
                         super::tokens::set_login(login.to_string()).await;
@@ -126,6 +131,13 @@ async fn poll(device_code: String, interval: u64) {
             break;
         }
     }
+
+    crate::connectors::log::event(
+        "github",
+        "oauth_finished",
+        &outcome,
+        if outcome == "connected" { "ok" } else { "err" },
+    );
 
     if let Ok(mut g) = pending().lock() {
         *g = None;

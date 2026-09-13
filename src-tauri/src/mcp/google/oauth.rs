@@ -128,6 +128,13 @@ async fn wait_callback(state: String, listener: TcpListener) {
             *g = None;
         }
 
+        crate::connectors::log::event(
+            "google",
+            "oauth_finished",
+            title,
+            if ok { "ok" } else { "err" },
+        );
+
         (ok, title.to_string(), body.to_string())
     };
 

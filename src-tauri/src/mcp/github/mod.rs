@@ -35,12 +35,16 @@ pub async fn github_status() -> Result<GithubStatus, String> {
 
 #[tauri::command]
 pub async fn github_connect() -> Result<GithubDevice, String> {
-    device::begin().await
+    let d = device::begin().await?;
+    crate::connectors::log::event("github", "oauth_started", "", "ok");
+
+    Ok(d)
 }
 
 #[tauri::command]
 pub async fn github_disconnect(gw: State<'_, Gateway>) -> Result<(), String> {
     tokens::clear().await;
+    crate::connectors::log::event("github", "disconnected", "", "ok");
 
     let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     crate::gateway::store::kv_set(&conn, "github_login", "")?;
@@ -53,19 +57,25 @@ async fn authed(
     url: &str,
     body: Option<&serde_json::Value>,
 ) -> Result<reqwest::Response, String> {
-    let tok = tokens::token().await?.ok_or("github not connected")?;
-    let cli = reqwest::Client::new();
-    let mut req = cli
-        .request(method, url)
-        .bearer_auth(tok)
-        .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28");
+    let label = format!("{method} {url}");
+    let out = async {
+        let tok = tokens::token().await?.ok_or("github not connected")?;
+        let cli = reqwest::Client::new();
+        let mut req = cli
+            .request(method, url)
+            .bearer_auth(tok)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28");
 
-    if let Some(b) = body {
-        req = req.json(b);
+        if let Some(b) = body {
+            req = req.json(b);
+        }
+
+        req.send().await.map_err(|err| err.to_string())
     }
-
-    req.send().await.map_err(|err| err.to_string())
+    .await;
+    crate::connectors::log::api("github", &label, &out);
+    out
 }
 
 pub async fn authed_get(url: &str) -> Result<serde_json::Value, String> {

@@ -11,6 +11,12 @@ const ENV_ID: &str = "ARGUS_OUTLOOK_CLIENT_ID";
 const APP_FILE: &str = "outlook-oauth.json";
 
 pub fn load() -> Result<OutlookCfg, String> {
+    if let Ok(Some(id)) = crate::mcp::vault::get_client("outlook") {
+        if !id.trim().is_empty() {
+            return Ok(OutlookCfg { client_id: id });
+        }
+    }
+
     if let Ok(id) = std::env::var(ENV_ID) {
         if !id.trim().is_empty() {
             return Ok(OutlookCfg { client_id: id });
@@ -37,7 +43,7 @@ pub fn load() -> Result<OutlookCfg, String> {
     }
 
     Err(format!(
-        "outlook not configured — register an app at entra.microsoft.com, copy config.example.json to {} (app data) or set {ENV_ID}",
+        "outlook not configured — register an app at entra.microsoft.com and save its client id in Connectors setup, or set {ENV_ID}, or copy config.example.json to {} (app data)",
         app_path.display()
     ))
 }

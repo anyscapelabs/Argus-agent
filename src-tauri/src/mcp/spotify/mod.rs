@@ -24,9 +24,10 @@ pub async fn spotify_status() -> Result<SpotifyStatus, String> {
 
 #[tauri::command]
 pub async fn spotify_connect_url() -> Result<SpotifyAuthUrl, String> {
-    Ok(SpotifyAuthUrl {
-        url: oauth::auth_url().await?,
-    })
+    let url = oauth::auth_url().await?;
+    crate::connectors::log::event("spotify", "oauth_started", "", "ok");
+
+    Ok(SpotifyAuthUrl { url })
 }
 
 #[tauri::command]
@@ -41,29 +42,35 @@ async fn authed(
     path: &str,
     query: &[(&str, &str)],
 ) -> Result<Option<serde_json::Value>, String> {
-    let tok = oauth::access_token().await?;
-    let cli = reqwest::Client::new();
-    let mut url = url::Url::parse(&format!("https://api.spotify.com/v1{path}"))
-        .map_err(|err| err.to_string())?;
-    url.query_pairs_mut().extend_pairs(query);
+    let label = format!("{method} {path}");
+    let out = async {
+        let tok = oauth::access_token().await?;
+        let cli = reqwest::Client::new();
+        let mut url = url::Url::parse(&format!("https://api.spotify.com/v1{path}"))
+            .map_err(|err| err.to_string())?;
+        url.query_pairs_mut().extend_pairs(query);
 
-    let resp = cli
-        .request(method, url)
-        .bearer_auth(tok)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?
-        .error_for_status()
-        .map_err(|err| err.to_string())?;
-    let text = resp.text().await.map_err(|err| err.to_string())?;
+        let resp = cli
+            .request(method, url)
+            .bearer_auth(tok)
+            .send()
+            .await
+            .map_err(|err| err.to_string())?
+            .error_for_status()
+            .map_err(|err| err.to_string())?;
+        let text = resp.text().await.map_err(|err| err.to_string())?;
 
-    if text.trim().is_empty() {
-        return Ok(None);
+        if text.trim().is_empty() {
+            return Ok(None);
+        }
+
+        serde_json::from_str(&text)
+            .map(Some)
+            .map_err(|err| err.to_string())
     }
-
-    serde_json::from_str(&text)
-        .map(Some)
-        .map_err(|err| err.to_string())
+    .await;
+    crate::connectors::log::api("spotify", &label, &out);
+    out
 }
 
 fn slim_track(item: &serde_json::Value) -> serde_json::Value {

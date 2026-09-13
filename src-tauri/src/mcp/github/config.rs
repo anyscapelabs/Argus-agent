@@ -13,6 +13,15 @@ const ENV_SECRET: &str = "ARGUS_GITHUB_CLIENT_SECRET";
 const APP_FILE: &str = "github-oauth.json";
 
 pub fn load() -> Result<GithubCfg, String> {
+    if let Ok(Some(id)) = crate::mcp::vault::get_client("github") {
+        if !id.trim().is_empty() {
+            return Ok(GithubCfg {
+                client_id: id,
+                client_secret: String::new(),
+            });
+        }
+    }
+
     if let Ok(id) = std::env::var(ENV_ID) {
         if !id.trim().is_empty() {
             return Ok(GithubCfg {
@@ -42,7 +51,7 @@ pub fn load() -> Result<GithubCfg, String> {
     }
 
     Err(format!(
-        "github oauth not configured — copy config.example.json to {} (app data) or set {ENV_ID}",
+        "github oauth not configured — save your own OAuth App client id in Connectors setup, or set {ENV_ID}, or copy config.example.json to {} (app data)",
         app_path.display()
     ))
 }

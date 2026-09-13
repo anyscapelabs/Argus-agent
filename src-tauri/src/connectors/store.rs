@@ -1,6 +1,6 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
-use super::Connector;
+use super::{log, Connector};
 
 pub const MIGRATE: &str = r#"
 CREATE TABLE IF NOT EXISTS connectors (
@@ -15,7 +15,9 @@ CREATE TABLE IF NOT EXISTS connectors (
 "#;
 
 pub fn migrate(conn: &Connection) -> Result<(), String> {
-    conn.execute_batch(MIGRATE).map_err(|err| err.to_string())
+    conn.execute_batch(MIGRATE).map_err(|err| err.to_string())?;
+    conn.execute_batch(log::MIGRATE)
+        .map_err(|err| err.to_string())
 }
 
 pub fn enabled(conn: &Connection) -> Result<Vec<Connector>, String> {

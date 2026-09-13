@@ -24,11 +24,25 @@ export type View =
   | "projects"
   | "connectors";
 
+const SKILL_TEMPLATE = `Create a new skill and save it with skill.create.
+
+Name: <kebab-case-name>
+Description: <one line, what it does>
+
+Body:
+## When to use
+<...>
+## Steps
+<...>
+## Pitfalls
+<...>`;
+
 function App() {
   const { sessions, activeId, turns } = useSessions();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [view, setView] = useState<View>("new-agent");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pendingPrompt, setPendingPrompt] = useState("");
 
   useEffect(() => {
     sessionStore.loadSessions();
@@ -45,6 +59,12 @@ function App() {
   const toggleSidebar = () => setSidebarOpen((open) => !open);
 
   const goToNewAgent = () => {
+    sessionStore.select(null);
+    setView("new-agent");
+  };
+
+  const newSkillChat = () => {
+    setPendingPrompt(SKILL_TEMPLATE);
     sessionStore.select(null);
     setView("new-agent");
   };
@@ -124,15 +144,25 @@ function App() {
             onSettings={() => setSettingsOpen(true)}
           />
           <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-            {view === "new-agent" && <NewAgentPage onSend={startNew} />}
+            {view === "new-agent" && (
+              <NewAgentPage
+                onSend={startNew}
+                initialPrompt={pendingPrompt}
+                onPromptUsed={() => setPendingPrompt("")}
+              />
+            )}
             {view === "chat" &&
               (activeId !== null ? (
                 <ChatDetailPage sessionId={activeId} />
               ) : (
-                <NewAgentPage onSend={startNew} />
+                <NewAgentPage
+                  onSend={startNew}
+                  initialPrompt={pendingPrompt}
+                  onPromptUsed={() => setPendingPrompt("")}
+                />
               ))}
             {view === "memory" && <MemoryPage />}
-            {view === "skills" && <SkillsPage />}
+            {view === "skills" && <SkillsPage onAddSkill={newSkillChat} />}
             {view === "library" && <LibraryPage />}
             {view === "projects" && <ProjectsPage />}
             {view === "connectors" && <ConnectorsPage />}

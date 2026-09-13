@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { ChatModel } from "../lib/ipc";
 import ChatInput from "./ChatInput";
@@ -10,13 +10,26 @@ type NewAgentPageProps = {
     permission: string,
     webSearch: boolean,
   ) => void;
+  initialPrompt?: string;
+  onPromptUsed?: () => void;
 };
 
-export default function NewAgentPage({ onSend }: NewAgentPageProps) {
+export default function NewAgentPage({
+  onSend,
+  initialPrompt = "",
+  onPromptUsed,
+}: NewAgentPageProps) {
   const [draft, setDraft] = useState("");
   const [model, setModel] = useState<ChatModel | null>(null);
   const [permission, setPermission] = useState("ask");
   const [webSearch, setWebSearch] = useState(false);
+
+  useEffect(() => {
+    if (initialPrompt !== "") {
+      setDraft(initialPrompt);
+      onPromptUsed?.();
+    }
+  }, []);
 
   return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-6 pb-40">

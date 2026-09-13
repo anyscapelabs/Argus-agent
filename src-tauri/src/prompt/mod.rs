@@ -61,14 +61,17 @@ fn stable_layer(conn: &Connection, web: bool) -> Result<String, String> {
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| err.to_string())?;
 
-    if !skills.is_empty() {
-        s.push_str(
-            "\n\n## Skills\nRead a skill's full body with skill.read when its index entry looks relevant; the index below is all you get by default.\n",
-        );
-        for (name, desc) in skills {
-            s.push_str(&format!("- {name}: {desc}\n"));
-        }
+    s.push_str(
+        "\n\n## Skills\nSearch live with skill.search; read a body with skill.read when its entry looks relevant.\n",
+    );
+
+    for (name, desc) in &skills {
+        s.push_str(&format!("- {name}: {desc}\n"));
     }
+
+    s.push_str(
+        "Save reusable wins with skill.create (kebab-case name, one-line description, body of When to use, Steps, Pitfalls): after a hard multi-step success, or anytime the user says remember this. Search first so you never duplicate.\n",
+    );
 
     Ok(s)
 }

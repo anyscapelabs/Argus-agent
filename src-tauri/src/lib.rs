@@ -4,7 +4,7 @@ mod library;
 pub mod mcp;
 pub mod prompt;
 pub mod sessions;
-mod skills;
+pub mod skills;
 pub mod tools;
 
 use std::collections::HashMap;

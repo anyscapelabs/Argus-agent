@@ -1,66 +1,66 @@
-import { FiChevronDown } from "react-icons/fi";
+import { useEffect, useState } from "react";
 import { LuSearch } from "react-icons/lu";
 
-import SkillCard, { type Skill } from "./SkillCard";
+import type { Skill } from "../lib/ipc";
+import { skillDelete, skillList, skillSearch } from "../lib/ipc";
+import SkillCard from "./SkillCard";
 
-const SKILLS: Skill[] = [
-  {
-    id: "email-triage",
-    name: "Email Triage",
-    description: "Sort & prioritize your inbox",
-  },
-  {
-    id: "meeting-notes",
-    name: "Meeting Notes",
-    description: "Auto-generate meeting summaries",
-  },
-  {
-    id: "research",
-    name: "Research",
-    description: "Deep dive on any topic",
-  },
-  {
-    id: "writing",
-    name: "Writing Assistant",
-    description: "Draft emails & documents",
-  },
-  {
-    id: "data-analysis",
-    name: "Data Analysis",
-    description: "Analyze spreadsheets & data",
-  },
-  {
-    id: "scheduling",
-    name: "Scheduling",
-    description: "Manage calendar & bookings",
-  },
-];
+export default function SkillsPage() {
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [query, setQuery] = useState("");
+  const [err, setErr] = useState<string | null>(null);
 
-type SkillsPageProps = {
-  onAddSkill?: () => void;
-};
+  useEffect(() => {
+    let alive = true;
 
-export default function SkillsPage({ onAddSkill }: SkillsPageProps) {
+    skillList()
+      .then((rows) => {
+        if (alive) setSkills(rows);
+      })
+      .catch((err) => {
+        if (alive) setErr(String(err));
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (query.trim() === "") {
+      skillList()
+        .then(setSkills)
+        .catch(() => {});
+
+      return;
+    }
+
+    const t = setTimeout(() => {
+      skillSearch(query.trim())
+        .then(setSkills)
+        .catch(() => {});
+    }, 200);
+
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const remove = async (name: string) => {
+    try {
+      await skillDelete(name);
+    } catch {
+      return;
+    }
+
+    setSkills((prev) => prev.filter((s) => s.name !== name));
+  };
+
   return (
     <div className="mx-auto w-full max-w-2xl py-4">
       <div className="mb-1 flex items-center justify-between">
         <h1 className="text-2xl font-medium text-text-primary">Skills</h1>
-        <button
-          type="button"
-          onClick={onAddSkill ?? (() => {})}
-          className={
-            "inline-flex items-center justify-center gap-1 rounded-lg " +
-            "bg-accent px-2 py-1 text-xs font-medium text-bg-primary " +
-            "transition-opacity hover:opacity-90 cursor-pointer"
-          }
-          aria-label="Add skill"
-        >
-          Add
-          <FiChevronDown size={16} />
-        </button>
       </div>
       <p className="mb-5 text-sm font-medium text-text-secondary">
-        Equip Argus with specialized capabilities.
+        Argus saves reusable skills itself — ask it to remember something.
       </p>
       <div
         className={
@@ -71,6 +71,8 @@ export default function SkillsPage({ onAddSkill }: SkillsPageProps) {
         <LuSearch size={18} className="shrink-0 text-text-secondary" />
         <input
           type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
           placeholder="Search skills..."
           className={
             "ml-2 flex-1 bg-transparent text-sm text-text-primary " +
@@ -78,9 +80,12 @@ export default function SkillsPage({ onAddSkill }: SkillsPageProps) {
           }
         />
       </div>
+      {err !== null && (
+        <p className="mt-4 text-sm text-red-400">{err}</p>
+      )}
       <div className="mt-6 grid grid-cols-2 gap-4">
-        {SKILLS.map((skill) => (
-          <SkillCard key={skill.id} skill={skill} />
+        {skills.map((skill) => (
+          <SkillCard key={skill.name} skill={skill} onDelete={remove} />
         ))}
       </div>
     </div>

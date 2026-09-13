@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { useChatModels } from "../hooks/useChatModels";
 import type { ChatModel } from "../lib/ipc";
 import ChatInput from "./ChatInput";
 
@@ -14,15 +15,29 @@ type NewAgentPageProps = {
   onPromptUsed?: () => void;
 };
 
+const MODEL_KEY = "argus.newagent.model";
+const PERM_KEY = "argus.newagent.permission";
+const WEB_KEY = "argus.newagent.websearch";
+
 export default function NewAgentPage({
   onSend,
   initialPrompt = "",
   onPromptUsed,
 }: NewAgentPageProps) {
   const [draft, setDraft] = useState("");
-  const [model, setModel] = useState<ChatModel | null>(null);
-  const [permission, setPermission] = useState("ask");
-  const [webSearch, setWebSearch] = useState(false);
+  const { models } = useChatModels();
+  const [modelId, setModelId] = useState<string | null>(() =>
+    localStorage.getItem(MODEL_KEY),
+  );
+  const [permission, setPermission] = useState(
+    () => localStorage.getItem(PERM_KEY) ?? "ask",
+  );
+  const [webSearch, setWebSearch] = useState(
+    () => localStorage.getItem(WEB_KEY) === "true",
+  );
+  const model = modelId
+    ? (models.find((m) => m.modelId === modelId) ?? null)
+    : null;
 
   useEffect(() => {
     if (initialPrompt !== "") {
@@ -40,11 +55,26 @@ export default function NewAgentPage({
         value={draft}
         onChange={setDraft}
         model={model}
-        onModelChange={setModel}
+        onModelChange={(next) => {
+          const id = next?.modelId ?? null;
+          setModelId(id);
+
+          if (id === null) {
+            localStorage.removeItem(MODEL_KEY);
+          } else {
+            localStorage.setItem(MODEL_KEY, id);
+          }
+        }}
         permission={permission}
-        onPermissionChange={setPermission}
+        onPermissionChange={(next) => {
+          setPermission(next);
+          localStorage.setItem(PERM_KEY, next);
+        }}
         webSearch={webSearch}
-        onWebSearchChange={setWebSearch}
+        onWebSearchChange={(next) => {
+          setWebSearch(next);
+          localStorage.setItem(WEB_KEY, String(next));
+        }}
         onSubmit={() => {
           const txt = draft.trim();
           if (txt.length === 0) return;

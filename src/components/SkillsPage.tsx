@@ -1,11 +1,16 @@
 import { useEffect, useState } from "react";
+import { FiChevronDown } from "react-icons/fi";
 import { LuSearch } from "react-icons/lu";
 
 import type { Skill } from "../lib/ipc";
 import { skillDelete, skillList, skillSearch } from "../lib/ipc";
 import SkillCard from "./SkillCard";
 
-export default function SkillsPage() {
+type SkillsPageProps = {
+  onAddSkill?: () => void;
+};
+
+export default function SkillsPage({ onAddSkill }: SkillsPageProps) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [query, setQuery] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -58,9 +63,22 @@ export default function SkillsPage() {
     <div className="mx-auto w-full max-w-2xl py-4">
       <div className="mb-1 flex items-center justify-between">
         <h1 className="text-2xl font-medium text-text-primary">Skills</h1>
+        <button
+          type="button"
+          onClick={onAddSkill ?? (() => {})}
+          className={
+            "inline-flex items-center justify-center gap-1 rounded-lg " +
+            "bg-accent px-2 py-1 text-xs font-medium text-bg-primary " +
+            "transition-opacity hover:opacity-90 cursor-pointer"
+          }
+          aria-label="Add skill"
+        >
+          Add
+          <FiChevronDown size={16} />
+        </button>
       </div>
       <p className="mb-5 text-sm font-medium text-text-secondary">
-        Argus saves reusable skills itself — ask it to remember something.
+        Equip Argus with specialized capabilities.
       </p>
       <div
         className={

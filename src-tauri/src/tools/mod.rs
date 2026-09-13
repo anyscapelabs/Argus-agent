@@ -50,6 +50,18 @@ const TOOLS: &[ToolMeta] = &[
         args: "{\"name\":\"...\"}",
         mutating: false,
     },
+    ToolMeta {
+        name: "skill.search",
+        desc: "search skills by keyword; empty query lists the full index",
+        args: "{\"query\":\"...\"}",
+        mutating: false,
+    },
+    ToolMeta {
+        name: "skill.create",
+        desc: "save a reusable skill: kebab-case name, one-line description, body with When to use, Steps, Pitfalls sections",
+        args: "{\"name\":\"...\",\"description\":\"...\",\"body\":\"...\"}",
+        mutating: true,
+    },
 ];
 
 const WEB_TOOLS: &[ToolMeta] = &[
@@ -337,7 +349,70 @@ pub async fn exec(
                 .ok_or("missing name")?;
             let conn = gw.conn.lock().map_err(|err| err.to_string())?;
             let sk = crate::skills::store::get_skill(&conn, &gw.skills_dir, name)?;
+            let _ = crate::skills::store::touch_skill(&conn, name);
             Ok(format!("{}\n{}", sk.description, sk.body))
+        }
+        "skill.search" => {
+            let query = args
+                .get("query")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+            let found = if query.is_empty() {
+                crate::skills::store::list_skills(&conn)?
+            } else {
+                crate::skills::store::search_skills(&conn, &query, 20)?
+            };
+
+            Ok(found
+                .iter()
+                .map(|s| format!("- {}: {}", s.name, s.description))
+                .collect::<Vec<_>>()
+                .join("\n"))
+        }
+        "skill.create" => {
+            let name = args
+                .get("name")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .ok_or("missing name")?;
+            let description = args
+                .get("description")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .ok_or("missing description")?;
+            let body = args
+                .get("body")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .ok_or("missing body")?;
+
+            let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+
+            if crate::skills::store::search_skills(&conn, name, 5)?
+                .iter()
+                .any(|s| s.name == name)
+            {
+                return Err(format!(
+                    "skill '{name}' already exists — read it first, then improve it instead"
+                ));
+            }
+
+            let sk = crate::skills::store::create_skill(
+                &conn,
+                &gw.skills_dir,
+                &crate::skills::schema::NewSkill {
+                    name: name.into(),
+                    description: description.into(),
+                    body: body.into(),
+                    source: Some("agent".into()),
+                    origin: None,
+                },
+            )?;
+
+            Ok(format!("saved skill '{}': {}", sk.name, sk.description))
         }
         "web.search" => web::search(&args).await,
         "web.read" => web::read(&args).await,

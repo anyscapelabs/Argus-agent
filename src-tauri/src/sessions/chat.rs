@@ -30,6 +30,14 @@ const NUDGE: &str = "Continue: your last reply said you were acting, but it cont
 after it: <action tool=\"...\">{\"arg\":\"...\"}</action>. If you \
 cannot act, say so plainly — never describe an action without running it.";
 
+const HARD_STEPS: usize = 6;
+
+pub const SKILL_NUDGE: &str =
+    "That took real work. If the task succeeded and any part of it is reusable, \
+save it as a skill now: first skill.search for overlap, then skill.create with a kebab-case name, \
+a one-line description, and a body of When to use, Steps, and Pitfalls sections. \
+If nothing here is worth reusing, say so in one line and finish.";
+
 pub fn claims_action(text: &str) -> bool {
     let re = regex::Regex::new(
         r"(?i)\b(i'?m|i am|i'?ll|i will|let me|going to)\s+(open|click|type|run|search|navigat|check|launch|browse)\w*",
@@ -320,6 +328,8 @@ pub async fn send(
     let mut act_base = 0usize;
     let mut nudge: Option<String> = None;
     let mut nudged = false;
+    let mut skill_nudged = false;
+    let mut acts_run = 0usize;
     let mut recent: Vec<(String, String)> = vec![];
 
     for _step in 0..MAX_STEPS {
@@ -377,6 +387,12 @@ pub async fn send(
             if !nudged && claims_action(&text) {
                 nudged = true;
                 nudge = Some(NUDGE.into());
+                continue;
+            }
+
+            if !skill_nudged && acts_run >= HARD_STEPS {
+                skill_nudged = true;
+                nudge = Some(SKILL_NUDGE.into());
                 continue;
             }
 
@@ -531,6 +547,7 @@ pub async fn send(
         }
 
         act_base += actions.len();
+        acts_run += actions.len();
     }
 
     {

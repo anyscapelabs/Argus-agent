@@ -78,6 +78,23 @@ fn chk_sizes(description: &str, body: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn chk_body(body: &str) -> Result<(), String> {
+    if body.chars().count() < 200 {
+        return Err(
+            "skill body too short — write at least a When-to-use, Steps, and Pitfalls section"
+                .into(),
+        );
+    }
+
+    if body.matches("## ").count() < 2 {
+        return Err(
+            "skill body needs at least 2 '## ' sections (e.g. When to use, Steps, Pitfalls)".into(),
+        );
+    }
+
+    Ok(())
+}
+
 fn body_hash(body: &str) -> String {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     body.hash(&mut h);
@@ -204,6 +221,7 @@ pub fn sync(conn: &Connection, dir: &Path) -> Result<usize, String> {
 pub fn create_skill(conn: &Connection, dir: &Path, s: &NewSkill) -> Result<Skill, String> {
     chk_name(&s.name)?;
     chk_sizes(&s.description, &s.body)?;
+    chk_body(&s.body)?;
 
     if md_path(dir, &s.name).exists() {
         return Err(format!(

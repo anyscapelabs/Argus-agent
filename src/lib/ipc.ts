@@ -318,3 +318,30 @@ export function githubConnect(): Promise<GithubDevice> {
 export function githubDisconnect(): Promise<void> {
   return invoke<void>(CMD_GITHUB_DISC);
 }
+
+export type Skill = {
+  name: string;
+  description: string;
+  body: string;
+  source: string;
+  origin: string | null;
+  use_count: number;
+  last_used_at: string | null;
+  created_at: string;
+};
+
+export function skillList(): Promise<Skill[]> {
+  return invoke<Skill[]>("skill_list");
+}
+
+export function skillSearch(query: string): Promise<Skill[]> {
+  return invoke<Skill[]>("skill_search", { query });
+}
+
+export function skillGet(name: string): Promise<Skill> {
+  return invoke<Skill>("skill_get", { name });
+}
+
+export function skillDelete(name: string): Promise<void> {
+  return invoke<void>("skill_delete", { name });
+}

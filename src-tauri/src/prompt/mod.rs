@@ -73,6 +73,10 @@ fn stable_layer(conn: &Connection, web: bool) -> Result<String, String> {
         "Save reusable wins with skill.create (kebab-case name, one-line description, body of When to use, Steps, Pitfalls): after a hard multi-step success, or anytime the user says remember this. Search first so you never duplicate.\n",
     );
 
+    s.push_str(
+        "A message starting with @createskill is a skill request: use any text after the tag as context, ask for whatever of name, description, and body is still missing, then skill.create.\n",
+    );
+
     Ok(s)
 }
 

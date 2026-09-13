@@ -24,18 +24,7 @@ export type View =
   | "projects"
   | "connectors";
 
-const SKILL_TEMPLATE = `Create a new skill and save it with skill.create.
-
-Name: <kebab-case-name>
-Description: <one line, what it does>
-
-Body:
-## When to use
-<...>
-## Steps
-<...>
-## Pitfalls
-<...>`;
+const SKILL_TEMPLATE = `@createskill `;
 
 function App() {
   const { sessions, activeId, turns } = useSessions();

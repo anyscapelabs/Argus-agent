@@ -9,25 +9,31 @@ async fn call(
     path: &str,
     body: Option<&serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
-    let tok = vault::get(SERVICE)?.ok_or("notion not connected")?;
-    let cli = reqwest::Client::new();
-    let mut req = cli
-        .request(method, format!("{BASE}{path}"))
-        .bearer_auth(tok)
-        .header("Notion-Version", VERSION);
+    let label = format!("{method} {path}");
+    let out = async {
+        let tok = vault::get(SERVICE)?.ok_or("notion not connected")?;
+        let cli = reqwest::Client::new();
+        let mut req = cli
+            .request(method, format!("{BASE}{path}"))
+            .bearer_auth(tok)
+            .header("Notion-Version", VERSION);
 
-    if let Some(b) = body {
-        req = req.json(b);
+        if let Some(b) = body {
+            req = req.json(b);
+        }
+
+        req.send()
+            .await
+            .map_err(|err| err.to_string())?
+            .error_for_status()
+            .map_err(|err| err.to_string())?
+            .json()
+            .await
+            .map_err(|err| err.to_string())
     }
-
-    req.send()
-        .await
-        .map_err(|err| err.to_string())?
-        .error_for_status()
-        .map_err(|err| err.to_string())?
-        .json()
-        .await
-        .map_err(|err| err.to_string())
+    .await;
+    crate::connectors::log::api("notion", &label, &out);
+    out
 }
 
 pub async fn search(query: &str) -> Result<serde_json::Value, String> {

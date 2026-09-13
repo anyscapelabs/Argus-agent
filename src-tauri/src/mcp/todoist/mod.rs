@@ -8,31 +8,37 @@ async fn call(
     path: &str,
     body: Option<&serde_json::Value>,
 ) -> Result<Option<serde_json::Value>, String> {
-    let tok = vault::get(SERVICE)?.ok_or("todoist not connected")?;
-    let cli = reqwest::Client::new();
-    let mut req = cli
-        .request(method, format!("{BASE}{path}"))
-        .bearer_auth(tok);
+    let label = format!("{method} {path}");
+    let out = async {
+        let tok = vault::get(SERVICE)?.ok_or("todoist not connected")?;
+        let cli = reqwest::Client::new();
+        let mut req = cli
+            .request(method, format!("{BASE}{path}"))
+            .bearer_auth(tok);
 
-    if let Some(b) = body {
-        req = req.json(b);
+        if let Some(b) = body {
+            req = req.json(b);
+        }
+
+        let resp = req
+            .send()
+            .await
+            .map_err(|err| err.to_string())?
+            .error_for_status()
+            .map_err(|err| err.to_string())?;
+        let text = resp.text().await.map_err(|err| err.to_string())?;
+
+        if text.trim().is_empty() {
+            return Ok(None);
+        }
+
+        serde_json::from_str(&text)
+            .map(Some)
+            .map_err(|err| err.to_string())
     }
-
-    let resp = req
-        .send()
-        .await
-        .map_err(|err| err.to_string())?
-        .error_for_status()
-        .map_err(|err| err.to_string())?;
-    let text = resp.text().await.map_err(|err| err.to_string())?;
-
-    if text.trim().is_empty() {
-        return Ok(None);
-    }
-
-    serde_json::from_str(&text)
-        .map(Some)
-        .map_err(|err| err.to_string())
+    .await;
+    crate::connectors::log::api("todoist", &label, &out);
+    out
 }
 
 fn slim(v: &serde_json::Value) -> serde_json::Value {

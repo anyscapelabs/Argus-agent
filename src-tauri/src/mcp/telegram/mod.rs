@@ -3,29 +3,34 @@ use crate::mcp::vault;
 const SERVICE: &str = "telegram";
 
 async fn call(method: &str, body: &serde_json::Value) -> Result<serde_json::Value, String> {
-    let tok = vault::get(SERVICE)?.ok_or("telegram not connected")?;
+    let out = async {
+        let tok = vault::get(SERVICE)?.ok_or("telegram not connected")?;
 
-    let v: serde_json::Value = reqwest::Client::new()
-        .post(format!("https://api.telegram.org/bot{tok}/{method}"))
-        .json(body)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?
-        .error_for_status()
-        .map_err(|err| err.to_string())?
-        .json()
-        .await
-        .map_err(|err| err.to_string())?;
+        let v: serde_json::Value = reqwest::Client::new()
+            .post(format!("https://api.telegram.org/bot{tok}/{method}"))
+            .json(body)
+            .send()
+            .await
+            .map_err(|err| err.to_string())?
+            .error_for_status()
+            .map_err(|err| err.to_string())?
+            .json()
+            .await
+            .map_err(|err| err.to_string())?;
 
-    if v.get("ok").and_then(|o| o.as_bool()) == Some(false) {
-        return Err(v
-            .get("description")
-            .and_then(|d| d.as_str())
-            .unwrap_or("telegram error")
-            .into());
+        if v.get("ok").and_then(|o| o.as_bool()) == Some(false) {
+            return Err(v
+                .get("description")
+                .and_then(|d| d.as_str())
+                .unwrap_or("telegram error")
+                .into());
+        }
+
+        Ok(v.get("result").cloned().unwrap_or(serde_json::Value::Null))
     }
-
-    Ok(v.get("result").cloned().unwrap_or(serde_json::Value::Null))
+    .await;
+    crate::connectors::log::api("telegram", &format!("telegram {method}"), &out);
+    out
 }
 
 pub async fn me() -> Result<serde_json::Value, String> {

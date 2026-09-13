@@ -8,35 +8,41 @@ async fn call(
     path: &str,
     body: Option<&serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
-    let tok = vault::get(SERVICE)?.ok_or("slack not connected")?;
-    let cli = reqwest::Client::new();
-    let mut req = cli
-        .request(method, format!("{BASE}{path}"))
-        .bearer_auth(tok);
+    let label = format!("{method} {path}");
+    let out = async {
+        let tok = vault::get(SERVICE)?.ok_or("slack not connected")?;
+        let cli = reqwest::Client::new();
+        let mut req = cli
+            .request(method, format!("{BASE}{path}"))
+            .bearer_auth(tok);
 
-    if let Some(b) = body {
-        req = req.json(b);
+        if let Some(b) = body {
+            req = req.json(b);
+        }
+
+        let v: serde_json::Value = req
+            .send()
+            .await
+            .map_err(|err| err.to_string())?
+            .error_for_status()
+            .map_err(|err| err.to_string())?
+            .json()
+            .await
+            .map_err(|err| err.to_string())?;
+
+        if v.get("ok").and_then(|o| o.as_bool()) == Some(false) {
+            return Err(v
+                .get("error")
+                .and_then(|e| e.as_str())
+                .unwrap_or("slack error")
+                .into());
+        }
+
+        Ok(v)
     }
-
-    let v: serde_json::Value = req
-        .send()
-        .await
-        .map_err(|err| err.to_string())?
-        .error_for_status()
-        .map_err(|err| err.to_string())?
-        .json()
-        .await
-        .map_err(|err| err.to_string())?;
-
-    if v.get("ok").and_then(|o| o.as_bool()) == Some(false) {
-        return Err(v
-            .get("error")
-            .and_then(|e| e.as_str())
-            .unwrap_or("slack error")
-            .into());
-    }
-
-    Ok(v)
+    .await;
+    crate::connectors::log::api("slack", &label, &out);
+    out
 }
 
 fn slim_channel(v: &serde_json::Value) -> serde_json::Value {

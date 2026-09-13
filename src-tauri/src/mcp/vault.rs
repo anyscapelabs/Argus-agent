@@ -13,7 +13,10 @@ pub fn save(service: &str, tok: &str) -> Result<(), String> {
 
     entry(service)?
         .set_password(tok)
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+    crate::connectors::log::event(service, "token_saved", "", "ok");
+
+    Ok(())
 }
 
 pub fn get(service: &str) -> Result<Option<String>, String> {
@@ -28,6 +31,55 @@ pub fn clear(service: &str) -> Result<(), String> {
     match entry(service)?.delete_credential() {
         Ok(()) => Ok(()),
         Err(keyring::Error::NoEntry) => Ok(()),
+        Err(err) => Err(err.to_string()),
+    }?;
+
+    crate::connectors::log::event(service, "disconnected", "", "ok");
+
+    Ok(())
+}
+
+fn named(service: &str, kind: &str) -> String {
+    format!("{service}-{kind}")
+}
+
+pub fn save_client(service: &str, id: &str) -> Result<(), String> {
+    if service.trim().is_empty() || id.trim().is_empty() {
+        return Err("missing service or client id".into());
+    }
+
+    entry(&named(service, "client"))?
+        .set_password(id)
+        .map_err(|err| err.to_string())?;
+    crate::connectors::log::event(service, "client_saved", "", "ok");
+
+    Ok(())
+}
+
+pub fn get_client(service: &str) -> Result<Option<String>, String> {
+    match entry(&named(service, "client"))?.get_password() {
+        Ok(v) => Ok(Some(v)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(err) => Err(err.to_string()),
+    }
+}
+
+pub fn save_secret(service: &str, secret: &str) -> Result<(), String> {
+    if service.trim().is_empty() {
+        return Err("missing service".into());
+    }
+
+    entry(&named(service, "secret"))?
+        .set_password(secret)
+        .map_err(|err| err.to_string())?;
+
+    Ok(())
+}
+
+pub fn get_secret(service: &str) -> Result<Option<String>, String> {
+    match entry(&named(service, "secret"))?.get_password() {
+        Ok(v) => Ok(Some(v)),
+        Err(keyring::Error::NoEntry) => Ok(None),
         Err(err) => Err(err.to_string()),
     }
 }
@@ -71,4 +123,14 @@ pub fn conn_has_token(service: String) -> Result<bool, String> {
 #[tauri::command]
 pub fn conn_remove_token(service: String) -> Result<(), String> {
     clear(&service)
+}
+
+#[tauri::command]
+pub fn conn_save_client(service: String, client_id: String) -> Result<(), String> {
+    save_client(&service, &client_id)
+}
+
+#[tauri::command]
+pub fn conn_save_secret(service: String, secret: String) -> Result<(), String> {
+    save_secret(&service, &secret)
 }

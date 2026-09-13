@@ -4,32 +4,37 @@ const BASE: &str = "https://api.linear.app/graphql";
 const SERVICE: &str = "linear";
 
 async fn gql(query: &str, vars: &serde_json::Value) -> Result<serde_json::Value, String> {
-    let tok = vault::get(SERVICE)?.ok_or("linear not connected")?;
+    let out = async {
+        let tok = vault::get(SERVICE)?.ok_or("linear not connected")?;
 
-    let v: serde_json::Value = reqwest::Client::new()
-        .post(BASE)
-        .bearer_auth(tok)
-        .json(&serde_json::json!({"query": query, "variables": vars}))
-        .send()
-        .await
-        .map_err(|err| err.to_string())?
-        .error_for_status()
-        .map_err(|err| err.to_string())?
-        .json()
-        .await
-        .map_err(|err| err.to_string())?;
+        let v: serde_json::Value = reqwest::Client::new()
+            .post(BASE)
+            .bearer_auth(tok)
+            .json(&serde_json::json!({"query": query, "variables": vars}))
+            .send()
+            .await
+            .map_err(|err| err.to_string())?
+            .error_for_status()
+            .map_err(|err| err.to_string())?
+            .json()
+            .await
+            .map_err(|err| err.to_string())?;
 
-    if let Some(errs) = v.get("errors").and_then(|e| e.as_array()) {
-        if let Some(first) = errs.first() {
-            return Err(first
-                .get("message")
-                .and_then(|m| m.as_str())
-                .unwrap_or("linear error")
-                .into());
+        if let Some(errs) = v.get("errors").and_then(|e| e.as_array()) {
+            if let Some(first) = errs.first() {
+                return Err(first
+                    .get("message")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("linear error")
+                    .into());
+            }
         }
-    }
 
-    Ok(v.get("data").cloned().unwrap_or(serde_json::Value::Null))
+        Ok(v.get("data").cloned().unwrap_or(serde_json::Value::Null))
+    }
+    .await;
+    crate::connectors::log::api("linear", "graphql", &out);
+    out
 }
 
 fn slim_issue(v: &serde_json::Value) -> serde_json::Value {

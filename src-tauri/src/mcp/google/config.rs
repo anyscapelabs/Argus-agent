@@ -22,6 +22,18 @@ const ENV_SECRET: &str = "ARGUS_GOOGLE_CLIENT_SECRET";
 const APP_FILE: &str = "google-oauth.json";
 
 pub fn load() -> Result<GoogleCfg, String> {
+    if let Ok(Some(id)) = crate::mcp::vault::get_client("google") {
+        if !id.trim().is_empty() {
+            return Ok(GoogleCfg {
+                client_id: id,
+                client_secret: crate::mcp::vault::get_secret("google")
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default(),
+            });
+        }
+    }
+
     if let (Ok(id), Ok(secret)) = (std::env::var(ENV_ID), std::env::var(ENV_SECRET)) {
         if !id.trim().is_empty() {
             return Ok(GoogleCfg {
@@ -51,7 +63,7 @@ pub fn load() -> Result<GoogleCfg, String> {
     }
 
     Err(format!(
-        "google oauth not configured — copy config.example.json to {} (app data) or set {ENV_ID}/{ENV_SECRET}",
+        "google oauth not configured — save your own client id in Connectors setup, or set {ENV_ID}/{ENV_SECRET}, or copy config.example.json to {} (app data)",
         app_path.display()
     ))
 }

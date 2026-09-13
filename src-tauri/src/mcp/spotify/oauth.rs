@@ -146,6 +146,13 @@ async fn wait_callback(listener: TcpListener) {
             *g = None;
         }
 
+        crate::connectors::log::event(
+            "spotify",
+            "oauth_finished",
+            title,
+            if ok { "ok" } else { "err" },
+        );
+
         (ok, title.to_string(), body.to_string())
     };
 

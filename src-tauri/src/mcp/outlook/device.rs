@@ -107,6 +107,7 @@ async fn poll(device_code: String, interval: u64) {
     });
     let wait = Duration::from_secs(interval.max(5));
     let started = Instant::now();
+    let mut outcome = "ended without token".to_string();
 
     loop {
         if started.elapsed() > Duration::from_secs(600) {
@@ -136,6 +137,7 @@ async fn poll(device_code: String, interval: u64) {
                 continue;
             }
 
+            outcome = err.to_string();
             break;
         }
 
@@ -150,11 +152,19 @@ async fn poll(device_code: String, interval: u64) {
                     a.to_string(),
                     Instant::now() + Duration::from_secs(secs.unwrap_or(3600)),
                 ));
+                outcome = "connected".to_string();
                 break;
             }
             _ => break,
         }
     }
+
+    crate::connectors::log::event(
+        "outlook",
+        "oauth_finished",
+        &outcome,
+        if outcome == "connected" { "ok" } else { "err" },
+    );
 
     if let Ok(mut g) = pending().lock() {
         *g = None;

@@ -25,7 +25,10 @@ pub async fn outlook_status() -> Result<OutlookStatus, String> {
 
 #[tauri::command]
 pub async fn outlook_connect() -> Result<OutlookDevice, String> {
-    device::begin().await
+    let d = device::begin().await?;
+    crate::connectors::log::event("outlook", "oauth_started", "", "ok");
+
+    Ok(d)
 }
 
 #[tauri::command]
@@ -38,24 +41,30 @@ async fn authed(
     path: &str,
     body: Option<&serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
-    let tok = device::access_token().await?;
-    let cli = reqwest::Client::new();
-    let mut req = cli
-        .request(method, format!("https://graph.microsoft.com/v1.0{path}"))
-        .bearer_auth(tok);
+    let label = format!("{method} {path}");
+    let out = async {
+        let tok = device::access_token().await?;
+        let cli = reqwest::Client::new();
+        let mut req = cli
+            .request(method, format!("https://graph.microsoft.com/v1.0{path}"))
+            .bearer_auth(tok);
 
-    if let Some(b) = body {
-        req = req.json(b);
+        if let Some(b) = body {
+            req = req.json(b);
+        }
+
+        req.send()
+            .await
+            .map_err(|err| err.to_string())?
+            .error_for_status()
+            .map_err(|err| err.to_string())?
+            .json()
+            .await
+            .map_err(|err| err.to_string())
     }
-
-    req.send()
-        .await
-        .map_err(|err| err.to_string())?
-        .error_for_status()
-        .map_err(|err| err.to_string())?
-        .json()
-        .await
-        .map_err(|err| err.to_string())
+    .await;
+    crate::connectors::log::api("outlook", &label, &out);
+    out
 }
 
 fn slim_msg(v: &serde_json::Value) -> serde_json::Value {

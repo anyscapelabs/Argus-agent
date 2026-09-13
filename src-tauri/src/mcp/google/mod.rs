@@ -40,6 +40,7 @@ pub async fn google_status(gw: State<'_, Gateway>) -> Result<GoogleStatus, Strin
 #[tauri::command]
 pub async fn google_connect_url() -> Result<GoogleAuthUrl, String> {
     let url = oauth::auth_url().await?;
+    crate::connectors::log::event("google", "oauth_started", "", "ok");
 
     Ok(GoogleAuthUrl { url })
 }
@@ -54,71 +55,92 @@ pub async fn google_disconnect(gw: State<'_, Gateway>) -> Result<(), String> {
 
     let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     crate::gateway::store::kv_set(&conn, "google_email", "")?;
+    crate::connectors::log::event("google", "disconnected", "", "ok");
 
     Ok(())
 }
 
 pub async fn authed_get(url: &str) -> Result<serde_json::Value, String> {
-    let tok = tokens::access_token().await?;
-    let cli = reqwest::Client::new();
+    let out = async {
+        let tok = tokens::access_token().await?;
+        let cli = reqwest::Client::new();
 
-    cli.get(url)
-        .bearer_auth(tok)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?
-        .error_for_status()
-        .map_err(|err| err.to_string())?
-        .json()
-        .await
-        .map_err(|err| err.to_string())
+        cli.get(url)
+            .bearer_auth(tok)
+            .send()
+            .await
+            .map_err(|err| err.to_string())?
+            .error_for_status()
+            .map_err(|err| err.to_string())?
+            .json()
+            .await
+            .map_err(|err| err.to_string())
+    }
+    .await;
+    crate::connectors::log::api("google", &format!("GET {url}"), &out);
+    out
 }
 
 pub async fn authed_post(url: &str, body: &serde_json::Value) -> Result<serde_json::Value, String> {
-    let tok = tokens::access_token().await?;
-    let cli = reqwest::Client::new();
+    let out = async {
+        let tok = tokens::access_token().await?;
+        let cli = reqwest::Client::new();
 
-    cli.post(url)
-        .bearer_auth(tok)
-        .json(body)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?
-        .error_for_status()
-        .map_err(|err| err.to_string())?
-        .json()
-        .await
-        .map_err(|err| err.to_string())
+        cli.post(url)
+            .bearer_auth(tok)
+            .json(body)
+            .send()
+            .await
+            .map_err(|err| err.to_string())?
+            .error_for_status()
+            .map_err(|err| err.to_string())?
+            .json()
+            .await
+            .map_err(|err| err.to_string())
+    }
+    .await;
+    crate::connectors::log::api("google", &format!("POST {url}"), &out);
+    out
 }
 
 pub async fn authed_put(url: &str, body: &serde_json::Value) -> Result<serde_json::Value, String> {
-    let tok = tokens::access_token().await?;
-    let cli = reqwest::Client::new();
+    let out = async {
+        let tok = tokens::access_token().await?;
+        let cli = reqwest::Client::new();
 
-    cli.put(url)
-        .bearer_auth(tok)
-        .json(body)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?
-        .error_for_status()
-        .map_err(|err| err.to_string())?
-        .json()
-        .await
-        .map_err(|err| err.to_string())
+        cli.put(url)
+            .bearer_auth(tok)
+            .json(body)
+            .send()
+            .await
+            .map_err(|err| err.to_string())?
+            .error_for_status()
+            .map_err(|err| err.to_string())?
+            .json()
+            .await
+            .map_err(|err| err.to_string())
+    }
+    .await;
+    crate::connectors::log::api("google", &format!("PUT {url}"), &out);
+    out
 }
 
 pub async fn authed_delete(url: &str) -> Result<(), String> {
-    let tok = tokens::access_token().await?;
-    let cli = reqwest::Client::new();
+    let out = async {
+        let tok = tokens::access_token().await?;
+        let cli = reqwest::Client::new();
 
-    cli.delete(url)
-        .bearer_auth(tok)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?
-        .error_for_status()
-        .map_err(|err| err.to_string())?;
+        cli.delete(url)
+            .bearer_auth(tok)
+            .send()
+            .await
+            .map_err(|err| err.to_string())?
+            .error_for_status()
+            .map_err(|err| err.to_string())?;
 
-    Ok(())
+        Ok(())
+    }
+    .await;
+    crate::connectors::log::api("google", &format!("DELETE {url}"), &out);
+    out
 }

@@ -1,3 +1,4 @@
+pub mod log;
 pub mod store;
 
 #[derive(Clone, Debug)]

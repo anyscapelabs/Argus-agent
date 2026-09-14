@@ -507,9 +507,6 @@ pub fn tool_specs(web: bool) -> Vec<crate::gateway::schema::ToolSpec> {
 
     for t in TOOLS
         .iter()
-        // `bash.run` stays as a legacy `<action>` alias only; offering both
-        // `terminal` and `bash.run` as native tools splits the model's choice
-        // and doubles execution paths.
         .filter(|t| t.name != "bash.run")
         .chain(WEB_TOOLS.iter().filter(|_| web))
         .chain(browser::META.iter())

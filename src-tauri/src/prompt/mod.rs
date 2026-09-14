@@ -166,11 +166,6 @@ fn to_wire(rows: &[(String, String, Option<String>, Option<String>)]) -> Vec<Wir
                 .and_then(|j| serde_json::from_str::<Vec<ToolCall>>(j).ok())
                 .unwrap_or_default();
 
-            // Only map to the native `tool` role when we have a real
-            // tool_call_id to link back to. Legacy `<action>` text tools store
-            // None, and sending `tool_call_id: ""` makes OpenAI/Anthropic
-            // reject the request with 400. Keep those as plain user messages
-            // so the text protocol (`<tool-result>`) still works.
             if role == "user" && content.starts_with("<tool-result") {
                 let has_id = call_id.as_deref().is_some_and(|s| !s.is_empty());
                 if has_id {

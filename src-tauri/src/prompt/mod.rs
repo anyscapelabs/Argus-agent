@@ -77,6 +77,22 @@ fn stable_layer(conn: &Connection, web: bool) -> Result<String, String> {
         "A message starting with @createskill is a skill request: use any text after the tag as context, ask for whatever of name, description, and body is still missing, then skill.create.\n",
     );
 
+    s.push_str(
+        "\n\n## Memory\nSearch past context with memory.search before answering from history; read a hit with memory.read. Save durable facts, preferences, decisions and project state with memory.save (kind fact|preference|project|person|decision). Recall checks memories plus past messages, summaries and indexed files, then follows memory_links graph neighbors.\n",
+    );
+
+    if let Ok(mems) = crate::memory::store::list(conn, None, 5) {
+        let mut shown = 0usize;
+        for m in &mems {
+            if shown >= 5 {
+                break;
+            }
+            let snippet: String = m.content.chars().take(160).collect();
+            s.push_str(&format!("- [{}:{}] {}\n", m.kind, m.id, snippet));
+            shown += 1;
+        }
+    }
+
     Ok(s)
 }
 

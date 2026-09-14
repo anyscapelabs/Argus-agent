@@ -62,6 +62,24 @@ const TOOLS: &[ToolMeta] = &[
         args: "{\"name\":\"...\",\"description\":\"...\",\"body\":\"...\"}",
         mutating: true,
     },
+    ToolMeta {
+        name: "memory.save",
+        desc: "save a durable memory: fact, preference, project, person or decision",
+        args: "{\"content\":\"...\",\"kind\":\"fact\"}",
+        mutating: true,
+    },
+    ToolMeta {
+        name: "memory.search",
+        desc: "search memories plus past messages, summaries and indexed files by keyword",
+        args: "{\"query\":\"...\"}",
+        mutating: false,
+    },
+    ToolMeta {
+        name: "memory.read",
+        desc: "read one memory by id",
+        args: "{\"id\":\"...\"}",
+        mutating: false,
+    },
 ];
 
 const WEB_TOOLS: &[ToolMeta] = &[
@@ -461,6 +479,54 @@ pub async fn exec(
             )?;
 
             Ok(format!("saved skill '{}': {}", sk.name, sk.description))
+        }
+        "memory.save" => {
+            let content = args
+                .get("content")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.trim().is_empty())
+                .ok_or("missing content")?;
+            let kind = args
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .unwrap_or("fact")
+                .to_string();
+            let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+            let m = crate::memory::store::save(
+                &conn,
+                &crate::memory::schema::NewMemory {
+                    content: content.into(),
+                    kind: Some(kind),
+                    importance: args.get("importance").and_then(|v| v.as_i64()),
+                    session_id: None,
+                },
+            )?;
+            Ok(format!("saved memory '{}': {}", m.id, m.content))
+        }
+        "memory.search" => {
+            let query = args
+                .get("query")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+            let hits = crate::memory::store::recall(&conn, &query, 12)?;
+            Ok(hits
+                .iter()
+                .map(|h| format!("[{}:{}] {}", h.source, h.ref_id, h.snippet))
+                .collect::<Vec<_>>()
+                .join("\n"))
+        }
+        "memory.read" => {
+            let id = args
+                .get("id")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .ok_or("missing id")?;
+            let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+            let m = crate::memory::store::get(&conn, id)?;
+            Ok(m.content)
         }
         "web.search" => web::search(&args).await,
         "web.read" => web::read(&args).await,

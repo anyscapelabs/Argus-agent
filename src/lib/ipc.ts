@@ -353,6 +353,60 @@ export function skillDelete(name: string): Promise<void> {
   return invoke<void>("skill_delete", { name });
 }
 
+export type Memory = {
+  id: string;
+  content: string;
+  kind: string;
+  importance: number;
+  session_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MemoryNode = {
+  id: string;
+  label: string;
+  kind: string;
+};
+
+export type MemoryEdge = {
+  from_id: string;
+  to_id: string;
+  relation: string;
+};
+
+export type MemoryGraph = {
+  nodes: MemoryNode[];
+  edges: MemoryEdge[];
+};
+
+export type RecallHit = {
+  source: string;
+  ref_id: string;
+  session_id: string | null;
+  snippet: string;
+};
+
+export function memoryList(kind?: string): Promise<Memory[]> {
+  return invoke<Memory[]>("memory_list", { kind: kind ?? null });
+}
+
+export function memorySearch(query: string): Promise<Memory[]> {
+  return invoke<Memory[]>("memory_search", { query });
+}
+
+export function memoryRecall(query: string): Promise<RecallHit[]> {
+  return invoke<RecallHit[]>("memory_recall", { query });
+}
+
+export function memoryGraph(): Promise<MemoryGraph> {
+  return invoke<MemoryGraph>("memory_graph", {});
+}
+
+export function memoryDelete(id: string): Promise<void> {
+  return invoke<void>("memory_delete", { id });
+}
+
 export type NewAgentPrefs = {
   modelId: string | null;
   permission: string;

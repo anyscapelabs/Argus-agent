@@ -2,6 +2,7 @@ pub mod connectors;
 pub mod gateway;
 mod library;
 pub mod mcp;
+pub mod memory;
 pub mod prompt;
 pub mod sessions;
 pub mod skills;
@@ -40,6 +41,7 @@ pub fn run() {
             sessions::store::migrate(&conn)?;
             skills::store::migrate(&conn)?;
             library::store::migrate(&conn)?;
+            memory::store::migrate(&conn)?;
             connectors::store::migrate(&conn)?;
 
             let _ = mcp::sync_from(&conn);
@@ -136,6 +138,15 @@ pub fn run() {
             library::library_delete,
             library::library_search,
             library::library_path,
+            memory::memory_save,
+            memory::memory_get,
+            memory::memory_list,
+            memory::memory_delete,
+            memory::memory_search,
+            memory::memory_link,
+            memory::memory_unlink,
+            memory::memory_recall,
+            memory::memory_graph,
             gateway::gw_logs,
             prompt::prompt_preview,
             prompt::compressor::prompt_status,

@@ -113,6 +113,13 @@ pub fn add(conn: &Connection, dir: &Path, item: &NewLibItem) -> Result<LibItem, 
     )
     .map_err(|err| err.to_string())?;
 
+    if let Ok(bytes) = fs::read(abs_path(dir, &rel)) {
+        if bytes.len() <= 200_000 {
+            let text = String::from_utf8_lossy(&bytes).into_owned();
+            let _ = crate::memory::store::index_file(conn, &id, item.session_id.as_deref(), &text);
+        }
+    }
+
     get(conn, dir, &id)
 }
 

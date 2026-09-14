@@ -280,6 +280,10 @@ export function sessChatStream(
   return invoke<void>(CMD_SESS_STREAM, { sessionId, content, onEvent });
 }
 
+export function sessCancelChat(sessionId: string): Promise<boolean> {
+  return invoke<boolean>("sess_cancel_chat", { sessionId });
+}
+
 export type GoogleStatus = {
   connected: boolean;
   email: string | null;

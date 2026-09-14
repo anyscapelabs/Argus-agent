@@ -2,6 +2,7 @@ import { Channel } from "@tauri-apps/api/core";
 import { useSyncExternalStore } from "react";
 
 import {
+  sessCancelChat,
   sessChatStream,
   sessCleanDangling,
   sessCreateSession,
@@ -344,6 +345,12 @@ class SessionStore {
       await this.loadSessions();
     } catch (err) {
       await this.loadMsgs(sessionId);
+
+      if (String(err).includes("stopped")) {
+        this.clearTurn(sessionId);
+        return;
+      }
+
       this.set({
         turns: { ...this.state.turns, [sessionId]: blankTurn(String(err)) },
       });
@@ -371,6 +378,15 @@ class SessionStore {
     } catch {}
 
     await this.send(sessionId, content);
+  }
+
+  async stop(sessionId: string) {
+    try {
+      await sessCancelChat(sessionId);
+    } catch {}
+
+    this.clearTurn(sessionId);
+    await this.loadMsgs(sessionId);
   }
 
   clearErr(sessionId: string) {

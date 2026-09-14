@@ -295,6 +295,8 @@ export default function ChatDetailPage({ sessionId }: Props) {
           onWebSearchChange={(v) =>
             sessionStore.setWebSearch(sessionId, v)
           }
+          running={running}
+          onStop={() => sessionStore.stop(sessionId)}
           onSubmit={() => {
             const txt = draft.trim();
             if (txt.length === 0 || running) {

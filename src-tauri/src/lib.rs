@@ -70,6 +70,7 @@ pub fn run() {
                 library_dir,
                 logos_dir,
                 approvals: Mutex::new(HashMap::new()),
+                tasks: Mutex::new(HashMap::new()),
             });
 
             let handle = app.handle().clone();
@@ -114,6 +115,7 @@ pub fn run() {
             sessions::newagent_prefs,
             sessions::set_newagent_prefs,
             sessions::chat::sess_chat_stream,
+            sessions::chat::sess_cancel_chat,
             sessions::chat::sess_resolve_approval,
             sessions::browser_import::sess_browser_import,
             sessions::ext_install::sess_ext_install,

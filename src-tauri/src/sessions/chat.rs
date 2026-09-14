@@ -40,7 +40,7 @@ If nothing here is worth reusing, say so in one line and finish.";
 
 pub fn claims_action(text: &str) -> bool {
     let re = regex::Regex::new(
-        r"(?i)\b(i'?m|i am|i'?ll|i will|let me|going to)\s+(open|click|type|run|search|navigat|check|launch|browse|download|fetch|creat|read)\w*|\b(trying|running|fetching|downloading|uploading|searching|creating|checking|opening|typing|clicking|launching|reading)\b",
+        r"(?i)\b(i'?m|i am|i'?ll|i will|let me|going to)\s+(open|click|type|run|search|navigat|check|launch|browse|download|fetch|creat|read|retry|try)\w*|\b(trying|running|fetching|downloading|uploading|searching|creating|checking|opening|typing|clicking|launching|reading)\b",
     );
 
     re.map(|r| r.is_match(text)).unwrap_or(false)

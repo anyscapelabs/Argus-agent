@@ -59,6 +59,7 @@ type State = {
   activeId: string | null;
   msgs: Record<string, MsgRow[]>;
   turns: Record<string, Turn>;
+  stopped: Record<string, boolean>;
 };
 
 class SessionStore {
@@ -68,6 +69,7 @@ class SessionStore {
     activeId: null,
     msgs: {},
     turns: {},
+    stopped: {},
   };
 
   private listeners = new Set<() => void>();
@@ -336,6 +338,7 @@ class SessionStore {
 
     this.set({
       turns: { ...this.state.turns, [sessionId]: blankTurn() },
+      stopped: { ...this.state.stopped, [sessionId]: false },
     });
 
     try {
@@ -386,6 +389,7 @@ class SessionStore {
     } catch {}
 
     this.clearTurn(sessionId);
+    this.set({ stopped: { ...this.state.stopped, [sessionId]: true } });
     await this.loadMsgs(sessionId);
   }
 

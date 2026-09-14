@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use tauri::ipc::Channel;
 
 use super::adapters;
-use super::schema::{Avail, ChatReq, ChatResp, Provider, ReqLog, StreamEvent, WireUsage};
+use super::schema::{Avail, ChatReq, ChatResp, Provider, ReqLog, StreamEvent, ToolCall, WireUsage};
 use super::{store, Gateway};
 
 const MAX_ATTEMPTS: i64 = 10;
@@ -56,6 +56,8 @@ pub struct StreamStats {
     pub provider_id: String,
     pub tok_in: i64,
     pub tok_out: i64,
+    pub truncated: bool,
+    pub tool_calls: Vec<ToolCall>,
 }
 
 fn key_for(prov: &Provider) -> Result<Option<String>, String> {
@@ -143,8 +145,15 @@ pub async fn run_opts(gw: &Gateway, req: &ChatReq, max_attempts: i64) -> Result<
         attempt += 1;
 
         let t0 = Instant::now();
-        let res =
-            adapters::dispatch(&gw.http, prov, &av.remote_model_id, tok.clone(), &req.msgs).await;
+        let res = adapters::dispatch(
+            &gw.http,
+            prov,
+            &av.remote_model_id,
+            tok.clone(),
+            &req.msgs,
+            &req.tools,
+        )
+        .await;
         let latency = t0.elapsed().as_millis() as i64;
 
         match res {
@@ -256,14 +265,14 @@ pub async fn run_opts(gw: &Gateway, req: &ChatReq, max_attempts: i64) -> Result<
 
 pub async fn stream_run(
     gw: &Gateway,
-    req: &ChatReq,
+    mut req: ChatReq,
     chan: &Channel<StreamEvent>,
 ) -> Result<StreamStats, String> {
     let Resolved {
         provs,
         av,
-        req_json,
-    } = resolve(gw, req)?;
+        mut req_json,
+    } = resolve(gw, &req)?;
 
     let prov = match provs.iter().find(|p| p.id == av.provider_id) {
         Some(p) => p,
@@ -310,6 +319,7 @@ pub async fn stream_run(
             &av.remote_model_id,
             tok.clone(),
             &req.msgs,
+            &req.tools,
             &mut sink,
         )
         .await;
@@ -361,6 +371,8 @@ pub async fn stream_run(
                     provider_id: prov.id.clone(),
                     tok_in,
                     tok_out,
+                    truncated: done.truncated,
+                    tool_calls: done.tool_calls,
                 });
             }
 
@@ -384,6 +396,31 @@ pub async fn stream_run(
                 {
                     let conn = gw.conn.lock().map_err(|err| err.to_string())?;
                     let _ = store::log_req(&conn, &log);
+                }
+
+                if !err.retryable()
+                    && matches!(err.status, Some(400) | Some(404) | Some(422))
+                    && !req.tools.is_empty()
+                {
+                    req.tools.clear();
+                    // System prompt already contains the full text protocol
+                    // (section = protocol + guidance) since the loop migration
+                    // fix; only inject if a minimal native-only prompt is seen,
+                    // to avoid duplicating the ## Tools block.
+                    if let Some(sys) = req.msgs.first_mut() {
+                        if sys.role == "system"
+                            && !sys.content.contains("## Tools")
+                            && !sys.content.contains("<action tool=")
+                        {
+                            sys.content
+                                .push_str(&crate::tools::protocol_section());
+                        }
+                    }
+                    // Refresh logged request payload so retries after the
+                    // fallback don't log the stale pre-clear tools.
+                    req_json = serde_json::to_string(&req).ok();
+
+                    continue;
                 }
 
                 if !err.retryable() || attempt >= MAX_ATTEMPTS {

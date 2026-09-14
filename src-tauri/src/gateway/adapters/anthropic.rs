@@ -2,26 +2,83 @@ use futures_util::StreamExt;
 use reqwest::Client;
 
 use super::{anthropic_content, retry_after_secs, sse_events, CallError, DeltaSink, WireResp};
-use crate::gateway::schema::{StreamDone, WireMsg};
+use crate::gateway::schema::{StreamDone, ToolCall, ToolSpec, WireMsg};
 
-fn payload(remote_id: &str, msgs: &[WireMsg], streaming: bool) -> serde_json::Value {
+fn payload(remote_id: &str, msgs: &[WireMsg], tools: &[ToolSpec], streaming: bool) -> serde_json::Value {
     let mut sys = String::new();
     let mut turns: Vec<serde_json::Value> = vec![];
+    let mut pending: Vec<serde_json::Value> = vec![];
+
+    let flush = |turns: &mut Vec<serde_json::Value>, pending: &mut Vec<serde_json::Value>| {
+        if pending.is_empty() {
+            return;
+        }
+
+        turns.push(serde_json::json!({ "role": "user", "content": std::mem::take(pending) }));
+    };
 
     for m in msgs {
         if m.role == "system" {
             sys.push_str(&m.content);
             sys.push('\n');
-        } else {
-            turns.push(serde_json::json!({ "role": m.role, "content": anthropic_content(m) }));
+            continue;
         }
+
+        if m.role == "tool" {
+            pending.push(serde_json::json!({
+                "type": "tool_result",
+                "tool_use_id": m.tool_call_id.clone().unwrap_or_default(),
+                "content": m.content,
+            }));
+            continue;
+        }
+
+        flush(&mut turns, &mut pending);
+
+        if m.role == "assistant" && !m.tool_calls.is_empty() {
+            let mut parts: Vec<serde_json::Value> = vec![];
+
+            if !m.content.trim().is_empty() {
+                parts.push(serde_json::json!({ "type": "text", "text": m.content }));
+            }
+
+            for c in &m.tool_calls {
+                let input: serde_json::Value =
+                    serde_json::from_str(c.args.trim()).unwrap_or(serde_json::json!({}));
+
+                parts.push(serde_json::json!({
+                    "type": "tool_use",
+                    "id": c.id,
+                    "name": c.name,
+                    "input": input,
+                }));
+            }
+
+            turns.push(serde_json::json!({ "role": "assistant", "content": parts }));
+            continue;
+        }
+
+        turns.push(serde_json::json!({ "role": m.role, "content": anthropic_content(m) }));
     }
 
+    flush(&mut turns, &mut pending);
+
     let mut pl = if streaming {
-        serde_json::json!({ "model": remote_id, "max_tokens": 4096, "messages": turns, "stream": true })
+        serde_json::json!({ "model": remote_id, "max_tokens": 8192, "messages": turns, "stream": true })
     } else {
-        serde_json::json!({ "model": remote_id, "max_tokens": 4096, "messages": turns })
+        serde_json::json!({ "model": remote_id, "max_tokens": 8192, "messages": turns })
     };
+
+    if !tools.is_empty() {
+        pl["tools"] = serde_json::json!(tools
+            .iter()
+            .map(|t| serde_json::json!({
+                "name": t.name,
+                "description": t.description,
+                "input_schema": t.parameters,
+            }))
+            .collect::<Vec<_>>());
+    }
 
     if !sys.is_empty() {
         pl["system"] = serde_json::json!([
@@ -29,15 +86,31 @@ fn payload(remote_id: &str, msgs: &[WireMsg], streaming: bool) -> serde_json::Va
         ]);
     }
 
+    // Prompt-cache the tail of the conversation. Native tool turns use array
+    // content (`tool_use` / `tool_result` blocks), so the old `as_str()` check
+    // silently disabled caching for agentic loops. Handle both shapes: plain
+    // strings become a cached text block, arrays get cache_control on their
+    // last text-bearing block.
     let n = turns.len();
     for i in n.saturating_sub(3)..n {
-        let Some(text) = turns[i]["content"].as_str() else {
+        if let Some(text) = pl["messages"][i]["content"].as_str() {
+            pl["messages"][i]["content"] = serde_json::json!([
+                { "type": "text", "text": text, "cache_control": { "type": "ephemeral" } }
+            ]);
             continue;
-        };
+        }
 
-        pl["messages"][i]["content"] = serde_json::json!([
-            { "type": "text", "text": text, "cache_control": { "type": "ephemeral" } }
-        ]);
+        if let Some(arr) = pl["messages"][i]["content"].as_array_mut() {
+            for blk in arr.iter_mut().rev() {
+                let is_text = blk.get("type").and_then(|t| t.as_str()).is_some_and(|t| {
+                    t == "text" || t == "tool_use" || t == "tool_result"
+                });
+                if is_text {
+                    blk["cache_control"] = serde_json::json!({ "type": "ephemeral" });
+                    break;
+                }
+            }
+        }
     }
 
     pl
@@ -49,9 +122,10 @@ pub async fn stream(
     tok: Option<String>,
     remote_id: &str,
     msgs: &[WireMsg],
+    tools: &[ToolSpec],
     on_delta: DeltaSink<'_>,
 ) -> Result<StreamDone, CallError> {
-    let pl = payload(remote_id, msgs, true);
+    let pl = payload(remote_id, msgs, tools, true);
     let url = format!("{base_url}/v1/messages");
 
     let mut req = http
@@ -83,6 +157,7 @@ pub async fn stream(
 
     let mut buf = String::new();
     let mut done = StreamDone::default();
+    let mut acc: Vec<(String, String, String)> = vec![];
     let mut stream = resp.bytes_stream();
 
     while let Some(chunk) = stream.next().await {
@@ -107,8 +182,29 @@ pub async fn stream(
                 };
 
                 match v["type"].as_str() {
+                    Some("content_block_start") => {
+                        if v["content_block"]["type"] == "tool_use" {
+                            acc.push((
+                                v["content_block"]["id"]
+                                    .as_str()
+                                    .unwrap_or_default()
+                                    .to_string(),
+                                v["content_block"]["name"]
+                                    .as_str()
+                                    .unwrap_or_default()
+                                    .to_string(),
+                                String::new(),
+                            ));
+                        }
+                    }
                     Some("content_block_delta") => {
-                        if let Some(c) = v["delta"]["text"].as_str() {
+                        if v["delta"]["type"] == "input_json_delta" {
+                            if let Some(frag) = v["delta"]["partial_json"].as_str() {
+                                if let Some(last) = acc.last_mut() {
+                                    last.2.push_str(frag);
+                                }
+                            }
+                        } else if let Some(c) = v["delta"]["text"].as_str() {
                             if !c.is_empty() {
                                 on_delta(c).map_err(|err| CallError {
                                     status: None,
@@ -126,12 +222,42 @@ pub async fn stream(
                     }
                     Some("message_delta") => {
                         done.tok_out = v["usage"]["output_tokens"].as_u64().or(done.tok_out);
+
+                        if v["delta"]["stop_reason"] == "max_tokens" {
+                            done.truncated = true;
+                        }
+                    }
+                    Some("error") => {
+                        return Err(CallError {
+                            status: None,
+                            msg: v["error"]
+                                .get("message")
+                                .and_then(|m| m.as_str())
+                                .unwrap_or("stream error")
+                                .to_string(),
+                            retry_after: None,
+                        });
                     }
                     _ => {}
                 }
             }
         }
     }
+
+    done.tool_calls = acc
+        .into_iter()
+        .filter(|(_, name, _)| !name.is_empty())
+        .enumerate()
+        .map(|(i, (id, name, args))| ToolCall {
+            id: if id.is_empty() { format!("call_{i}") } else { id },
+            name,
+            args: if args.trim().is_empty() {
+                "{}".into()
+            } else {
+                args
+            },
+        })
+        .collect();
 
     Ok(done)
 }
@@ -142,8 +268,9 @@ pub async fn chat(
     tok: Option<String>,
     remote_id: &str,
     msgs: &[WireMsg],
+    tools: &[ToolSpec],
 ) -> Result<(WireResp, String), CallError> {
-    let pl = payload(remote_id, msgs, false);
+    let pl = payload(remote_id, msgs, tools, false);
     let url = format!("{base_url}/v1/messages");
 
     let mut req = http

@@ -94,6 +94,15 @@ pub fn parse_actions(text: &str) -> Vec<Action> {
     while let Some(start) = rest.find("<action") {
         let tail = &rest[start..];
         let Some(end) = tail.find("</action>") else {
+            if let Some((tool, args)) = salvage_dangling(tail) {
+                out.push(Action {
+                    tool,
+                    args,
+                    start: off + start,
+                    end: off + start + tail.len(),
+                });
+            }
+
             break;
         };
 
@@ -151,6 +160,45 @@ fn tag_end(blk: &str) -> Option<usize> {
     }
 
     None
+}
+
+fn salvage_dangling(tail: &str) -> Option<(String, String)> {
+    let tag = tag_end(tail)?;
+    let tool = tail
+        .split("tool=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .or_else(|| {
+            tail.split("tool='")
+                .nth(1)
+                .and_then(|s| s.split('\'').next())
+        })
+        .filter(|t| !t.is_empty())?
+        .to_string();
+
+    let body = tail[tag + 1..].trim();
+
+    if serde_json::from_str::<Value>(body).is_err() {
+        return None;
+    }
+
+    Some((tool, body.into()))
+}
+
+pub fn close_dangling_actions(text: &str) -> String {
+    let Some(start) = text.rfind("<action") else {
+        return text.into();
+    };
+
+    if text[start..].contains("</action>") {
+        return text.into();
+    }
+
+    if salvage_dangling(&text[start..]).is_some() {
+        return format!("{text}</action>");
+    }
+
+    text.into()
 }
 
 fn coerce_val(v: &str) -> Value {
@@ -243,7 +291,7 @@ pub fn normalize_actions(text: &str) -> String {
     }
 
     out.push_str(rest);
-    out
+    close_dangling_actions(&out)
 }
 
 fn salvage_call(inner: &str) -> Option<(String, String)> {
@@ -445,7 +493,61 @@ pub fn is_mutating(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-pub fn section(web: bool) -> String {
+fn param_type(v: &serde_json::Value) -> &'static str {
+    match v {
+        serde_json::Value::Bool(_) => "boolean",
+        serde_json::Value::Number(_) => "number",
+        serde_json::Value::Array(_) => "array",
+        _ => "string",
+    }
+}
+
+pub fn tool_specs(web: bool) -> Vec<crate::gateway::schema::ToolSpec> {
+    let mut out = vec![];
+
+    for t in TOOLS
+        .iter()
+        // `bash.run` stays as a legacy `<action>` alias only; offering both
+        // `terminal` and `bash.run` as native tools splits the model's choice
+        // and doubles execution paths.
+        .filter(|t| t.name != "bash.run")
+        .chain(WEB_TOOLS.iter().filter(|_| web))
+        .chain(browser::META.iter())
+        .chain(computer::META.iter())
+    {
+        let Ok(ex) = serde_json::from_str::<serde_json::Value>(t.args) else {
+            continue;
+        };
+
+        let mut props = serde_json::Map::new();
+        let mut required: Vec<String> = vec![];
+
+        if let Some(obj) = ex.as_object() {
+            for (k, v) in obj {
+                props.insert(
+                    k.clone(),
+                    serde_json::json!({ "type": param_type(v), "description": k.replace('_', " ") }),
+                );
+                required.push(k.clone());
+            }
+        }
+
+        out.push(crate::gateway::schema::ToolSpec {
+            name: t.name.into(),
+            description: t.desc.into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": props,
+                "required": required,
+                "additionalProperties": false,
+            }),
+        });
+    }
+
+    out
+}
+
+pub fn protocol_section() -> String {
     let mut s = String::from(
         "\n\n## Tools\n\
 Work in steps:\n\
@@ -479,6 +581,12 @@ Available tools:\n",
     for t in TOOLS {
         s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));
     }
+
+    s
+}
+
+pub fn guidance(web: bool) -> String {
+    let mut s = String::new();
 
     s.push_str(
         "Terminal rules:\n\
@@ -559,6 +667,12 @@ retry once with different wording, or switch engine.\n",
         );
     }
 
+    s
+}
+
+pub fn section(web: bool) -> String {
+    let mut s = protocol_section();
+    s.push_str(&guidance(web));
     s
 }
 

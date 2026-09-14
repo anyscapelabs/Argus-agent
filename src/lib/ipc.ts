@@ -144,6 +144,8 @@ export type MsgRow = {
   tok_out: number | null;
   active: boolean;
   vote: string | null;
+  tool_calls?: string | null;
+  tool_call_id?: string | null;
   created_at: string;
 };
 
@@ -165,7 +167,8 @@ export type StreamEvent =
   | { type: "err"; msg: string }
   | { type: "term"; idx: number; chunk: string }
   | { type: "term_end"; idx: number; code: number }
-  | { type: "approval"; id: string; idx: number; command: string };
+  | { type: "approval"; id: string; idx: number; command: string }
+  | { type: "notice"; msg: string };
 
 export function sessCreateSession(
   title: string,

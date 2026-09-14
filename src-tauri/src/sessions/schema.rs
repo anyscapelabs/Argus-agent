@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
   ctx_tokens  INTEGER NOT NULL DEFAULT 0,
   compact_seq INTEGER NOT NULL DEFAULT 0,
-  compactions INTEGER NOT NULL DEFAULT 0
+  compactions INTEGER NOT NULL DEFAULT 0,
+  web_search  INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -33,6 +34,8 @@ CREATE TABLE IF NOT EXISTS messages (
   tok_out     INTEGER,
   active      INTEGER NOT NULL DEFAULT 1,
   vote        TEXT,
+  tool_calls  TEXT,
+  tool_call_id TEXT,
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_msgs_session ON messages(session_id, seq);
@@ -95,10 +98,14 @@ pub struct Msg {
     pub active: bool,
     #[serde(default)]
     pub vote: Option<String>,
+    #[serde(default)]
+    pub tool_calls: Option<String>,
+    #[serde(default)]
+    pub tool_call_id: Option<String>,
     pub created_at: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Default)]
 pub struct NewMsg {
     pub session_id: String,
     pub role: String,
@@ -107,4 +114,8 @@ pub struct NewMsg {
     pub provider_id: Option<String>,
     pub tok_in: Option<i64>,
     pub tok_out: Option<i64>,
+    #[serde(default)]
+    pub tool_calls: Option<String>,
+    #[serde(default)]
+    pub tool_call_id: Option<String>,
 }

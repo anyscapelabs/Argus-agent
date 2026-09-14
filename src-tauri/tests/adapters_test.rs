@@ -1,11 +1,13 @@
-use argus_lib::gateway::adapters::{anthropic_content, openai_msgs};
-use argus_lib::gateway::schema::WireMsg;
+use argus_lib::gateway::adapters::anthropic_content;
+use argus_lib::gateway::adapters::openai_msgs;
+use argus_lib::gateway::schema::{ToolCall, WireMsg};
 
 fn msg(content: &str, images: Vec<String>) -> WireMsg {
     WireMsg {
         role: "user".into(),
         content: content.into(),
         images,
+        ..Default::default()
     }
 }
 
@@ -49,4 +51,40 @@ fn anthropic_content_switches_to_parts_with_images() {
     assert!(v.is_array());
     assert_eq!(v[0]["type"], "text");
     assert_eq!(v.as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn openai_msgs_round_trips_native_tool_calls() {
+    let msgs = vec![
+        WireMsg {
+            role: "assistant".into(),
+            content: "".into(),
+            tool_calls: vec![ToolCall {
+                id: "call_1".into(),
+                name: "web.search".into(),
+                args: r#"{"query":"papers"}"#.into(),
+            }],
+            ..Default::default()
+        },
+        WireMsg {
+            role: "tool".into(),
+            content: "<tool-result tool=\"web.search\" status=\"ok\">[]</tool-result>".into(),
+            tool_call_id: Some("call_1".into()),
+            ..Default::default()
+        },
+  	];
+
+    let out = openai_msgs(&msgs);
+
+    assert_eq!(out[0]["role"], "assistant");
+    assert_eq!(out[0]["tool_calls"][0]["id"], "call_1");
+    assert_eq!(out[0]["tool_calls"][0]["function"]["name"], "web.search");
+    assert_eq!(
+        out[0]["tool_calls"][0]["function"]["arguments"],
+        r#"{"query":"papers"}"#
+    );
+
+    assert_eq!(out[1]["role"], "tool");
+    assert_eq!(out[1]["tool_call_id"], "call_1");
+    assert!(out[1]["content"].as_str().unwrap().contains("[]"));
 }

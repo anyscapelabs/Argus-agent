@@ -142,12 +142,31 @@ pub struct ReqLog {
     pub prefix_hash: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub args: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ToolSpec {
+    pub name: String,
+    pub description: String,
+    pub parameters: serde_json::Value,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct WireMsg {
     pub role: String,
     pub content: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls: Vec<ToolCall>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -178,6 +197,8 @@ pub struct ChatReq {
     pub msgs: Vec<WireMsg>,
     #[serde(default)]
     pub prefix_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<ToolSpec>,
 }
 
 #[derive(Serialize, Debug)]
@@ -229,6 +250,9 @@ pub enum StreamEvent {
         idx: u32,
         command: String,
     },
+    Notice {
+        msg: String,
+    },
 }
 
 #[derive(Debug, Default)]
@@ -236,4 +260,6 @@ pub struct StreamDone {
     pub text: String,
     pub tok_in: Option<u64>,
     pub tok_out: Option<u64>,
+    pub truncated: bool,
+    pub tool_calls: Vec<ToolCall>,
 }

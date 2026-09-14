@@ -38,6 +38,34 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
         .map_err(|err| err.to_string())?;
     }
 
+    let has_calls: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'tool_calls'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|n| n > 0)
+        .map_err(|err| err.to_string())?;
+
+    if !has_calls {
+        conn.execute("ALTER TABLE messages ADD COLUMN tool_calls TEXT", [])
+            .map_err(|err| err.to_string())?;
+    }
+
+    let has_call_id: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'tool_call_id'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|n| n > 0)
+        .map_err(|err| err.to_string())?;
+
+    if !has_call_id {
+        conn.execute("ALTER TABLE messages ADD COLUMN tool_call_id TEXT", [])
+            .map_err(|err| err.to_string())?;
+    }
+
     conn.pragma_update(None, "foreign_keys", true)
         .map_err(|err| err.to_string())?;
 
@@ -184,7 +212,7 @@ pub fn delete_session(conn: &Connection, id: &str) -> Result<(), String> {
 }
 
 const MSG_COLS: &str =
-    "id, session_id, seq, role, content, model_id, provider_id, tok_in, tok_out, active, vote, created_at";
+    "id, session_id, seq, role, content, model_id, provider_id, tok_in, tok_out, active, vote, tool_calls, tool_call_id, created_at";
 
 fn row_msg(r: &rusqlite::Row) -> rusqlite::Result<Msg> {
     Ok(Msg {
@@ -199,7 +227,9 @@ fn row_msg(r: &rusqlite::Row) -> rusqlite::Result<Msg> {
         tok_out: r.get(8)?,
         active: r.get::<_, i64>(9)? != 0,
         vote: r.get(10)?,
-        created_at: r.get(11)?,
+        tool_calls: r.get(11)?,
+        tool_call_id: r.get(12)?,
+        created_at: r.get(13)?,
     })
 }
 
@@ -214,8 +244,8 @@ pub fn add_msg(conn: &Connection, m: &NewMsg) -> Result<Msg, String> {
         .map_err(|err| err.to_string())?;
 
     conn.execute(
-        "INSERT INTO messages (id, session_id, seq, role, content, model_id, provider_id, tok_in, tok_out)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO messages (id, session_id, seq, role, content, model_id, provider_id, tok_in, tok_out, tool_calls, tool_call_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         params![
             id,
             m.session_id,
@@ -225,7 +255,9 @@ pub fn add_msg(conn: &Connection, m: &NewMsg) -> Result<Msg, String> {
             m.model_id,
             m.provider_id,
             m.tok_in,
-            m.tok_out
+            m.tok_out,
+            m.tool_calls,
+            m.tool_call_id
         ],
     )
     .map_err(|err| err.to_string())?;

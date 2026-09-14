@@ -214,15 +214,16 @@ this summary plus the most recent messages. Stay under {budget} tokens (about {w
             WireMsg {
                 role: "system".into(),
                 content: SUMMARY_SYS.into(),
-                images: vec![],
+                ..Default::default()
             },
             WireMsg {
                 role: "user".into(),
                 content: user,
-                images: vec![],
+                ..Default::default()
             },
         ],
         prefix_hash: None,
+        tools: vec![],
     };
 
     let resp = router::run(gw, &req).await?;

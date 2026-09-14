@@ -9,9 +9,9 @@ const MAX_RESULTS: usize = 8;
 const UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
 const SEARXNG_POOL: &[&str] = &[
-    "https://search.sapti.me/search",
     "https://searx.be/search",
-    "https://search.bus-hit.me/search",
+    "https://searx.tiekoetter.com/search",
+    "https://priv.au/search",
 ];
 
 fn client() -> &'static reqwest::Client {
@@ -43,7 +43,25 @@ pub async fn search(args: &Value) -> Result<String, String> {
         }
     }
 
-    duck_search(query).await
+    if let Ok(out) = duck_search(query).await {
+        return Ok(out);
+    }
+
+    browser_search(query).await
+}
+
+async fn browser_search(query: &str) -> Result<String, String> {
+    let url = url::Url::parse_with_params("https://www.bing.com/search", &[("q", query)])
+        .map_err(|err| format!("search url failed: {err}"))?;
+
+    crate::tools::browser::open(&serde_json::json!({ "url": url.as_str() }))
+        .await
+        .map(|out| {
+            format!(
+                "results fetched via the real browser because every text search \
+                 engine failed:\n{out}"
+            )
+        })
 }
 
 fn format_hits(hits: &[(String, String, String)]) -> Result<String, String> {

@@ -1,5 +1,7 @@
 use argus_lib::tools::browser;
-use argus_lib::tools::{clip_ends, normalize_actions, page_text, parse_actions, web};
+use argus_lib::tools::{
+    clip_ends, close_dangling_actions, normalize_actions, page_text, parse_actions, web,
+};
 use serde_json::Value;
 
 #[test]
@@ -249,4 +251,28 @@ fn bot_wall_leaves_real_content_alone() {
     );
     let long_captcha_essay = format!("captcha{}", " analysis of automated checks.".repeat(200));
     assert!(bot_wall(&long_captcha_essay).is_none());
+}
+
+#[test]
+fn closes_action_block_truncated_by_stream_end() {
+    let t = r#"Opening it now. <action tool="web.search">{"query":"big data papers"}"#;
+
+    let out = close_dangling_actions(t);
+
+    assert!(out.ends_with("</action>"), "got: {out}");
+    let acts = parse_actions(&out);
+    assert_eq!(acts.len(), 1);
+    assert_eq!(acts[0].tool, "web.search");
+}
+
+#[test]
+fn leaves_completed_and_garbage_actions_alone() {
+    let done = r#"done <action tool="terminal">{"cmd":"ls"}</action>"#;
+    assert_eq!(close_dangling_actions(done), done);
+
+    let garbage = r#"hmm <action tool="terminal">{"cmd":"#;
+    assert_eq!(close_dangling_actions(garbage), garbage);
+
+    let no_action = "plain text";
+    assert_eq!(close_dangling_actions(no_action), no_action);
 }

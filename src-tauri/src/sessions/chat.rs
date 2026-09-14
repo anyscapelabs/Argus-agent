@@ -15,10 +15,12 @@ use super::schema::NewMsg;
 use super::store;
 
 const DEFAULT_TITLE: &str = "New chat";
-const MAX_STEPS: usize = 12;
+const MAX_STEPS: usize = 24;
 const RESULT_CLIP: usize = 4000;
 const TERM_TIMEOUT: u64 = 300;
 const DENIED_CODE: i64 = -2;
+const MAX_CLAIM_NUDGES: usize = 2;
+const MAX_TRUNC_CONTS: usize = 2;
 
 const TITLE_SYS: &str =
     "You are the title generator for Argus, a personal AI agent the user chats with. \
@@ -29,6 +31,14 @@ const NUDGE: &str = "Continue: your last reply said you were acting, but it cont
 <action> block, so nothing actually ran. Emit the block now and end your reply right \
 after it: <action tool=\"...\">{\"arg\":\"...\"}</action>. If you \
 cannot act, say so plainly — never describe an action without running it.";
+
+const TRUNC_CONT: &str = "Your previous reply was cut off at the model's output limit. \
+Continue with the next step now. If a tool-result already arrived for an action, \
+that work is done — do not repeat it. Only if you were in the middle of an action \
+block that has no matching tool-result yet, re-emit that whole block from its start.";
+
+const EMPTY_CONT: &str = "Your last reply was empty. Continue with the task now; to act, \
+end your reply with an action block.";
 
 const HARD_STEPS: usize = 6;
 
@@ -63,12 +73,12 @@ async fn generate_title(gw: &Gateway, session_id: &str, content: &str) -> Result
         WireMsg {
             role: "system".into(),
             content: TITLE_SYS.into(),
-            images: vec![],
+            ..Default::default()
         },
         WireMsg {
             role: "user".into(),
             content: truncate_chars(content, 500),
-            images: vec![],
+            ..Default::default()
         },
     ];
 
@@ -78,6 +88,7 @@ async fn generate_title(gw: &Gateway, session_id: &str, content: &str) -> Result
                 model: u,
                 msgs: msgs.clone(),
                 prefix_hash: None,
+                tools: vec![],
             };
             match router::run_opts(gw, &req, 2).await {
                 Ok(resp) => resp.content,
@@ -112,6 +123,7 @@ async fn fallback_title(
         model,
         msgs: msgs.to_vec(),
         prefix_hash: None,
+        tools: vec![],
     };
 
     Ok(router::run_opts(gw, &req, 2).await?.content)
@@ -160,12 +172,23 @@ pub fn repeated(recent: &[(String, String)], key: &(String, String)) -> bool {
         return false;
     };
 
-    recent
-        .iter()
-        .rev()
-        .take_while(|p| p.0 == key.0 && host(&p.1).as_deref() == Some(h.as_str()))
-        .count()
-        >= 2
+    let same_site = |p: &&(String, String)| -> bool {
+        p.0 == key.0
+            && host(&p.1)
+                .map(|o| {
+                    let base = |x: &str| -> String {
+                        let mut it = x.rsplit('.');
+                        let t = it.next().unwrap_or("");
+                        let m = it.next().unwrap_or("");
+                        format!("{m}.{t}")
+                    };
+
+                    base(&o) == base(&h)
+                })
+                .unwrap_or(false)
+    };
+
+    recent.iter().rev().take_while(same_site).count() >= 2
 }
 
 async fn ask_approval(
@@ -333,6 +356,8 @@ pub async fn send(
                 provider_id: None,
                 tok_in: None,
                 tok_out: None,
+                tool_calls: None,
+                tool_call_id: None,
             },
         )?;
     }
@@ -350,13 +375,16 @@ pub async fn send(
     let mut tok_in_sum = 0i64;
     let mut act_base = 0usize;
     let mut nudge: Option<String> = None;
-    let mut nudged = false;
+    let mut claim_nudges = 0usize;
+    let mut trunc_conts = 0usize;
+    let mut empty_retries = 0usize;
     let mut skill_nudged = false;
+    let mut finished = false;
     let mut acts_run = 0usize;
     let mut recent: Vec<(String, String)> = vec![];
 
     for _step in 0..MAX_STEPS {
-        let mut req = {
+        let req = {
             let conn = gw.conn.lock().map_err(|err| err.to_string())?;
             let mut p = project(&conn, session_id)?;
             if p.model_id.is_none() {
@@ -366,11 +394,11 @@ pub async fn send(
             let mut r = p.chat_req();
             attach_shots(&mut r.msgs);
 
-            if let Some(n) = &nudge {
+            if let Some(n) = nudge.take() {
                 r.msgs.push(WireMsg {
                     role: "user".into(),
-                    content: n.clone(),
-                    images: vec![],
+                    content: n,
+                    ..Default::default()
                 });
             }
 
@@ -378,17 +406,72 @@ pub async fn send(
             r
         };
 
-        let stats = router::stream_run(gw, &req, chan).await?;
-        req.msgs.clear();
+        let stats = router::stream_run(gw, req, chan).await?;
         tok_in_sum += stats.tok_in;
 
-        if stats.text.trim().is_empty() {
+        if stats.text.trim().is_empty() && stats.tool_calls.is_empty() {
+            if empty_retries < 1 {
+                empty_retries += 1;
+                nudge = Some(EMPTY_CONT.into());
+                continue;
+            }
+
             return Err("model returned an empty reply — try again".into());
         }
 
-        let text = sanitize_tags(&tools::normalize_actions(&stats.text));
-        let actions = tools::parse_actions(&text);
-        let done = actions.is_empty();
+        // Keep the model's prose separate from native tool calls.
+        // Previously native calls were appended as synthetic `<action>` tags
+        // into the persisted content AND stored in `tool_calls`, so the next
+        // turn replayed both representations to the provider.
+        let base_text = sanitize_tags(&tools::normalize_actions(&stats.text));
+        let text_actions = tools::parse_actions(&base_text);
+
+        struct PendingAction {
+            tool: String,
+            args: String,
+            start: Option<usize>,
+            end: Option<usize>,
+            tool_call_id: Option<String>,
+        }
+
+        let mut pending: Vec<PendingAction> = Vec::new();
+        for a in &text_actions {
+            pending.push(PendingAction {
+                tool: a.tool.clone(),
+                args: a.args.clone(),
+                start: Some(a.start),
+                end: Some(a.end),
+                tool_call_id: None,
+            });
+        }
+        for c in &stats.tool_calls {
+            if c.name.is_empty() {
+                continue;
+            }
+            let args = if c.args.trim().is_empty() {
+                "{}".to_string()
+            } else {
+                c.args.clone()
+            };
+            pending.push(PendingAction {
+                tool: c.name.clone(),
+                args,
+                start: None,
+                end: None,
+                tool_call_id: Some(c.id.clone()),
+            });
+        }
+
+        let done = pending.is_empty();
+        // Persist prose only; native calls live in the tool_calls column and
+        // are sent as structured tool_use/tool_calls blocks, not as text.
+        let text = base_text.clone();
+
+        let calls_json = if stats.tool_calls.is_empty() {
+            None
+        } else {
+            serde_json::to_string(&stats.tool_calls).ok()
+        };
 
         let asst = {
             let conn = gw.conn.lock().map_err(|err| err.to_string())?;
@@ -402,15 +485,45 @@ pub async fn send(
                     provider_id: Some(stats.provider_id),
                     tok_in: Some(stats.tok_in),
                     tok_out: Some(stats.tok_out),
+                    tool_calls: calls_json,
+                    tool_call_id: None,
                 },
             )?
         };
 
-        if done {
-            if !nudged && claims_action(&text) {
-                nudged = true;
-                nudge = Some(NUDGE.into());
+        if stats.truncated {
+            trunc_conts += 1;
+
+            if trunc_conts > MAX_TRUNC_CONTS {
+                let _ = chan.send(StreamEvent::Notice {
+                    msg: "the model's reply was cut off at its output limit twice — \
+                          partial work above is saved; send 'continue' to resume"
+                        .into(),
+                });
+                finished = true;
+                break;
+            }
+
+            nudge = Some(TRUNC_CONT.into());
+
+            if done {
                 continue;
+            }
+        } else if done {
+            if claims_action(&text) {
+                if claim_nudges < MAX_CLAIM_NUDGES {
+                    claim_nudges += 1;
+                    nudge = Some(NUDGE.into());
+                    continue;
+                }
+
+                let _ = chan.send(StreamEvent::Notice {
+                    msg: "the reply described an action but none ran — partial work \
+                          above is saved; send 'continue' to let it retry"
+                        .into(),
+                });
+                finished = true;
+                break;
             }
 
             if !skill_nudged && acts_run >= HARD_STEPS {
@@ -419,15 +532,18 @@ pub async fn send(
                 continue;
             }
 
+            finished = true;
             break;
         }
 
         let _ = chan.send(StreamEvent::Step);
 
         let mut edits: Vec<(usize, usize, String)> = vec![];
+        let mut append_blocks: Vec<String> = vec![];
 
-        for (i, a) in actions.iter().enumerate() {
-            let idx = act_base + i;
+        for a in &pending {
+            let idx = act_base;
+            act_base += 1;
             let is_term = a.tool == "terminal" || a.tool == "bash.run";
             let is_browser = a.tool.starts_with("browser.");
 
@@ -516,6 +632,8 @@ pub async fn send(
                         provider_id: None,
                         tok_in: None,
                         tok_out: None,
+                        tool_calls: None,
+                        tool_call_id: a.tool_call_id.clone(),
                     },
                 )?;
             }
@@ -537,7 +655,11 @@ pub async fn send(
                         .unwrap_or_else(|| body.clone())
                 };
 
-                edits.push((a.start, a.end, terminal_block(idx, &cmd, code, &out)));
+                let blk = terminal_block(idx, &cmd, code, &out);
+                match (a.start, a.end) {
+                    (Some(s), Some(e)) => edits.push((s, e, blk)),
+                    _ => append_blocks.push(blk),
+                }
             }
 
             if is_browser {
@@ -546,19 +668,28 @@ pub async fn send(
                     .map(Into::into)
                     .unwrap_or_else(|| body_url(&body));
 
-                edits.push((
-                    a.start,
-                    a.end,
-                    browser_block(idx, &a.tool, &url, &browser_what(&a.tool, &args_v, true)),
-                ));
+                let blk =
+                    browser_block(idx, &a.tool, &url, &browser_what(&a.tool, &args_v, true));
+                match (a.start, a.end) {
+                    (Some(s), Some(e)) => edits.push((s, e, blk)),
+                    _ => append_blocks.push(blk),
+                }
             }
         }
 
-        if !edits.is_empty() {
-            let mut updated = text;
+        if !edits.is_empty() || !append_blocks.is_empty() {
+            let mut updated = text.clone();
 
             for (s, end, blk) in edits.into_iter().rev() {
-                updated.replace_range(s..end, &blk);
+                if s <= end && end <= updated.len() && updated.is_char_boundary(s) && updated.is_char_boundary(end) {
+                    updated.replace_range(s..end, &blk);
+                }
+            }
+            for blk in append_blocks {
+                if !updated.is_empty() && !updated.ends_with('\n') {
+                    updated.push('\n');
+                }
+                updated.push_str(&blk);
             }
 
             let conn = gw.conn.lock().map_err(|err| err.to_string())?;
@@ -569,8 +700,16 @@ pub async fn send(
             .map_err(|err| err.to_string())?;
         }
 
-        act_base += actions.len();
-        acts_run += actions.len();
+        acts_run += pending.len();
+    }
+
+    if !finished {
+        let _ = chan.send(StreamEvent::Notice {
+            msg: format!(
+                "paused mid-task after {MAX_STEPS} steps — everything above is saved; \
+                 send 'continue' to resume"
+            ),
+        });
     }
 
     {

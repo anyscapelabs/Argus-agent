@@ -7,7 +7,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tauri::State;
 
-use crate::gateway::schema::{ChatReq, WireMsg};
+use crate::gateway::schema::{ChatReq, ToolCall, WireMsg};
 use crate::gateway::{store as gw_store, Gateway};
 
 pub const BASE: &str = "You are Argus, a personal AI agent operating on the user's machine.\n\
@@ -114,7 +114,7 @@ pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String
 
     let mut stmt = conn
         .prepare(
-            "SELECT role, content FROM messages
+            "SELECT role, content, tool_calls, tool_call_id FROM messages
              WHERE session_id = ?1 AND active = 1 AND seq > ?2
              ORDER BY seq",
         )
@@ -122,17 +122,20 @@ pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String
 
     let rows = stmt
         .query_map(params![session_id, compact_seq], |r| {
-            Ok(WireMsg {
-                role: r.get(0)?,
-                content: r.get(1)?,
-                images: vec![],
-            })
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Option<String>>(2)?,
+                r.get::<_, Option<String>>(3)?,
+            ))
         })
         .map_err(|err| err.to_string())?;
 
-    let msgs = rows
+    let rows = rows
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| err.to_string())?;
+
+    let msgs = to_wire(&rows);
 
     let mut hasher = Sha256::new();
     hasher.update(system.as_bytes());
@@ -151,7 +154,68 @@ pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String
         prefix_hash: hash,
         ctx_tokens,
         compact_seq,
+        web: web_search,
     })
+}
+
+fn to_wire(rows: &[(String, String, Option<String>, Option<String>)]) -> Vec<WireMsg> {
+    rows.iter()
+        .map(|(role, content, calls, call_id)| {
+            let calls = calls
+                .as_deref()
+                .and_then(|j| serde_json::from_str::<Vec<ToolCall>>(j).ok())
+                .unwrap_or_default();
+
+            // Only map to the native `tool` role when we have a real
+            // tool_call_id to link back to. Legacy `<action>` text tools store
+            // None, and sending `tool_call_id: ""` makes OpenAI/Anthropic
+            // reject the request with 400. Keep those as plain user messages
+            // so the text protocol (`<tool-result>`) still works.
+            if role == "user" && content.starts_with("<tool-result") {
+                let has_id = call_id.as_deref().is_some_and(|s| !s.is_empty());
+                if has_id {
+                    return WireMsg {
+                        role: "tool".into(),
+                        content: unwrap_result(content),
+                        images: vec![],
+                        tool_calls: vec![],
+                        tool_call_id: call_id.clone(),
+                    };
+                }
+
+                return WireMsg {
+                    role: "user".into(),
+                    content: content.clone(),
+                    images: vec![],
+                    tool_calls: vec![],
+                    tool_call_id: None,
+                };
+            }
+
+            WireMsg {
+                role: role.clone(),
+                content: content.clone(),
+                images: vec![],
+                tool_calls: calls,
+                tool_call_id: None,
+            }
+        })
+        .collect()
+}
+
+fn unwrap_result(content: &str) -> String {
+    let inner = match (content.find('>'), content.rfind("</tool-result>")) {
+        (Some(open), Some(end)) if open + 1 <= end => &content[open + 1..end],
+        _ => content,
+    };
+
+    let err = content.contains("status=\"err\"");
+
+    if err {
+        format!("error: {inner}")
+    } else {
+        inner.to_string()
+    }
 }
 
 pub struct Projection {
@@ -163,6 +227,7 @@ pub struct Projection {
     pub prefix_hash: String,
     pub ctx_tokens: i64,
     pub compact_seq: i64,
+    pub web: bool,
 }
 
 impl Projection {
@@ -170,7 +235,7 @@ impl Projection {
         let mut msgs = vec![WireMsg {
             role: "system".into(),
             content: self.system.clone(),
-            images: vec![],
+            ..Default::default()
         }];
         msgs.extend(self.msgs.iter().cloned());
 
@@ -178,6 +243,7 @@ impl Projection {
             model: self.model_id.clone().unwrap_or_default(),
             msgs,
             prefix_hash: None,
+            tools: crate::tools::tool_specs(self.web),
         }
     }
 }

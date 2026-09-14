@@ -5,7 +5,7 @@ fn msg(content: &str) -> WireMsg {
     WireMsg {
         role: "user".into(),
         content: content.into(),
-        images: vec![],
+        ..Default::default()
     }
 }
 

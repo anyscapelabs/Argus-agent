@@ -3,7 +3,7 @@ pub mod openai_compat;
 
 use reqwest::Client;
 
-use super::schema::{Provider, StreamDone, WireMsg, WireResp};
+use super::schema::{Provider, StreamDone, ToolSpec, WireMsg, WireResp};
 
 #[derive(Debug)]
 pub struct CallError {
@@ -63,6 +63,30 @@ fn b64(data: &[u8]) -> String {
 pub fn openai_msgs(msgs: &[WireMsg]) -> Vec<serde_json::Value> {
     msgs.iter()
         .map(|m| {
+            if m.role == "tool" {
+                return serde_json::json!({
+                    "role": "tool",
+                    "tool_call_id": m.tool_call_id.clone().unwrap_or_default(),
+                    "content": m.content,
+                });
+            }
+
+            if !m.tool_calls.is_empty() {
+                return serde_json::json!({
+                    "role": "assistant",
+                    "content": if m.content.is_empty() {
+                        serde_json::Value::Null
+                    } else {
+                        serde_json::json!(m.content)
+                    },
+                    "tool_calls": m.tool_calls.iter().map(|c| serde_json::json!({
+                        "id": c.id,
+                        "type": "function",
+                        "function": { "name": c.name, "arguments": c.args },
+                    })).collect::<Vec<_>>(),
+                });
+            }
+
             if m.images.is_empty() {
                 return serde_json::json!({ "role": m.role, "content": m.content });
             }
@@ -108,16 +132,17 @@ pub async fn dispatch_stream(
     remote_id: &str,
     tok: Option<String>,
     msgs: &[WireMsg],
+    tools: &[ToolSpec],
     on_delta: DeltaSink<'_>,
 ) -> Result<StreamDone, CallError> {
     let lc = prov.compatible.to_lowercase();
 
     match lc.as_str() {
         "openai" => {
-            openai_compat::stream(http, &prov.base_url, tok, remote_id, msgs, on_delta).await
+            openai_compat::stream(http, &prov.base_url, tok, remote_id, msgs, tools, on_delta).await
         }
         "anthropic" => {
-            anthropic::stream(http, &prov.base_url, tok, remote_id, msgs, on_delta).await
+            anthropic::stream(http, &prov.base_url, tok, remote_id, msgs, tools, on_delta).await
         }
         _ => Err(CallError {
             status: None,
@@ -133,12 +158,13 @@ pub async fn dispatch(
     remote_id: &str,
     tok: Option<String>,
     msgs: &[WireMsg],
+    tools: &[ToolSpec],
 ) -> Result<(WireResp, String), CallError> {
     let lc = prov.compatible.to_lowercase();
 
     match lc.as_str() {
-        "openai" => openai_compat::chat(http, &prov.base_url, tok, remote_id, msgs).await,
-        "anthropic" => anthropic::chat(http, &prov.base_url, tok, remote_id, msgs).await,
+        "openai" => openai_compat::chat(http, &prov.base_url, tok, remote_id, msgs, tools).await,
+        "anthropic" => anthropic::chat(http, &prov.base_url, tok, remote_id, msgs, tools).await,
         _ => Err(CallError {
             status: None,
             msg: format!("unknown compatible dialect {}", prov.compatible),

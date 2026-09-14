@@ -88,6 +88,11 @@ class SessionStore {
     for (const fn of this.listeners) fn();
   }
 
+  onTurnStart: ((sessionId: string) => void) | null = null;
+  onTurnDone:
+    | ((sessionId: string, ok: boolean, snippet: string) => void)
+    | null = null;
+
   async loadSessions() {
     try {
       const sessions = await sessListSessions();
@@ -340,12 +345,18 @@ class SessionStore {
       turns: { ...this.state.turns, [sessionId]: blankTurn() },
       stopped: { ...this.state.stopped, [sessionId]: false },
     });
+    this.onTurnStart?.(sessionId);
 
     try {
       await sessChatStream(sessionId, content, chan);
+      const snippet = (this.state.turns[sessionId]?.text ?? "")
+        .split("\n")[0]
+        .trim()
+        .slice(0, 120);
       this.clearTurn(sessionId);
       await this.loadMsgs(sessionId);
       await this.loadSessions();
+      this.onTurnDone?.(sessionId, true, snippet);
     } catch (err) {
       await this.loadMsgs(sessionId);
 
@@ -357,6 +368,7 @@ class SessionStore {
       this.set({
         turns: { ...this.state.turns, [sessionId]: blankTurn(String(err)) },
       });
+      this.onTurnDone?.(sessionId, false, String(err).slice(0, 120));
     }
   }
 

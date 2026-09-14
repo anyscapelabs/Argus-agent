@@ -1,5 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import ChatDetailPage from "./components/ChatDetailPage";
 import ConnectorsPage from "./components/ConnectorsPage";
@@ -13,6 +13,7 @@ import SkillsPage from "./components/SkillsPage";
 import Toolbar from "./components/Toolbar";
 import type { Session } from "./components/SessionList";
 import { sessExportJson, type ChatModel } from "./lib/ipc";
+import { notifyDone } from "./lib/notify";
 import { sessionStore, useSessions } from "./stores/sessions";
 
 export type View =
@@ -32,6 +33,38 @@ function App() {
   const [view, setView] = useState<View>("new-agent");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState("");
+  const notified = useRef(new Set<string>());
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const activeRef = useRef(activeId);
+  activeRef.current = activeId;
+
+  useEffect(() => {
+    sessionStore.onTurnStart = (sessionId) => {
+      notified.current.delete(sessionId);
+    };
+    sessionStore.onTurnDone = (sessionId, ok, snippet) => {
+      if (notified.current.has(sessionId)) return;
+
+      const watching =
+        viewRef.current === "chat" && activeRef.current === sessionId;
+      if (watching) return;
+
+      notified.current.add(sessionId);
+      const title =
+        sessionStore.getState().sessions.find((s) => s.id === sessionId)
+          ?.title ?? "Argus";
+      const body = ok
+        ? snippet || "Done."
+        : `Needs attention: ${snippet || "something failed."}`;
+      void notifyDone(title, body);
+    };
+
+    return () => {
+      sessionStore.onTurnStart = null;
+      sessionStore.onTurnDone = null;
+    };
+  }, []);
 
   useEffect(() => {
     sessionStore.loadSessions();

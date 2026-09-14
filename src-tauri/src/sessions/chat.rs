@@ -40,7 +40,7 @@ If nothing here is worth reusing, say so in one line and finish.";
 
 pub fn claims_action(text: &str) -> bool {
     let re = regex::Regex::new(
-        r"(?i)\b(i'?m|i am|i'?ll|i will|let me|going to)\s+(open|click|type|run|search|navigat|check|launch|browse)\w*",
+        r"(?i)\b(i'?m|i am|i'?ll|i will|let me|going to)\s+(open|click|type|run|search|navigat|check|launch|browse|download|fetch|creat|read)\w*|\b(trying|running|fetching|downloading|uploading|searching|creating|checking|opening|typing|clicking|launching|reading)\b",
     );
 
     re.map(|r| r.is_match(text)).unwrap_or(false)
@@ -287,7 +287,7 @@ pub fn attach_shots(msgs: &mut [WireMsg]) {
     }
 }
 
-fn sanitize_tags(s: &str) -> String {
+pub fn sanitize_tags(s: &str) -> String {
     let mut t = s.to_string();
     t = t
         .replace("<strong>", "<bold>")
@@ -303,7 +303,7 @@ fn sanitize_tags(s: &str) -> String {
         .replace("<a>", "<link>")
         .replace("</a>", "</link>");
 
-    if let Ok(re) = regex::Regex::new(r"(?i)</?(p|div|span|command|output)[^>]*>") {
+    if let Ok(re) = regex::Regex::new(r"(?i)</?(p|div|span|command|output|think)[^>]*>") {
         t = re.replace_all(&t, "").into_owned();
     }
 

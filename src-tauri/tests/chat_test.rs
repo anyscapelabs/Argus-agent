@@ -27,3 +27,27 @@ fn rejects_junk_titles() {
         Some("Rust release notes".into())
     );
 }
+
+#[test]
+fn catches_gerund_claims_without_blocks() {
+    assert!(claims_action("Running the plain Bing search now."));
+    assert!(claims_action(
+        "Trying the Bing search route and checking for skills."
+    ));
+    assert!(claims_action("Downloading the papers into the folder."));
+    assert!(claims_action("Fetching the results, one moment."));
+}
+
+#[test]
+fn strips_think_tags_from_replies() {
+    use argus_lib::sessions::chat::sanitize_tags;
+
+    assert_eq!(
+        sanitize_tags("done.</think> Folder created."),
+        "done. Folder created."
+    );
+    assert_eq!(
+        sanitize_tags("<think>Checking sources.</think> Here you go."),
+        "Checking sources. Here you go."
+    );
+}

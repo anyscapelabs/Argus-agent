@@ -403,10 +403,6 @@ pub async fn stream_run(
                     && !req.tools.is_empty()
                 {
                     req.tools.clear();
-                    // System prompt already contains the full text protocol
-                    // (section = protocol + guidance) since the loop migration
-                    // fix; only inject if a minimal native-only prompt is seen,
-                    // to avoid duplicating the ## Tools block.
                     if let Some(sys) = req.msgs.first_mut() {
                         if sys.role == "system"
                             && !sys.content.contains("## Tools")
@@ -416,8 +412,6 @@ pub async fn stream_run(
                                 .push_str(&crate::tools::protocol_section());
                         }
                     }
-                    // Refresh logged request payload so retries after the
-                    // fallback don't log the stale pre-clear tools.
                     req_json = serde_json::to_string(&req).ok();
 
                     continue;

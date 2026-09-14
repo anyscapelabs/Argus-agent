@@ -419,10 +419,6 @@ pub async fn send(
             return Err("model returned an empty reply — try again".into());
         }
 
-        // Keep the model's prose separate from native tool calls.
-        // Previously native calls were appended as synthetic `<action>` tags
-        // into the persisted content AND stored in `tool_calls`, so the next
-        // turn replayed both representations to the provider.
         let base_text = sanitize_tags(&tools::normalize_actions(&stats.text));
         let text_actions = tools::parse_actions(&base_text);
 
@@ -463,8 +459,6 @@ pub async fn send(
         }
 
         let done = pending.is_empty();
-        // Persist prose only; native calls live in the tool_calls column and
-        // are sent as structured tool_use/tool_calls blocks, not as text.
         let text = base_text.clone();
 
         let calls_json = if stats.tool_calls.is_empty() {

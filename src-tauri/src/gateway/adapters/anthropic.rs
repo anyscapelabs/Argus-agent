@@ -86,11 +86,6 @@ fn payload(remote_id: &str, msgs: &[WireMsg], tools: &[ToolSpec], streaming: boo
         ]);
     }
 
-    // Prompt-cache the tail of the conversation. Native tool turns use array
-    // content (`tool_use` / `tool_result` blocks), so the old `as_str()` check
-    // silently disabled caching for agentic loops. Handle both shapes: plain
-    // strings become a cached text block, arrays get cache_control on their
-    // last text-bearing block.
     let n = turns.len();
     for i in n.saturating_sub(3)..n {
         if let Some(text) = pl["messages"][i]["content"].as_str() {

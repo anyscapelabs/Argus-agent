@@ -51,3 +51,10 @@ fn strips_think_tags_from_replies() {
         "Checking sources. Here you go."
     );
 }
+
+#[test]
+fn catches_retry_claims_without_blocks() {
+    assert!(claims_action("Let me retry web.search now."));
+    assert!(claims_action("I'll try the lite endpoint."));
+    assert!(!claims_action("Try again whenever you're ready."));
+}

@@ -227,3 +227,26 @@ fn attribute_args_cover_quote_styles_and_coercions() {
     assert!(args.get("d").is_none());
     assert_eq!(args["e"], "a=b");
 }
+
+#[test]
+fn bot_wall_short_challenge_is_err() {
+    use argus_lib::tools::web::bot_wall;
+
+    let challenge = "--> DuckDuckGo Unfortunately, bots use DuckDuckGo too. Please complete the following challenge to confirm this search was made by a human.";
+    assert!(bot_wall(challenge).is_some());
+
+    let stub = "Google Search Please click here if you are not redirected within a few seconds.";
+    assert!(stub.len() < 2000);
+    assert!(bot_wall(stub).is_some());
+}
+
+#[test]
+fn bot_wall_leaves_real_content_alone() {
+    use argus_lib::tools::web::bot_wall;
+
+    assert!(
+        bot_wall("Big Data Analytics previous year papers: unit 1, unit 2, downloads.").is_none()
+    );
+    let long_captcha_essay = format!("captcha{}", " analysis of automated checks.".repeat(200));
+    assert!(bot_wall(&long_captcha_essay).is_none());
+}

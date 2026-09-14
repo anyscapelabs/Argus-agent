@@ -79,3 +79,29 @@ fn find_desktop_matches_stem_then_name() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn repeated_trips_on_same_host_reads() {
+    use argus_lib::sessions::chat::repeated;
+
+    let ddg = |q: &str| {
+        (
+            "web.read".to_string(),
+            format!("{{\"url\":\"https://html.duckduckgo.com/html/?q={q}\"}}"),
+        )
+    };
+    let seen = vec![ddg("one"), ddg("two")];
+
+    assert!(repeated(&seen, &ddg("three")));
+    assert!(!repeated(
+        &vec![
+            ddg("one"),
+            (
+                "web.read".to_string(),
+                "{\"url\":\"https://aktu.ac.in\"}".to_string()
+            )
+        ],
+        &ddg("two")
+    ));
+    assert!(!repeated(&vec![ddg("one")], &ddg("two")));
+}

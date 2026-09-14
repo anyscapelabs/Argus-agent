@@ -302,7 +302,11 @@ pub async fn read(args: &Value) -> Result<String, String> {
                 .map_err(|err| format!("page read failed: {err}"))?;
             let body = body.trim().to_string();
             if !body.is_empty() {
-                return Ok(crate::tools::page_text(&body));
+                let text = crate::tools::page_text(&body);
+
+                if bot_wall(&text).is_none() {
+                    return Ok(text);
+                }
             }
         }
     }
@@ -331,10 +335,51 @@ pub async fn read(args: &Value) -> Result<String, String> {
     }
 
     if ct.contains("html") {
-        Ok(crate::tools::page_text(&html_to_text(&body)))
+        let text = crate::tools::page_text(&html_to_text(&body));
+
+        if let Some(err) = bot_wall(&text) {
+            return Err(err);
+        }
+
+        Ok(text)
     } else {
-        Ok(crate::tools::page_text(&body))
+        let text = crate::tools::page_text(&body);
+
+        if let Some(err) = bot_wall(&text) {
+            return Err(err);
+        }
+
+        Ok(text)
     }
+}
+
+const WALL_SIGNS: &[&str] = &[
+    "confirm this search was made by a human",
+    "complete the following challenge",
+    "unusual traffic",
+    "captcha",
+    "are you a robot",
+    "verify you are a human",
+    "attention required",
+    "access denied",
+    "not redirected within a few seconds",
+    "enable javascript",
+    "javascript is required",
+];
+
+const WALL_MAX: usize = 2000;
+
+pub fn bot_wall(text: &str) -> Option<String> {
+    if text.len() >= WALL_MAX {
+        return None;
+    }
+
+    let lower = text.to_lowercase();
+
+    WALL_SIGNS
+        .iter()
+        .find(|s| lower.contains(*s))
+        .map(|s| format!("page served a bot check ({s}) instead of content — try another source, not another query on the same engine"))
 }
 
 pub fn html_to_text(html: &str) -> String {

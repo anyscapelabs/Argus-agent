@@ -142,7 +142,30 @@ fn approval_id() -> String {
 }
 
 pub fn repeated(recent: &[(String, String)], key: &(String, String)) -> bool {
-    recent.iter().rev().take_while(|p| *p == key).count() >= 2
+    if recent.iter().rev().take_while(|p| *p == key).count() >= 2 {
+        return true;
+    }
+
+    if !key.0.starts_with("web.") {
+        return false;
+    }
+
+    let host = |args: &str| -> Option<String> {
+        let v: serde_json::Value = serde_json::from_str(args).ok()?;
+        let u = v.get("url")?.as_str()?;
+        url::Url::parse(u).ok()?.host_str().map(|h| h.to_string())
+    };
+
+    let Some(h) = host(&key.1) else {
+        return false;
+    };
+
+    recent
+        .iter()
+        .rev()
+        .take_while(|p| p.0 == key.0 && host(&p.1).as_deref() == Some(h.as_str()))
+        .count()
+        >= 2
 }
 
 async fn ask_approval(

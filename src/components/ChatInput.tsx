@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { FiChevronDown } from "react-icons/fi";
-import { HiArrowUp, HiPlus } from "react-icons/hi";
+import { HiArrowUp, HiPlus, HiStop } from "react-icons/hi";
 import {
   LuFolderOpen,
   LuGlobe,
@@ -29,6 +29,8 @@ type ChatInputProps = {
   onPermissionChange?: (next: string) => void;
   webSearch?: boolean;
   onWebSearchChange?: (next: boolean) => void;
+  running?: boolean;
+  onStop?: () => void;
 };
 
 const PERM_LABEL: Record<string, string> = {
@@ -47,6 +49,8 @@ export default function ChatInput({
   onPermissionChange,
   webSearch = false,
   onWebSearchChange,
+  running = false,
+  onStop,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const { models, loading } = useChatModels();
@@ -250,18 +254,33 @@ export default function ChatInput({
 
           <button
             type="button"
-            aria-label="Send"
-            disabled={empty}
+            aria-label={running ? "Stop" : "Send"}
+            disabled={!running && empty}
             onClick={() => {
+              if (running) {
+                onStop?.();
+                return;
+              }
+
               if (empty) {
                 return;
               }
 
               onSubmit();
             }}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-bg-hover-secondary text-text-secondary transition-colors hover:bg-bg-hover-primary focus:outline-none focus-visible:bg-bg-hover-primary disabled:bg-bg-hover-secondary disabled:text-text-secondary enabled:bg-white enabled:text-bg-primary enabled:hover:opacity-90"
+            className={
+              "flex h-8 w-8 shrink-0 items-center justify-center rounded-full " +
+              "transition-colors focus:outline-none focus-visible:bg-bg-hover-primary " +
+              `${
+                running
+                  ? "bg-white text-bg-primary hover:opacity-90"
+                  : "bg-bg-hover-secondary text-text-secondary hover:bg-bg-hover-primary " +
+                    "disabled:bg-bg-hover-secondary disabled:text-text-secondary " +
+                    "enabled:bg-white enabled:text-bg-primary enabled:hover:opacity-90"
+              }`
+            }
           >
-            <HiArrowUp size={16} />
+            {running ? <HiStop size={14} /> : <HiArrowUp size={16} />}
           </button>
         </div>
       </div>

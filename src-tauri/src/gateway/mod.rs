@@ -22,6 +22,7 @@ pub struct Gateway {
     pub library_dir: PathBuf,
     pub logos_dir: PathBuf,
     pub approvals: Mutex<HashMap<String, oneshot::Sender<bool>>>,
+    pub tasks: Mutex<HashMap<String, std::sync::Arc<tokio::sync::Notify>>>,
 }
 
 #[tauri::command]

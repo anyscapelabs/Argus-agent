@@ -611,7 +611,39 @@ pub async fn sess_chat_stream(
     content: String,
     on_event: Channel<StreamEvent>,
 ) -> Result<(), String> {
-    send(&gw, &app, &session_id, &content, &on_event).await
+    let notify = std::sync::Arc::new(tokio::sync::Notify::new());
+
+    if let Ok(mut tasks) = gw.tasks.lock() {
+        tasks.insert(session_id.clone(), notify.clone());
+    }
+
+    let out = tokio::select! {
+        _ = notify.notified() => Err("stopped".into()),
+        out = send(&gw, &app, &session_id, &content, &on_event) => out,
+    };
+
+    if let Ok(mut tasks) = gw.tasks.lock() {
+        tasks.remove(&session_id);
+    }
+
+    out
+}
+
+#[tauri::command]
+pub fn sess_cancel_chat(gw: State<'_, Gateway>, session_id: String) -> Result<bool, String> {
+    let took = gw
+        .tasks
+        .lock()
+        .map_err(|err| err.to_string())?
+        .remove(&session_id);
+
+    match took {
+        Some(n) => {
+            n.notify_one();
+            Ok(true)
+        }
+        None => Ok(false),
+    }
 }
 
 #[tauri::command]

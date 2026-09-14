@@ -35,4 +35,5 @@ sha2 = "0.10"
 regex = "1"
 chromiumoxide = "0.9"
 atspi = "0.30"
+tauri-plugin-notification = "2"
 

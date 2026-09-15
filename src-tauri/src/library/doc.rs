@@ -1,5 +1,3 @@
-use rusqlite::Connection;
-
 use super::store;
 use crate::gateway::Gateway;
 

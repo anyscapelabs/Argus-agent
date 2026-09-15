@@ -56,6 +56,10 @@ pub fn claims_action(text: &str) -> bool {
     re.map(|r| r.is_match(text)).unwrap_or(false)
 }
 
+pub fn fakes_output(text: &str) -> bool {
+    text.contains("<browser-action") || text.contains("<terminal")
+}
+
 async fn generate_title(gw: &Gateway, session_id: &str, content: &str) -> Result<(), String> {
     let (util, selected) = {
         let conn = gw.conn.lock().map_err(|err| err.to_string())?;
@@ -521,7 +525,7 @@ pub async fn send(
                 continue;
             }
         } else if done {
-            if claims_action(&text) {
+            if claims_action(&text) || fakes_output(&text) {
                 if claim_nudges < MAX_CLAIM_NUDGES {
                     claim_nudges += 1;
                     nudge = Some(NUDGE.into());

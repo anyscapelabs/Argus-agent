@@ -315,7 +315,79 @@ pub fn normalize_actions(text: &str) -> String {
     }
 
     out.push_str(rest);
-    close_dangling_actions(&out)
+    salvage_browser_blocks(&close_dangling_actions(&out))
+}
+
+fn salvage_browser_action(tag: &str) -> Option<(String, String)> {
+    let tool = tag
+        .split("action=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .or_else(|| {
+            tag.split("action='")
+                .nth(1)
+                .and_then(|s| s.split('\'').next())
+        })
+        .unwrap_or("")
+        .to_string();
+
+    if !tool.starts_with("browser.") {
+        return None;
+    }
+
+    let all = attrs_to_args(tag)?;
+    let obj = serde_json::from_str::<serde_json::Map<String, Value>>(&all).ok()?;
+
+    let mut kept = serde_json::Map::new();
+    for k in ["ref", "text", "submit"] {
+        if let Some(v) = obj.get(k) {
+            kept.insert(k.into(), v.clone());
+        }
+    }
+
+    if kept.is_empty() {
+        return None;
+    }
+
+    Some((tool, Value::Object(kept).to_string()))
+}
+
+fn salvage_browser_blocks(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+
+    while let Some(start) = rest.find("<browser-action") {
+        out.push_str(&rest[..start]);
+        let tail = &rest[start..];
+
+        let Some(te) = tag_end(tail) else {
+            out.push_str(tail);
+            break;
+        };
+
+        let tag = &tail[..te];
+        let self_closed = tag.trim_end().ends_with('/');
+        let close_tag = "</browser-action>";
+
+        let consumed = if self_closed {
+            te + 1
+        } else if let Some(close) = tail.find(close_tag) {
+            close + close_tag.len()
+        } else {
+            tail.len()
+        };
+
+        if let Some((tool, args)) = salvage_browser_action(tag) {
+            out.push_str(&format!("<action tool=\"{tool}\">{args}</action>"));
+        } else {
+            out.push_str(&tail[..consumed]);
+        }
+
+        rest = &tail[consumed..];
+    }
+
+    out.push_str(rest);
+    out
 }
 
 fn salvage_call(inner: &str) -> Option<(String, String)> {
@@ -651,6 +723,8 @@ explain the failure and what would fix it, never repeat the same call.\n\
 - Attempt the full plan first; only when every route is exhausted write one summary of what failed — never a report after each single failure.\n\
 - Never narrate a screenshot you were not given, and never claim a tool ran \
 without its result message.\n\
+- Past runs render in history as <browser-action>, <terminal> and <document> blocks: \
+those are read-only records, never emit them yourself — to act, always emit <action>.\n\
 - The action block is the only way to run a tool: never <tool_call> or any other \
 tool-call format, never args as tag attributes, never a self-closed tag, never \
 an action block nested inside another tag.\n\

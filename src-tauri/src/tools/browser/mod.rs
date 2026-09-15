@@ -75,6 +75,7 @@ pub(crate) struct RefEntry {
 pub(crate) struct RefTable {
     pub(crate) gen: u64,
     pub(crate) items: Vec<RefEntry>,
+    pub(crate) recovery_gen: Option<u64>,
 }
 
 impl RefTable {
@@ -102,6 +103,42 @@ impl RefTable {
     pub(crate) fn label(&self, index: usize) -> Option<String> {
         self.items.get(index).map(|e| e.label.clone())
     }
+
+    pub(crate) fn render(&self) -> String {
+        render_elements(&self.items, self.gen, false)
+    }
+
+    pub(crate) fn stale_recovery(&mut self, index: usize, presented: u64) -> String {
+        if self.recovery_gen == Some(self.gen) {
+            self.recovery_gen = None;
+            return format!(
+                "stale ref {index} from snapshot {presented} — snapshot {} is current; run browser.read for a fresh list",
+                self.gen
+            );
+        }
+        self.recovery_gen = Some(self.gen);
+        format!(
+            "stale ref {index} from snapshot {presented} — snapshot {} is current:\n{}Choose the replacement ref from THIS snapshot and act once; if that fails, run browser.read for a fresh list instead of guessing.",
+            self.gen,
+            self.render()
+        )
+    }
+}
+
+pub(crate) fn render_elements(items: &[RefEntry], gen: u64, failed: bool) -> String {
+    let mut out = format!("\nElements (snapshot {gen}):");
+    if failed {
+        out.push_str(" (snapshot failed)");
+    }
+    out.push('\n');
+    for (i, el) in items.iter().enumerate() {
+        if el.label.is_empty() {
+            out.push_str(&format!("[{i}] {}\n", el.kind));
+        } else {
+            out.push_str(&format!("[{i}] {} \"{}\"\n", el.kind, el.label));
+        }
+    }
+    out
 }
 
 pub(crate) fn snap_of(args: &Value) -> Option<u64> {
@@ -326,18 +363,9 @@ async fn snapshot(page: &Page, table: &mut RefTable) -> String {
             kind: el.kind.clone(),
         })
         .collect();
-    let gen = table.refresh(items);
+    table.refresh(items);
 
-    let mut list = format!("\nElements (snapshot {gen}):\n");
-    for (i, el) in table.items.iter().enumerate() {
-        if el.label.is_empty() {
-            list.push_str(&format!("[{}] {}\n", i, el.kind));
-        } else {
-            list.push_str(&format!("[{}] {} \"{}\"\n", i, el.kind, el.label));
-        }
-    }
-
-    list
+    table.render()
 }
 
 fn url_of(args: &Value) -> Result<String, String> {
@@ -396,6 +424,7 @@ pub async fn open(args: &Value) -> Result<String, String> {
     let _ = s.page.wait_for_navigation().await;
 
     let out = page_out(s).await?;
+    let out = landed_note(&url, &s.url, out);
 
     Ok(sensitive_note(&s.url, out))
 }
@@ -407,8 +436,26 @@ fn ref_of(args: &Value) -> Result<usize, String> {
         .ok_or_else(|| "missing ref".into())
 }
 
-async fn target(s: &Sess, r: usize, snap: Option<u64>) -> Result<String, String> {
-    s.elements.resolve(r, snap)
+async fn target(s: &mut Sess, r: usize, snap: Option<u64>) -> Result<String, String> {
+    match s.elements.resolve(r, snap) {
+        Ok(p) => Ok(p),
+        Err(e) => {
+            let superseded =
+                snap.is_some_and(|g| g != s.elements.gen) && s.elements.items.get(r).is_some();
+            if superseded {
+                return Err(s.elements.stale_recovery(r, snap.unwrap_or(0)));
+            }
+            Err(e)
+        }
+    }
+}
+
+pub(crate) fn landed_note(requested: &str, landed: &str, out: String) -> String {
+    if requested.trim_end_matches('/') == landed.trim_end_matches('/') {
+        out
+    } else {
+        format!("{out}\nnote: landed on {landed} (requested {requested})")
+    }
 }
 
 pub async fn click(args: &Value) -> Result<String, String> {

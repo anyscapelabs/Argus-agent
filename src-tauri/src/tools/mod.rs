@@ -2,6 +2,7 @@ pub mod browser;
 pub mod computer;
 pub mod fs;
 pub mod grep;
+pub mod recover;
 pub mod shell;
 pub mod web;
 

@@ -1,0 +1,79 @@
+use serde::{Deserialize, Serialize};
+
+pub const NAME_MAX: usize = 64;
+pub const DESC_MAX: usize = 512;
+pub const BODY_MAX: usize = 65_536;
+
+pub const MIGRATE: &str = r#"
+CREATE TABLE IF NOT EXISTS skills (
+  name        TEXT PRIMARY KEY,
+  description TEXT NOT NULL DEFAULT '',
+  body        TEXT NOT NULL DEFAULT '',
+  source      TEXT NOT NULL DEFAULT 'user',
+  origin      TEXT,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  file_mtime  INTEGER NOT NULL DEFAULT 0,
+  body_hash   TEXT NOT NULL DEFAULT ''
+);
+
+DROP TRIGGER IF EXISTS skills_fts_ai;
+DROP TRIGGER IF EXISTS skills_fts_ad;
+DROP TRIGGER IF EXISTS skills_fts_au;
+DROP TABLE IF EXISTS skills_fts;
+CREATE VIRTUAL TABLE skills_fts USING fts5(
+  name, description, body
+);
+
+CREATE TRIGGER skills_fts_ai AFTER INSERT ON skills BEGIN
+  INSERT INTO skills_fts(rowid, name, description, body)
+  VALUES (new.rowid, new.name, new.description, new.body);
+END;
+
+CREATE TRIGGER skills_fts_ad AFTER DELETE ON skills BEGIN
+  DELETE FROM skills_fts WHERE rowid = old.rowid;
+END;
+
+CREATE TRIGGER skills_fts_au AFTER UPDATE ON skills BEGIN
+  DELETE FROM skills_fts WHERE rowid = old.rowid;
+  INSERT INTO skills_fts(rowid, name, description, body)
+  VALUES (new.rowid, new.name, new.description, new.body);
+END;
+
+INSERT INTO skills_fts(rowid, name, description, body)
+  SELECT rowid, name, description, body FROM skills
+  WHERE rowid NOT IN (SELECT rowid FROM skills_fts);
+
+CREATE TABLE IF NOT EXISTS skill_stats (
+  name         TEXT PRIMARY KEY REFERENCES skills(name) ON DELETE CASCADE,
+  use_count    INTEGER NOT NULL DEFAULT 0,
+  last_used_at TEXT
+);
+"#;
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Skill {
+    pub name: String,
+    pub description: String,
+    pub body: String,
+    pub source: String,
+    pub origin: Option<String>,
+    pub use_count: i64,
+    pub last_used_at: Option<String>,
+    pub created_at: String,
+    pub file_mtime: i64,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct NewSkill {
+    pub name: String,
+    pub description: String,
+    pub body: String,
+    pub source: Option<String>,
+    pub origin: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Default)]
+pub struct UpdSkill {
+    pub description: Option<String>,
+    pub body: Option<String>,
+}

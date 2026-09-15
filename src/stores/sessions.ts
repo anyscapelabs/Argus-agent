@@ -1,0 +1,433 @@
+import { Channel } from "@tauri-apps/api/core";
+import { useSyncExternalStore } from "react";
+
+import {
+  sessCancelChat,
+  sessChatStream,
+  sessCleanDangling,
+  sessCreateSession,
+  sessDeleteSession,
+  sessListMessages,
+  sessListSessions,
+  sessResolveApproval,
+  sessSaveSession,
+  sessSetModel,
+  sessSetPermission,
+  sessSetVote,
+  sessSetWebSearch,
+  sessSupersedeFrom,
+  type MsgRow,
+  type SessionRow,
+  type StreamEvent,
+} from "../lib/ipc";
+
+export type PendingApproval = {
+  id: string;
+  idx: number;
+  command: string;
+};
+
+export type Turn = {
+  text: string;
+  err: string | null;
+  term: Record<number, string>;
+  termCode: Record<number, number>;
+  approval: PendingApproval | null;
+};
+
+const EMPTY_TXT = "";
+const DEF_TITLE = "New chat";
+const TITLE_CLIP = 60;
+const PENDING_PREFIX = "pending-";
+
+class SessError extends Error {}
+class SessRetryError extends SessError {}
+
+function blankTurn(err: string | null = null): Turn {
+  return {
+    text: EMPTY_TXT,
+    err,
+    term: {},
+    termCode: {},
+    approval: null,
+  };
+}
+
+type State = {
+  sessions: SessionRow[];
+  loading: boolean;
+  activeId: string | null;
+  msgs: Record<string, MsgRow[]>;
+  turns: Record<string, Turn>;
+  stopped: Record<string, boolean>;
+  notices: Record<string, string>;
+};
+
+class SessionStore {
+  private state: State = {
+    sessions: [],
+    loading: true,
+    activeId: null,
+    msgs: {},
+    turns: {},
+    stopped: {},
+    notices: {},
+  };
+
+  private listeners = new Set<() => void>();
+
+  subscribe = (fn: () => void) => {
+    this.listeners.add(fn);
+    return () => {
+      this.listeners.delete(fn);
+    };
+  };
+
+  getState = () => this.state;
+
+  private set(patch: Partial<State>) {
+    this.state = { ...this.state, ...patch };
+    for (const fn of this.listeners) fn();
+  }
+
+  onTurnStart: ((sessionId: string) => void) | null = null;
+  onTurnDone:
+    | ((sessionId: string, ok: boolean, snippet: string) => void)
+    | null = null;
+
+  async loadSessions() {
+    try {
+      const sessions = await sessListSessions();
+      this.set({ sessions });
+    } catch {
+      this.set({ sessions: [] });
+    }
+
+    this.set({ loading: false });
+  }
+
+  async loadMsgs(sessionId: string) {
+    try {
+      const rows = await sessListMessages(sessionId);
+      this.set({ msgs: { ...this.state.msgs, [sessionId]: rows } });
+    } catch {
+      this.set({ msgs: { ...this.state.msgs, [sessionId]: [] } });
+    }
+  }
+
+  async select(sessionId: string | null) {
+    this.set({ activeId: sessionId });
+
+    if (sessionId === null) return;
+
+    const t = this.state.turns[sessionId];
+    if (t === undefined || t.err !== null) {
+      try {
+        await sessCleanDangling(sessionId);
+      } catch {}
+    }
+
+    await this.loadMsgs(sessionId);
+  }
+
+  async create(
+    title: string,
+    modelId: string | null,
+    permission: string = "ask",
+    webSearch: boolean = false,
+  ): Promise<SessionRow> {
+    const row = await sessCreateSession(title, modelId, permission, webSearch);
+    await this.loadSessions();
+    return row;
+  }
+
+  async remove(sessionId: string) {
+    await sessDeleteSession(sessionId);
+
+    const msgs = { ...this.state.msgs };
+    const turns = { ...this.state.turns };
+    const stopped = { ...this.state.stopped };
+    const notices = { ...this.state.notices };
+    delete msgs[sessionId];
+    delete turns[sessionId];
+    delete stopped[sessionId];
+    delete notices[sessionId];
+
+    this.set({
+      msgs,
+      turns,
+      stopped,
+      notices,
+      sessions: this.state.sessions.filter((s) => s.id !== sessionId),
+      activeId: this.state.activeId === sessionId ? null : this.state.activeId,
+    });
+  }
+
+  async setVote(sessionId: string, msgId: string, vote: "up" | "down" | null) {
+    const rows = this.state.msgs[sessionId] ?? [];
+    if (!rows.some((m) => m.id === msgId)) return;
+
+    this.set({
+      msgs: {
+        ...this.state.msgs,
+        [sessionId]: rows.map((m) => (m.id === msgId ? { ...m, vote } : m)),
+      },
+    });
+
+    try {
+      await sessSetVote(sessionId, msgId, vote);
+    } catch {
+      await this.loadMsgs(sessionId);
+    }
+  }
+
+  private async patchColumn(
+    sessionId: string,
+    field: "permission" | "model_id" | "web_search",
+    value: string | boolean | null,
+    apply: () => Promise<void>,
+  ) {
+    const row = this.state.sessions.find((s) => s.id === sessionId);
+    if (row === undefined || row[field] === value) return;
+
+    this.set({
+      sessions: this.state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, [field]: value } : s,
+      ),
+    });
+
+    try {
+      await apply();
+    } catch (err) {
+
+
+      try {
+        await apply();
+      } catch (err2) {
+
+        this.set({
+          sessions: this.state.sessions.map((s) =>
+            s.id === sessionId ? { ...s, [field]: row[field] } : s,
+          ),
+        });
+      }
+    }
+  }
+
+  async setPermission(sessionId: string, permission: string) {
+    await this.patchColumn(sessionId, "permission", permission, () =>
+      sessSetPermission(sessionId, permission),
+    );
+  }
+
+  async setModel(sessionId: string, modelId: string | null) {
+    await this.patchColumn(sessionId, "model_id", modelId, () =>
+      sessSetModel(sessionId, modelId),
+    );
+  }
+
+  async setWebSearch(sessionId: string, on: boolean) {
+    await this.patchColumn(sessionId, "web_search", on, () =>
+      sessSetWebSearch(sessionId, on),
+    );
+  }
+
+  async archive(sessionId: string) {
+    const row = this.state.sessions.find((s) => s.id === sessionId);
+    if (row === undefined) throw new SessRetryError("sess gone");
+
+    await sessSaveSession({ ...row, status: "archived" });
+    await this.loadSessions();
+  }
+
+  private patchTurn(sessionId: string, patch: (prev: Turn) => Turn) {
+    const prev = this.state.turns[sessionId];
+    if (prev === undefined) return;
+
+    this.set({ turns: { ...this.state.turns, [sessionId]: patch(prev) } });
+  }
+
+  private clearTurn(sessionId: string) {
+    if (this.state.turns[sessionId] === undefined) return;
+
+    const turns = { ...this.state.turns };
+    delete turns[sessionId];
+    this.set({ turns });
+  }
+
+  async send(sessionId: string, content: string) {
+    const prev = this.state.turns[sessionId];
+    if (prev !== undefined && prev.err === null) return;
+
+    const pending: MsgRow = {
+      id: `${PENDING_PREFIX}${Date.now()}`,
+      session_id: sessionId,
+      seq: 0,
+      role: "user",
+      content,
+      model_id: null,
+      provider_id: null,
+      tok_in: null,
+      tok_out: null,
+      active: true,
+      vote: null,
+      created_at: "",
+    };
+
+    const existing = this.state.msgs[sessionId] ?? [];
+    this.set({
+      msgs: { ...this.state.msgs, [sessionId]: [...existing, pending] },
+    });
+
+    const row = this.state.sessions.find((s) => s.id === sessionId);
+    if (row !== undefined && row.title === DEF_TITLE) {
+      const tempTitle = content.trim().split("\n")[0].trim().slice(0, TITLE_CLIP);
+      if (tempTitle.length > 0) {
+        this.set({
+          sessions: this.state.sessions.map((s) =>
+            s.id === sessionId ? { ...s, title: tempTitle } : s,
+          ),
+        });
+      }
+    }
+
+    const chan = new Channel<StreamEvent>();
+
+    chan.onmessage = (ev) => {
+      if (ev.type === "delta") {
+        this.patchTurn(sessionId, (prev) => ({
+          ...prev,
+          text: prev.text + ev.text,
+          err: null,
+        }));
+        return;
+      }
+
+      if (ev.type === "reset") {
+        this.patchTurn(sessionId, (prev) => ({ ...blankTurn(), err: prev.err }));
+        return;
+      }
+
+      if (ev.type === "step") {
+        this.set({
+          turns: { ...this.state.turns, [sessionId]: blankTurn() },
+        });
+        void this.loadMsgs(sessionId);
+        return;
+      }
+
+      if (ev.type === "term") {
+        this.patchTurn(sessionId, (prev) => ({
+          ...prev,
+          term: {
+            ...prev.term,
+            [ev.idx]: (prev.term[ev.idx] ?? "") + ev.chunk,
+          },
+        }));
+        return;
+      }
+
+      if (ev.type === "term_end") {
+        this.patchTurn(sessionId, (prev) => ({
+          ...prev,
+          termCode: { ...prev.termCode, [ev.idx]: ev.code },
+          approval: prev.approval?.idx === ev.idx ? null : prev.approval,
+        }));
+        return;
+      }
+
+      if (ev.type === "approval") {
+        this.patchTurn(sessionId, (prev) => ({
+          ...prev,
+          approval: { id: ev.id, idx: ev.idx, command: ev.command },
+        }));
+        return;
+      }
+
+      if (ev.type === "notice") {
+        this.set({
+          notices: { ...this.state.notices, [sessionId]: ev.msg },
+        });
+        return;
+      }
+
+      if (ev.type === "err") {
+        this.patchTurn(sessionId, (prev) => ({ ...prev, err: ev.msg }));
+      }
+    };
+
+    this.set({
+      turns: { ...this.state.turns, [sessionId]: blankTurn() },
+      stopped: { ...this.state.stopped, [sessionId]: false },
+      notices: { ...this.state.notices, [sessionId]: "" },
+    });
+    this.onTurnStart?.(sessionId);
+
+    try {
+      await sessChatStream(sessionId, content, chan);
+      const snippet = (this.state.turns[sessionId]?.text ?? "")
+        .split("\n")[0]
+        .trim()
+        .slice(0, 120);
+      this.clearTurn(sessionId);
+      await this.loadMsgs(sessionId);
+      await this.loadSessions();
+      this.onTurnDone?.(sessionId, true, snippet);
+    } catch (err) {
+      await this.loadMsgs(sessionId);
+
+      if (String(err).includes("stopped")) {
+        this.clearTurn(sessionId);
+        return;
+      }
+
+      this.set({
+        turns: { ...this.state.turns, [sessionId]: blankTurn(String(err)) },
+      });
+      this.onTurnDone?.(sessionId, false, String(err).slice(0, 120));
+    }
+  }
+
+  async resolveApproval(sessionId: string, allow: boolean) {
+    const t = this.state.turns[sessionId];
+    if (t === undefined || t.approval === null) return;
+
+    const { id } = t.approval;
+    this.patchTurn(sessionId, (prev) => ({ ...prev, approval: null }));
+
+    try {
+      await sessResolveApproval(id, allow);
+    } catch {}
+  }
+
+  async retry(sessionId: string, usrSeq: number, content: string) {
+    const t = this.state.turns[sessionId];
+    if (t !== undefined && t.err === null) return;
+
+    try {
+      await sessSupersedeFrom(sessionId, usrSeq);
+    } catch {}
+
+    await this.send(sessionId, content);
+  }
+
+  async stop(sessionId: string) {
+    try {
+      await sessCancelChat(sessionId);
+    } catch {}
+
+    this.clearTurn(sessionId);
+    this.set({ stopped: { ...this.state.stopped, [sessionId]: true } });
+    await this.loadMsgs(sessionId);
+  }
+
+  clearErr(sessionId: string) {
+    this.clearTurn(sessionId);
+  }
+}
+
+export const sessionStore = new SessionStore();
+
+export function useSessions(): State {
+  return useSyncExternalStore(sessionStore.subscribe, sessionStore.getState);
+}

@@ -1,0 +1,600 @@
+mod ext;
+pub mod extpipe;
+
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
+
+use chromiumoxide::browser::{Browser, BrowserConfig};
+use chromiumoxide::Page;
+use futures_util::StreamExt;
+use serde_json::Value;
+use tokio::sync::Mutex as AsyncMutex;
+
+use super::{page_text, ToolMeta};
+
+const IDLE: Duration = Duration::from_secs(600);
+
+pub const META: &[ToolMeta] = &[
+    ToolMeta {
+        name: "browser.open",
+        desc: "open a url in the user's current Chrome and read the page; omit profile unless an isolated window was asked for",
+        args: "{\"url\":\"https://...\"}",
+        mutating: false,
+    },
+    ToolMeta {
+        name: "browser.click",
+        desc: "click an element from the last browser snapshot by its ref number",
+        args: "{\"ref\":3}",
+        mutating: true,
+    },
+    ToolMeta {
+        name: "browser.type",
+        desc: "type text into an element from the last browser snapshot; set submit true to press Enter",
+        args: "{\"ref\":7,\"text\":\"...\",\"submit\":false}",
+        mutating: true,
+    },
+    ToolMeta {
+        name: "browser.read",
+        desc: "read the current browser page text and elements",
+        args: "{}",
+        mutating: false,
+    },
+    ToolMeta {
+        name: "browser.scroll",
+        desc: "scroll the current browser page up or down by pixels",
+        args: "{\"direction\":\"down\",\"pixels\":800}",
+        mutating: false,
+    },
+    ToolMeta {
+        name: "browser.close",
+        desc: "close the browser tab",
+        args: "{}",
+        mutating: false,
+    },
+];
+
+struct Sess {
+    _browser: Browser,
+    page: Page,
+    refs: Vec<String>,
+    labels: Vec<String>,
+    url: String,
+    last_used: Instant,
+}
+
+struct Pool {
+    root: PathBuf,
+    sess: AsyncMutex<HashMap<String, Sess>>,
+}
+
+static ROOT: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+fn pool() -> &'static Pool {
+    static P: OnceLock<Pool> = OnceLock::new();
+
+    P.get_or_init(|| {
+        let root = ROOT
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .clone()
+            .unwrap_or_else(default_root);
+
+        Pool {
+            root,
+            sess: AsyncMutex::new(HashMap::new()),
+        }
+    })
+}
+
+fn default_root() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_default();
+    std::path::Path::new(&home).join(".local/share/Argus/browser-profiles")
+}
+
+pub fn init(dir: PathBuf) {
+    if let Ok(mut g) = ROOT.lock() {
+        *g = Some(dir);
+    }
+}
+
+pub fn profile_dir(name: &str) -> PathBuf {
+    pool().root.join(sanitize(name))
+}
+
+pub fn sanitize(name: &str) -> String {
+    let t: String = name
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .take(32)
+        .collect();
+
+    if t.is_empty() {
+        "main".into()
+    } else {
+        t
+    }
+}
+
+fn profile_of(args: &Value) -> String {
+    args.get("profile")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("main")
+        .to_string()
+}
+
+async fn route_profile(args: &Value) -> String {
+    if let Some(p) = args
+        .get("profile")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+    {
+        return p.to_string();
+    }
+
+    match crate::sessions::ext_install::real_enabled() {
+        true => "real".into(),
+        false => "main".into(),
+    }
+}
+
+async fn launch(root: &PathBuf, name: &str) -> Result<Sess, String> {
+    let dir = root.join(sanitize(name));
+    std::fs::create_dir_all(&dir).map_err(|err| format!("profile dir failed: {err}"))?;
+
+    let mut cfg = BrowserConfig::builder()
+        .with_head()
+        .user_data_dir(dir)
+        .window_size(1280, 900)
+        .arg("--no-first-run")
+        .arg("--no-default-browser-check")
+        .arg("--disable-blink-features=AutomationControlled");
+
+    if let Ok(bin) = std::env::var("ARGUS_CHROME") {
+        if !bin.trim().is_empty() {
+            cfg = cfg.chrome_executable(bin.trim());
+        }
+    }
+
+    let cfg = cfg
+        .build()
+        .map_err(|err| format!("browser config: {err}"))?;
+    let (browser, handler) = Browser::launch(cfg)
+        .await
+        .map_err(|err| format!("chrome launch failed: {err}"))?;
+
+    tokio::spawn(async move {
+        let mut h = handler;
+        while let Some(ev) = h.next().await {
+            let _ = ev;
+        }
+    });
+
+    let page = browser
+        .new_page("about:blank")
+        .await
+        .map_err(|err| format!("tab failed: {err}"))?;
+
+    Ok(Sess {
+        _browser: browser,
+        page,
+        refs: vec![],
+        labels: vec![],
+        url: String::new(),
+        last_used: Instant::now(),
+    })
+}
+
+type SessMap = HashMap<String, Sess>;
+
+async fn sess(name: &str) -> Result<tokio::sync::MutexGuard<'static, SessMap>, String> {
+    let mut map = pool().sess.lock().await;
+
+    if let Some(s) = map.get(name) {
+        if s.last_used.elapsed() < IDLE {
+            return Ok(map);
+        }
+    }
+
+    map.remove(name);
+    let s = launch(&pool().root, name).await?;
+    map.insert(name.into(), s);
+
+    Ok(map)
+}
+
+const SNAP_JS: &str = r#"
+(() => {
+  const sel = 'a, button, input, textarea, select, summary, [role="button"], [role="tab"], [role="search"], [role="combobox"], [role="switch"], [onclick], [aria-expanded], [contenteditable="true"]';
+  const els = [...document.querySelectorAll(sel)];
+  const out = [];
+
+  for (const el of els) {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
+    if (el.disabled) continue;
+
+    const label = (el.innerText || el.value || el.placeholder ||
+      el.getAttribute('aria-label') || el.getAttribute('title') || '')
+      .trim().replace(/\s+/g, ' ').slice(0, 60);
+
+    let path = '';
+    for (let n = el; n && n !== document.body; n = n.parentElement) {
+      if (n.id) { path = `#${CSS.escape(n.id)}${path ? ' > ' + path : ''}`; break; }
+      const p = n.parentElement;
+      if (!p) break;
+      let s = n.tagName.toLowerCase();
+      const sib = [...p.children].filter(c => c.tagName === n.tagName);
+      if (sib.length > 1) s += `:nth-of-type(${sib.indexOf(n) + 1})`;
+      path = path ? `${s} > ${path}` : s;
+    }
+
+    out.push({
+      kind: el.tagName.toLowerCase() === 'input' && el.type ? `input ${el.type}` : el.tagName.toLowerCase(),
+      label,
+      path,
+    });
+  }
+
+  return JSON.stringify(out.slice(0, 100));
+})()
+"#;
+
+const TEXT_JS: &str = "(() => document.body ? document.body.innerText : '')()";
+const LOC_JS: &str = "(() => location.href)()";
+
+async fn eval_str(page: &Page, js: &str) -> String {
+    page.evaluate(js)
+        .await
+        .ok()
+        .and_then(|r| r.into_value::<String>().ok())
+        .unwrap_or_default()
+}
+
+#[derive(serde::Deserialize)]
+struct ElRef {
+    kind: String,
+    label: String,
+    path: String,
+}
+
+async fn snapshot(page: &Page, refs: &mut Vec<String>, labels: &mut Vec<String>) -> String {
+    refs.clear();
+    labels.clear();
+
+    let raw = eval_str(page, SNAP_JS).await;
+    let els: Vec<ElRef> = serde_json::from_str(&raw).unwrap_or_default();
+
+    let mut list = String::from("\nElements:\n");
+    for (i, el) in els.iter().enumerate() {
+        let label = redact(&el.label);
+        refs.push(el.path.clone());
+        labels.push(label.clone());
+
+        if label.is_empty() {
+            list.push_str(&format!("[{}] {}\n", i, el.kind));
+        } else {
+            list.push_str(&format!("[{}] {} \"{}\"\n", i, el.kind, label));
+        }
+    }
+
+    list
+}
+
+fn url_of(args: &Value) -> Result<String, String> {
+    let url = args
+        .get("url")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .ok_or("missing url")?;
+
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("url must start with http:// or https://".into());
+    }
+
+    Ok(url.into())
+}
+
+async fn page_out(s: &mut Sess) -> Result<String, String> {
+    let url = eval_str(&s.page, LOC_JS).await;
+    let title = s
+        .page
+        .get_title()
+        .await
+        .unwrap_or_default()
+        .unwrap_or_default();
+    let text = eval_str(&s.page, TEXT_JS).await;
+    let text = redact(&text);
+    let list = snapshot(&s.page, &mut s.refs, &mut s.labels).await;
+
+    s.url = url.clone();
+
+    Ok(format!(
+        "url {url}\ntitle {title}\n\n---\n{}\n---{list}",
+        page_text(&text)
+    ))
+}
+
+pub async fn open(args: &Value) -> Result<String, String> {
+    let url = url_of(args)?;
+    url_guard(&url)?;
+    let name = route_profile(args).await;
+
+    if self::ext::is_real(&name) {
+        return self::ext::open(args).await;
+    }
+
+    let mut map = sess(&name).await?;
+    let s = map.get_mut(&name).ok_or("browser session missing")?;
+    s.last_used = Instant::now();
+
+    s.page
+        .goto(url.as_str())
+        .await
+        .map_err(|err| format!("navigation failed: {err}"))?;
+
+    let _ = s.page.wait_for_navigation().await;
+
+    let out = page_out(s).await?;
+
+    Ok(sensitive_note(&s.url, out))
+}
+
+fn ref_of(args: &Value) -> Result<usize, String> {
+    args.get("ref")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize)
+        .ok_or_else(|| "missing ref".into())
+}
+
+async fn target(s: &Sess, r: usize) -> Result<String, String> {
+    match s.refs.get(r) {
+        Some(p) => Ok(p.clone()),
+        None => Err("unknown ref — run browser.open or browser.read for a fresh list".into()),
+    }
+}
+
+pub async fn click(args: &Value) -> Result<String, String> {
+    let name = route_profile(args).await;
+
+    if self::ext::is_real(&name) {
+        return self::ext::click(args).await;
+    }
+
+    let r = ref_of(args)?;
+
+    let mut map = sess(&name).await?;
+    let s = map.get_mut(&name).ok_or("browser session missing")?;
+    s.last_used = Instant::now();
+
+    let path = target(s, r).await?;
+
+    let el = s
+        .page
+        .find_element(&path)
+        .await
+        .map_err(|_| "stale ref — run browser.read for a fresh element list".to_string())?;
+
+    el.click()
+        .await
+        .map_err(|err| format!("click failed: {err}"))?;
+    let _ = s.page.wait_for_navigation().await;
+
+    page_out(s).await
+}
+
+pub async fn type_text(args: &Value) -> Result<String, String> {
+    let name = route_profile(args).await;
+
+    if self::ext::is_real(&name) {
+        return self::ext::type_text(args).await;
+    }
+
+    let r = ref_of(args)?;
+    let text = args
+        .get("text")
+        .and_then(|v| v.as_str())
+        .ok_or("missing text")?;
+    let submit = args
+        .get("submit")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let mut map = sess(&name).await?;
+    let s = map.get_mut(&name).ok_or("browser session missing")?;
+    s.last_used = Instant::now();
+
+    let path = target(s, r).await?;
+
+    let el = s
+        .page
+        .find_element(&path)
+        .await
+        .map_err(|_| "stale ref — run browser.read for a fresh element list".to_string())?;
+
+    el.click()
+        .await
+        .map_err(|err| format!("focus failed: {err}"))?;
+    el.type_str(text)
+        .await
+        .map_err(|err| format!("typing failed: {err}"))?;
+
+    if submit {
+        let _ = el.press_key("Enter").await;
+        let _ = s.page.wait_for_navigation().await;
+    }
+
+    page_out(s).await
+}
+
+pub async fn read(args: &Value) -> Result<String, String> {
+    let name = route_profile(args).await;
+
+    if self::ext::is_real(&name) {
+        return self::ext::read(args).await;
+    }
+
+    let mut map = sess(&name).await?;
+    let s = map.get_mut(&name).ok_or("browser session missing")?;
+    s.last_used = Instant::now();
+
+    page_out(s).await
+}
+
+pub async fn scroll(args: &Value) -> Result<String, String> {
+    let name = route_profile(args).await;
+
+    if self::ext::is_real(&name) {
+        return self::ext::scroll(args).await;
+    }
+
+    let dir = args
+        .get("direction")
+        .and_then(|v| v.as_str())
+        .unwrap_or("down");
+    let px = args
+        .get("pixels")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(800)
+        .clamp(100, 5000);
+    let dy = if dir == "up" { -px } else { px };
+
+    let mut map = sess(&name).await?;
+    let s = map.get_mut(&name).ok_or("browser session missing")?;
+    s.last_used = Instant::now();
+
+    eval_str(&s.page, &format!("(() => window.scrollBy(0, {dy}))()")).await;
+
+    page_out(s).await
+}
+
+pub async fn close(args: &Value) -> Result<String, String> {
+    let name = route_profile(args).await;
+
+    if self::ext::is_real(&name) {
+        return self::ext::close(args).await;
+    }
+
+    let mut map = pool().sess.lock().await;
+
+    match map.remove(&name) {
+        Some(mut s) => {
+            let _ = s.page.close().await;
+            let _ = s._browser.close().await;
+            Ok("browser closed".into())
+        }
+        None => Ok("no browser running for this profile".into()),
+    }
+}
+
+pub fn close_profile(name: &str) {
+    let name = sanitize(name);
+
+    if let Ok(mut g) = pool().sess.try_lock() {
+        if let Some(mut s) = g.remove(&name) {
+            tokio::spawn(async move {
+                let _ = s.page.close().await;
+                let _ = s._browser.close().await;
+            });
+        }
+    }
+}
+
+const URL_PAT: &str =
+    "login|signin|sign-in|sign_up|signup|/auth|checkout|cart|/pay|billing|order|password";
+const LABEL_PAT: &str = "sign in|sign-in|signin|log in|log-in|login|checkout|pay now|payment|place order|buy now|add to cart|password";
+
+const SECRET_PAT: &str = r"sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{12,}|xox[bap]-[A-Za-z0-9-]{10,}|Bearer\s+[A-Za-z0-9._-]{16,}|[a-f0-9]{32,}";
+
+fn secret_re() -> Option<regex::Regex> {
+    regex::Regex::new(SECRET_PAT).ok()
+}
+
+pub fn url_guard(url: &str) -> Result<(), String> {
+    let Some(re) = secret_re() else { return Ok(()) };
+    let decoded = percent_encoding::percent_decode_str(url).decode_utf8_lossy();
+
+    if re.is_match(url) || re.is_match(&decoded) {
+        return Err(
+            "url looks like it carries a credential — remove the token from the url".into(),
+        );
+    }
+
+    Ok(())
+}
+
+pub fn redact(s: &str) -> String {
+    match secret_re() {
+        Some(re) => re.replace_all(s, "[redacted]").into_owned(),
+        None => s.into(),
+    }
+}
+
+pub fn sensitive_note(url: &str, out: String) -> String {
+    match sensitive_pats() {
+        Some((url_re, _)) if url_re.is_match(url) => format!(
+            "{out}\nnote: this page looks like login/checkout — further actions here will need user approval"
+        ),
+        _ => out,
+    }
+}
+
+pub fn sensitive_pats() -> Option<(regex::Regex, regex::Regex)> {
+    Some((
+        regex::Regex::new(&format!("(?i)({URL_PAT})")).ok()?,
+        regex::Regex::new(&format!("(?i)({LABEL_PAT})")).ok()?,
+    ))
+}
+
+pub async fn sensitive(tool: &str, args: &Value) -> bool {
+    if !tool.starts_with("browser.") {
+        return false;
+    }
+
+    let (url_re, label_re) = match sensitive_pats() {
+        Some(p) => p,
+        None => return false,
+    };
+
+    let name = route_profile(args).await;
+
+    if self::ext::is_real(&name) && self::ext::sensitive(args).await {
+        return true;
+    }
+
+    if let Some(u) = args.get("url").and_then(|v| v.as_str()) {
+        if url_re.is_match(u) {
+            return true;
+        }
+    }
+
+    if let Some(t) = args.get("text").and_then(|v| v.as_str()) {
+        if label_re.is_match(t) {
+            return true;
+        }
+    }
+
+    if let Ok(r) = ref_of(args) {
+        if let Ok(g) = pool().sess.try_lock() {
+            if let Some(s) = g.get(&name) {
+                if url_re.is_match(&s.url) {
+                    return true;
+                }
+
+                if let Some(l) = s.labels.get(r) {
+                    if label_re.is_match(l) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    false
+}

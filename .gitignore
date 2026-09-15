@@ -1,0 +1,34 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Google OAuth client secret (see src-tauri/src/mcp/google/config.example.json)
+src-tauri/src/mcp/google/config.json
+# GitHub OAuth client id (see src-tauri/src/mcp/github/config.example.json)
+src-tauri/src/mcp/github/config.json
+# Per-service settings with secrets (see each service config.example.json)
+src-tauri/src/mcp/*/config.json
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Private agent rulebook — never commit
+agents.md

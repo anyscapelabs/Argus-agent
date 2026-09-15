@@ -1,0 +1,176 @@
+pub mod connectors;
+pub mod gateway;
+pub mod library;
+pub mod mcp;
+pub mod memory;
+pub mod prompt;
+pub mod sessions;
+pub mod skills;
+pub mod tools;
+
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+use tauri::Manager;
+
+use gateway::{store, Gateway};
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    if std::env::args().any(|a| a == "--native-host") {
+        let socket = sessions::ext_install::data_dir().join("native.sock");
+        let Ok(rt) = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+        else {
+            return;
+        };
+
+        rt.block_on(tools::browser::extpipe::run_stdio_host(socket));
+        return;
+    }
+
+    let _ = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
+        .setup(|app| {
+            let dir = app.path().app_data_dir()?;
+            std::fs::create_dir_all(&dir)?;
+
+            let conn = store::open(&dir.join("argus.db"))?;
+            sessions::store::migrate(&conn)?;
+            skills::store::migrate(&conn)?;
+            library::store::migrate(&conn)?;
+            memory::store::migrate(&conn)?;
+            connectors::store::migrate(&conn)?;
+
+            let _ = mcp::sync_from(&conn);
+
+            let skills_dir = skills::default_dir(&dir);
+            std::fs::create_dir_all(&skills_dir)?;
+            skills::store::sync(&conn, &skills_dir)?;
+
+            let library_dir = library::default_dir(&dir);
+            std::fs::create_dir_all(&library_dir)?;
+            library::store::sync(&conn, &library_dir)?;
+
+            let logos_dir = dir.join("logos");
+            std::fs::create_dir_all(&logos_dir)?;
+
+            tools::browser::init(dir.join("browser-profiles"));
+            tools::browser::extpipe::start_listener(dir.clone());
+
+            if dir.join("extension.enabled").is_file() {
+                let _ = sessions::ext_install::install_core(&dir);
+            }
+
+            let http = reqwest::Client::builder().build()?;
+
+            app.manage(Gateway {
+                conn: Mutex::new(conn),
+                http,
+                skills_dir,
+                library_dir,
+                logos_dir,
+                approvals: Mutex::new(HashMap::new()),
+                tasks: Mutex::new(HashMap::new()),
+            });
+
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let gw = handle.state::<Gateway>();
+                gateway::maybe_sync_catalog(gw.inner()).await;
+            });
+
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            gateway::gw_list_providers,
+            gateway::gw_upsert_provider,
+            gateway::gw_list_models,
+            gateway::gw_provider_models,
+            gateway::gw_chat_models,
+            gateway::gw_set_model_enabled,
+            gateway::gw_add_model,
+            gateway::gw_link_model,
+            gateway::gw_connect,
+            gateway::gw_disconnect,
+            gateway::gw_set_routing,
+            gateway::gw_chat,
+            gateway::gw_chat_stream,
+            gateway::gw_sync_providers,
+            gateway::gw_logo,
+            sessions::sess_create_session,
+            sessions::sess_list_sessions,
+            sessions::sess_save_session,
+            sessions::sess_set_permission,
+            sessions::sess_set_model,
+            sessions::sess_set_web_search,
+            sessions::sess_delete_session,
+            sessions::sess_export_json,
+            sessions::sess_list_messages,
+            sessions::sess_set_vote,
+            sessions::sess_clean_dangling,
+            sessions::sess_add_message,
+            sessions::sess_supersede_from,
+            sessions::sess_create_folder,
+            sessions::sess_list_folders,
+            sessions::newagent_prefs,
+            sessions::set_newagent_prefs,
+            sessions::chat::sess_chat_stream,
+            sessions::chat::sess_cancel_chat,
+            sessions::chat::sess_resolve_approval,
+            sessions::browser_import::sess_browser_import,
+            sessions::ext_install::sess_ext_install,
+            sessions::ext_install::sess_ext_status,
+            sessions::ext_install::sess_ext_uninstall,
+            skills::skill_create,
+            skills::skill_get,
+            skills::skill_list,
+            skills::skill_update,
+            skills::skill_delete,
+            skills::skill_touch,
+            skills::skill_search,
+            skills::skill_sync,
+            library::library_add,
+            library::library_list,
+            library::library_get,
+            library::library_delete,
+            library::library_search,
+            library::library_path,
+            library::library_download,
+            library::library_preview,
+            library::library_create_doc,
+            memory::memory_save,
+            memory::memory_get,
+            memory::memory_list,
+            memory::memory_delete,
+            memory::memory_search,
+            memory::memory_link,
+            memory::memory_unlink,
+            memory::memory_recall,
+            memory::memory_graph,
+            gateway::gw_logs,
+            prompt::prompt_preview,
+            prompt::compressor::prompt_status,
+            prompt::compressor::prompt_compact,
+            mcp::google::google_status,
+            mcp::google::google_connect_url,
+            mcp::google::google_disconnect,
+            mcp::github::github_status,
+            mcp::github::github_connect,
+            mcp::github::github_disconnect,
+            mcp::vault::conn_save_token,
+            mcp::vault::conn_has_token,
+            mcp::vault::conn_remove_token,
+            mcp::vault::conn_save_client,
+            mcp::vault::conn_save_secret,
+            mcp::outlook::outlook_status,
+            mcp::outlook::outlook_connect,
+            mcp::outlook::outlook_disconnect,
+            mcp::spotify::spotify_status,
+            mcp::spotify::spotify_connect_url,
+            mcp::spotify::spotify_disconnect
+        ])
+        .run(tauri::generate_context!());
+}

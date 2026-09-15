@@ -1,0 +1,215 @@
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { FiCheck, FiChevronRight } from "react-icons/fi";
+
+export type DropdownItem = {
+  label: string;
+  Icon?: React.ComponentType<{ size?: number; className?: string }>;
+  onClick?: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+  hasSubmenu?: boolean;
+  toggleable?: boolean;
+  active?: boolean;
+};
+
+type Props = {
+  trigger: (props: { open: boolean; toggle: () => void }) => ReactNode;
+  items: DropdownItem[];
+  align?: "left" | "right";
+  side?: "top" | "bottom";
+  panelClassName?: string;
+  header?: ReactNode;
+  dividers?: boolean;
+  maxH?: string;
+};
+
+const THUMB_MIN = 24;
+
+export default function Dropdown({
+  trigger,
+  items,
+  align = "left",
+  side = "top",
+  panelClassName,
+  header,
+  dividers = true,
+  maxH,
+}: Props) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const thumbRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{ y: number; st: number } | null>(null);
+  const [activeMap, setActiveMap] = useState<Record<number, boolean>>({});
+  const [barOn, setBarOn] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const onDoc = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const syncBar = () => {
+    const el = listRef.current;
+    if (!el || maxH === undefined) return;
+
+    const overflow = el.scrollHeight > el.clientHeight;
+    setBarOn((prev) => (prev === overflow ? prev : overflow));
+
+    const thumb = thumbRef.current;
+    if (!thumb || !overflow) return;
+
+    const vis = el.clientHeight;
+    const h = Math.max((vis / el.scrollHeight) * vis, THUMB_MIN);
+    const top = (el.scrollTop / el.scrollHeight) * vis;
+
+    thumb.style.height = `${h}px`;
+    thumb.style.top = `${top + 2}px`;
+  };
+
+  useLayoutEffect(() => {
+    syncBar();
+  }, [open, items, maxH]);
+
+  const onThumbDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = listRef.current;
+    if (!el) return;
+
+    dragRef.current = { y: e.clientY, st: el.scrollTop };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onThumbMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = listRef.current;
+    const d = dragRef.current;
+    if (!el || !d) return;
+
+    el.scrollTop = d.st + (e.clientY - d.y) * (el.scrollHeight / el.clientHeight);
+  };
+
+  const onThumbUp = () => {
+    dragRef.current = null;
+  };
+
+  const toggle = () => setOpen((v) => !v);
+  const close = () => setOpen(false);
+
+  return (
+    <div ref={rootRef} className="relative">
+      {trigger({ open, toggle })}
+      {open && (
+        <div
+          role="menu"
+          className={
+            "absolute z-50 min-w-[220px] select-none overflow-hidden rounded-2xl " +
+            "border border-border-primary bg-bg-secondary p-1 shadow-4xl " +
+            `${side === "top" ? "bottom-full mb-2" : "top-full mt-2"} ` +
+            `${align === "right" ? "right-0" : "left-0"} ` +
+            `${panelClassName ?? ""}`
+          }
+        >
+          {header !== undefined && <div className="px-2">{header}</div>}
+          <div className="relative">
+            <div
+              ref={listRef}
+              onScroll={syncBar}
+              className="overflow-y-auto overscroll-contain"
+              style={
+                maxH !== undefined
+                  ? { maxHeight: maxH, paddingRight: 8 }
+                  : undefined
+              }
+            >
+              {items.map((it, i) => {
+                const Icon = it.Icon;
+                const isActive =
+                  it.active === true ||
+                  (it.toggleable === true && (activeMap[i] ?? false));
+
+                return (
+                  <div key={`${it.label}-${i}`}>
+                    {dividers && i > 0 && (
+                      <div className="my-1 h-px bg-border-primary" />
+                    )}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={it.disabled}
+                      onClick={() => {
+                        if (it.toggleable === true) {
+                          setActiveMap((prev) => ({
+                            ...prev,
+                            [i]: !(prev[i] ?? it.active === true),
+                          }));
+                        }
+                        it.onClick?.();
+                        if (it.toggleable !== true) close();
+                      }}
+                      className={
+                        "flex w-full items-center gap-2 rounded-xl px-2 py-1 " +
+                        "text-left text-sm transition-colors " +
+                        "hover:bg-bg-hover-secondary " +
+                        "focus:outline-none focus-visible:bg-bg-hover-secondary " +
+                        "disabled:cursor-not-allowed disabled:opacity-50 " +
+                        `${
+                          it.danger
+                            ? "text-red-400 hover:text-red-300"
+                            : "text-text-primary"
+                        }`
+                      }
+                    >
+                      {Icon !== undefined && (
+                        <Icon size={16} className="shrink-0" />
+                      )}
+                      <span className="flex-1 truncate">{it.label}</span>
+                      {it.hasSubmenu === true && (
+                        <FiChevronRight
+                          size={14}
+                          className="shrink-0 text-text-secondary"
+                        />
+                      )}
+                      {isActive && (
+                        <FiCheck size={14} className="shrink-0 text-blue-400" />
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            {barOn && (
+              <div
+                ref={thumbRef}
+                onPointerDown={onThumbDown}
+                onPointerMove={onThumbMove}
+                onPointerUp={onThumbUp}
+                className="absolute right-[3px] top-2 h-6 w-[5px] cursor-default rounded-full bg-[#3f3f3f]"
+              />
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

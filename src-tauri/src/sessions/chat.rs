@@ -441,10 +441,6 @@ pub async fn send(
         }
 
         let base_text = sanitize_tags(&tools::normalize_actions(&stats.text));
-        // Native structured calls are authoritative; XML `<action>` blocks stay
-        // compatible. `build_executions` dedups exact duplicates so one intent
-        // never runs twice, and turns empty-name calls into pre-Failed
-        // executions instead of silently dropping them.
         let mut pending = tools::build_executions(&base_text, &stats.tool_calls, act_base);
 
         let done = pending.is_empty();
@@ -474,9 +470,6 @@ pub async fn send(
             )?
         };
 
-        // When the reply was cut off but already contains accepted tool calls,
-        // those calls must still run exactly once before continuing: dropping
-        // them would break the one-call-one-result invariant.
         let mut trunc_overflow = false;
         if stats.truncated {
             trunc_conts += 1;
@@ -491,8 +484,6 @@ pub async fn send(
                     finished = true;
                     break;
                 }
-                // Non-empty pending: fall through to execute below, then finish
-                // with a notice instead of scheduling another continuation.
                 trunc_overflow = true;
             } else {
                 nudge = Some(TRUNC_CONT.into());
@@ -502,8 +493,6 @@ pub async fn send(
                 }
             }
         } else if done {
-            // An `<action` block that parsed to nothing (unclosed/invalid) must
-            // not finish silently; nudge a clean re-emit like claim/fake cases.
             let orphaned = tools::has_orphaned_action_block(&base_text);
             if claims_action(&text) || fakes_output(&text) || orphaned {
                 if claim_nudges < MAX_CLAIM_NUDGES {
@@ -536,19 +525,12 @@ pub async fn send(
         let mut edits: Vec<(usize, usize, String)> = vec![];
         let mut append_blocks: Vec<String> = vec![];
 
-        // Every accepted execution runs exactly once, in order, and yields
-        // exactly one `<tool-result>` before the next model request — whether
-        // it succeeds, fails, is denied, loops, or arrives malformed.
         for exec in pending.iter_mut() {
-            // `build_executions` pre-fails empty-name native calls; they still
-            // get one structured result below without hitting `tools::exec`.
             let idx: usize = exec
                 .id
                 .strip_prefix('a')
                 .and_then(|n| n.parse().ok())
                 .unwrap_or(act_base);
-            // Keep the stream index allocator in sync with the stable ids so
-            // `Term`/`Approval` events stay aligned across steps.
             if idx >= act_base {
                 act_base = idx + 1;
             }
@@ -567,13 +549,9 @@ pub async fn send(
 
             let pre_failed = exec.status.is_terminal();
             let mut denied = false;
-            // `code` mirrors the old contract: real exit code on success,
-            // -1 on failure, DENIED_CODE on denial/cancel.
             let code: i64;
 
             if pre_failed {
-                // Already Failed at build time (e.g. empty tool name): no
-                // approval, no exec call — just emit its structured result.
                 code = -1;
             } else {
                 exec.begin();
@@ -621,10 +599,6 @@ pub async fn send(
                     exec.cancel("action denied by user".to_string());
                     code = DENIED_CODE;
                 } else {
-                    // Bounded recovery: transient failures (timeout /
-                    // rate-limit / infra) retry at most once inside this one
-                    // execution; every other kind fails fast. Either way the
-                    // execution below ends with exactly one tool result.
                     let outcome = tools::recover::exec_with_recovery(
                         gw,
                         &exec.tool,
@@ -676,9 +650,6 @@ pub async fn send(
             }
 
             if is_term {
-                // Always close the live terminal view on completion; the old
-                // code only closed on `ok`/denied, leaving failures hanging.
-                // Denied already sent its TermEnd above — don't double-send.
                 let terminal_failed = exec.status == tools::ToolStatus::Failed;
                 if status == "ok" || terminal_failed {
                     let term_code = if denied { DENIED_CODE } else { code };

@@ -1,4 +1,4 @@
-use argus_lib::sessions::chat::{claims_action, clean_title};
+use argus_lib::sessions::chat::{claims_action, clean_title, fakes_output};
 
 #[test]
 fn catches_claim_without_block() {
@@ -57,4 +57,14 @@ fn catches_retry_claims_without_blocks() {
     assert!(claims_action("Let me retry web.search now."));
     assert!(claims_action("I'll try the lite endpoint."));
     assert!(!claims_action("Try again whenever you're ready."));
+}
+
+#[test]
+fn catches_faked_tool_output_blocks() {
+    assert!(fakes_output(
+        "<browser-action id=\"a1\" action=\"browser.click\">browser.click 15</browser-action>"
+    ));
+    assert!(fakes_output("done <terminal id=\"a0\">output</terminal>"));
+    assert!(!fakes_output("Here is what I found."));
+    assert!(!fakes_output(""));
 }

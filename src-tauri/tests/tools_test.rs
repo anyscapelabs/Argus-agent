@@ -276,3 +276,22 @@ fn leaves_completed_and_garbage_actions_alone() {
     let no_action = "plain text";
     assert_eq!(close_dangling_actions(no_action), no_action);
 }
+
+#[test]
+fn salvages_invocation_style_browser_action_tags() {
+    let t = "<browser-action id=\"a1\" ref=\"5\" text=\"hello\" submit=\"false\" action=\"browser.type\">browser.type 5 hello</browser-action>";
+    let acts = parse_actions(&normalize_actions(t));
+    assert_eq!(acts.len(), 1);
+    assert_eq!(acts[0].tool, "browser.type");
+    let v: Value = serde_json::from_str(&acts[0].args).unwrap();
+    assert_eq!(v["ref"], 5);
+    assert_eq!(v["text"], "hello");
+    assert_eq!(v["submit"], false);
+}
+
+#[test]
+fn leaves_plain_history_browser_action_blocks_alone() {
+    let t = "done <browser-action id=\"a0\" url=\"https://x.com\" action=\"browser.open\">browser.open https://x.com</browser-action>";
+    let acts = parse_actions(&normalize_actions(t));
+    assert!(acts.is_empty());
+}

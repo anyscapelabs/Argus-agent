@@ -1,5 +1,3 @@
-import { useEffect, useState } from "react";
-import { FiCheck, FiChevronDown, FiGlobe } from "react-icons/fi";
 import { SiGooglechrome } from "react-icons/si";
 
 import type { BlockNode } from "../../lib/agentXml";
@@ -83,12 +81,6 @@ export default function BrowserGroup({
   approval = null,
   sessionId,
 }: Props) {
-  const [open, setOpen] = useState(live);
-
-  useEffect(() => {
-    setOpen(live);
-  }, [live]);
-
   const approvalStep = approval
     ? idxs.findIndex((v) => v === approval.idx)
     : -1;
@@ -101,12 +93,7 @@ export default function BrowserGroup({
 
   return (
     <div className="my-2 font-sans">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2.5 text-left"
-        aria-expanded={open}
-      >
+      <div className="flex items-center gap-2.5">
         <span
           className={
             "flex h-5 w-5 shrink-0 items-center justify-center rounded-md " +
@@ -117,71 +104,56 @@ export default function BrowserGroup({
         </span>
         <span
           className={
-            "flex items-center gap-1.5 text-sm " +
-            `${live ? "shimmer-text" : "text-text-secondary"}`
+            "text-sm " + `${live ? "shimmer-text" : "text-text-secondary"}`
           }
         >
-          <FiGlobe size={11} />
           {live ? "Using Chrome" : "Used Chrome"}
         </span>
-        <FiChevronDown
-          size={12}
-          className={`shrink-0 text-text-secondary transition-transform ${open ? "" : "-rotate-90"}`}
-        />
-      </button>
-      {open && (
-        <div className="ml-2.5 mt-1 flex flex-col border-l border-border-primary/60 pl-4">
-          {blocks.map((blk, i) => {
-            const itemLive = live && i === blocks.length - 1;
-            return (
-              <div key={i} className="flex flex-col gap-1 py-1">
-                <div className="flex items-center gap-2">
-                  {itemLive ? (
-                    <FiGlobe
-                      size={11}
-                      className="shrink-0 text-text-secondary"
-                    />
-                  ) : (
-                    <FiCheck
-                      size={11}
-                      className="shrink-0 text-text-secondary/60"
-                    />
-                  )}
-                  <span
-                    className={
-                      "min-w-0 max-w-[440px] truncate text-sm " +
-                      `${itemLive ? "shimmer-text" : "text-text-secondary"}`
-                    }
-                  >
-                    {itemLive ? liveLabel(blk) : doneLabel(blk)}
-                  </span>
-                </div>
-                {i === approvalStep && approval && (
-                  <div className="ml-5 flex items-center gap-2">
-                    <span className="text-xs text-text-secondary">
-                      Allow this action?
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => decide(true)}
-                      className="rounded-full bg-white px-3 py-1 text-xs font-medium text-bg-primary hover:opacity-90"
-                    >
-                      Run
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => decide(false)}
-                      className="rounded-full border border-border-primary px-3 py-1 text-xs text-text-secondary hover:text-text-primary"
-                    >
-                      Deny
-                    </button>
-                  </div>
-                )}
+      </div>
+      <div className="ml-2.5 mt-1 flex flex-col border-l border-border-primary/60 pl-4">
+        {blocks.map((blk, i) => {
+          const itemLive = live && i === blocks.length - 1;
+          return (
+            <div key={i} className="flex flex-col gap-1 py-1">
+              <div className="flex items-center gap-2">
+                <SiGooglechrome
+                  size={10}
+                  className="shrink-0 text-text-secondary/60"
+                />
+                <span
+                  className={
+                    "min-w-0 max-w-[440px] truncate text-sm " +
+                    `${itemLive ? "shimmer-text" : "text-text-secondary"}`
+                  }
+                >
+                  {itemLive ? liveLabel(blk) : doneLabel(blk)}
+                </span>
               </div>
-            );
-          })}
-        </div>
-      )}
+              {i === approvalStep && approval && (
+                <div className="ml-5 flex items-center gap-2">
+                  <span className="text-xs text-text-secondary">
+                    Allow this action?
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => decide(true)}
+                    className="rounded-full bg-white px-3 py-1 text-xs font-medium text-bg-primary hover:opacity-90"
+                  >
+                    Run
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => decide(false)}
+                    className="rounded-full border border-border-primary px-3 py-1 text-xs text-text-secondary hover:text-text-primary"
+                  >
+                    Deny
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

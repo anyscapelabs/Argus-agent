@@ -15,22 +15,30 @@ CREATE TABLE IF NOT EXISTS library (
 );
 CREATE INDEX IF NOT EXISTS idx_library_session ON library(session_id);
 
-CREATE VIRTUAL TABLE IF NOT EXISTS library_fts USING fts5(
-  name, content='library', content_rowid='rowid'
+DROP TABLE IF EXISTS library_fts;
+CREATE VIRTUAL TABLE library_fts USING fts5(
+  name
 );
 
-CREATE TRIGGER IF NOT EXISTS library_fts_ai AFTER INSERT ON library BEGIN
+DROP TRIGGER IF EXISTS library_fts_ai;
+CREATE TRIGGER library_fts_ai AFTER INSERT ON library BEGIN
   INSERT INTO library_fts(rowid, name) VALUES (new.rowid, new.name);
 END;
 
-CREATE TRIGGER IF NOT EXISTS library_fts_ad AFTER DELETE ON library BEGIN
-  INSERT INTO library_fts(library_fts, rowid, name) VALUES ('delete', old.rowid, old.name);
+DROP TRIGGER IF EXISTS library_fts_ad;
+CREATE TRIGGER library_fts_ad AFTER DELETE ON library BEGIN
+  DELETE FROM library_fts WHERE rowid = old.rowid;
 END;
 
-CREATE TRIGGER IF NOT EXISTS library_fts_au AFTER UPDATE ON library BEGIN
-  INSERT INTO library_fts(library_fts, rowid, name) VALUES ('delete', old.rowid, old.name);
+DROP TRIGGER IF EXISTS library_fts_au;
+CREATE TRIGGER library_fts_au AFTER UPDATE ON library BEGIN
+  DELETE FROM library_fts WHERE rowid = old.rowid;
   INSERT INTO library_fts(rowid, name) VALUES (new.rowid, new.name);
 END;
+
+INSERT INTO library_fts(rowid, name)
+  SELECT rowid, name FROM library
+  WHERE rowid NOT IN (SELECT rowid FROM library_fts);
 "#;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

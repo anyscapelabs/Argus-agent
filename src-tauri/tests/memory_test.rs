@@ -88,6 +88,27 @@ fn links_form_graph_edges() {
 }
 
 #[test]
+fn message_update_and_delete_keep_fts_usable() {
+    let conn = test_db();
+    conn.execute(
+        "INSERT INTO messages (id, session_id, seq, role, content) VALUES ('m9', 's9', 1, 'assistant', 'drafting the quarterly report now')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE messages SET content = 'finished the quarterly report draft' WHERE id = 'm9'",
+        [],
+    )
+    .unwrap();
+    let hits = store::recall(&conn, "quarterly report draft", 8).unwrap();
+    assert!(hits.iter().any(|h| h.source == "message"));
+    conn.execute("DELETE FROM messages WHERE id = 'm9'", [])
+        .unwrap();
+    let hits = store::recall(&conn, "quarterly report draft", 8).unwrap();
+    assert!(!hits.iter().any(|h| h.source == "message"));
+}
+
+#[test]
 fn recall_spans_messages_summaries_files_and_graph() {
     let conn = test_db();
     conn.execute(

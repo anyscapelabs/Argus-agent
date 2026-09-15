@@ -13,26 +13,34 @@ CREATE TABLE IF NOT EXISTS memories (
 CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id);
 CREATE INDEX IF NOT EXISTS idx_memories_kind ON memories(kind);
 
-CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
-  content, kind, content='memories', content_rowid='rowid'
+DROP TRIGGER IF EXISTS memory_fts_ai;
+DROP TRIGGER IF EXISTS memory_fts_ad;
+DROP TRIGGER IF EXISTS memory_fts_au;
+DROP TABLE IF EXISTS memory_fts;
+CREATE VIRTUAL TABLE memory_fts USING fts5(
+  content, kind
 );
 
-CREATE TRIGGER IF NOT EXISTS memory_fts_ai AFTER INSERT ON memories BEGIN
+CREATE TRIGGER memory_fts_ai AFTER INSERT ON memories BEGIN
   INSERT INTO memory_fts(rowid, content, kind)
   VALUES (new.rowid, new.content, new.kind);
 END;
 
-CREATE TRIGGER IF NOT EXISTS memory_fts_ad AFTER DELETE ON memories BEGIN
-  INSERT INTO memory_fts(memory_fts, rowid, content, kind)
-  VALUES ('delete', old.rowid, old.content, old.kind);
+DROP TRIGGER IF EXISTS memory_fts_ad;
+CREATE TRIGGER memory_fts_ad AFTER DELETE ON memories BEGIN
+  DELETE FROM memory_fts WHERE rowid = old.rowid;
 END;
 
-CREATE TRIGGER IF NOT EXISTS memory_fts_au AFTER UPDATE ON memories BEGIN
-  INSERT INTO memory_fts(memory_fts, rowid, content, kind)
-  VALUES ('delete', old.rowid, old.content, old.kind);
+DROP TRIGGER IF EXISTS memory_fts_au;
+CREATE TRIGGER memory_fts_au AFTER UPDATE ON memories BEGIN
+  DELETE FROM memory_fts WHERE rowid = old.rowid;
   INSERT INTO memory_fts(rowid, content, kind)
   VALUES (new.rowid, new.content, new.kind);
 END;
+
+INSERT INTO memory_fts(rowid, content, kind)
+  SELECT rowid, content, kind FROM memories
+  WHERE rowid NOT IN (SELECT rowid FROM memory_fts);
 
 CREATE TABLE IF NOT EXISTS memory_links (
   from_id    TEXT NOT NULL,
@@ -53,17 +61,21 @@ CREATE TRIGGER IF NOT EXISTS message_fts_ai AFTER INSERT ON messages BEGIN
   VALUES (new.rowid, new.content);
 END;
 
-CREATE TRIGGER IF NOT EXISTS message_fts_ad AFTER DELETE ON messages BEGIN
-  INSERT INTO message_fts(message_fts, rowid, content)
-  VALUES ('delete', old.rowid, old.content);
+DROP TRIGGER IF EXISTS message_fts_ad;
+CREATE TRIGGER message_fts_ad AFTER DELETE ON messages BEGIN
+  DELETE FROM message_fts WHERE rowid = old.rowid;
 END;
 
-CREATE TRIGGER IF NOT EXISTS message_fts_au AFTER UPDATE ON messages BEGIN
-  INSERT INTO message_fts(message_fts, rowid, content)
-  VALUES ('delete', old.rowid, old.content);
+DROP TRIGGER IF EXISTS message_fts_au;
+CREATE TRIGGER message_fts_au AFTER UPDATE ON messages BEGIN
+  DELETE FROM message_fts WHERE rowid = old.rowid;
   INSERT INTO message_fts(rowid, content)
   VALUES (new.rowid, new.content);
 END;
+
+INSERT INTO message_fts(rowid, content)
+  SELECT rowid, content FROM messages
+  WHERE rowid NOT IN (SELECT rowid FROM message_fts);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS summary_fts USING fts5(
   content, content_rowid='rowid'
@@ -74,40 +86,52 @@ CREATE TRIGGER IF NOT EXISTS summary_fts_ai AFTER INSERT ON summaries BEGIN
   VALUES (new.rowid, new.content);
 END;
 
-CREATE TRIGGER IF NOT EXISTS summary_fts_ad AFTER DELETE ON summaries BEGIN
-  INSERT INTO summary_fts(summary_fts, rowid, content)
-  VALUES ('delete', old.rowid, old.content);
+DROP TRIGGER IF EXISTS summary_fts_ad;
+CREATE TRIGGER summary_fts_ad AFTER DELETE ON summaries BEGIN
+  DELETE FROM summary_fts WHERE rowid = old.rowid;
 END;
 
-CREATE TRIGGER IF NOT EXISTS summary_fts_au AFTER UPDATE ON summaries BEGIN
-  INSERT INTO summary_fts(summary_fts, rowid, content)
-  VALUES ('delete', old.rowid, old.content);
+DROP TRIGGER IF EXISTS summary_fts_au;
+CREATE TRIGGER summary_fts_au AFTER UPDATE ON summaries BEGIN
+  DELETE FROM summary_fts WHERE rowid = old.rowid;
   INSERT INTO summary_fts(rowid, content)
   VALUES (new.rowid, new.content);
 END;
+
+INSERT INTO summary_fts(rowid, content)
+  SELECT rowid, content FROM summaries
+  WHERE rowid NOT IN (SELECT rowid FROM summary_fts);
 
 CREATE TABLE IF NOT EXISTS file_fts (
   ref_id     TEXT PRIMARY KEY,
   session_id TEXT,
   content    TEXT NOT NULL
 );
-CREATE VIRTUAL TABLE IF NOT EXISTS file_fts_idx USING fts5(
-  content, content='file_fts', content_rowid='rowid'
+DROP TRIGGER IF EXISTS file_fts_idx_ai;
+DROP TRIGGER IF EXISTS file_fts_idx_ad;
+DROP TRIGGER IF EXISTS file_fts_idx_au;
+DROP TABLE IF EXISTS file_fts_idx;
+CREATE VIRTUAL TABLE file_fts_idx USING fts5(
+  content
 );
-CREATE TRIGGER IF NOT EXISTS file_fts_idx_ai AFTER INSERT ON file_fts BEGIN
+CREATE TRIGGER file_fts_idx_ai AFTER INSERT ON file_fts BEGIN
   INSERT INTO file_fts_idx(rowid, content)
   VALUES (new.rowid, new.content);
 END;
-CREATE TRIGGER IF NOT EXISTS file_fts_idx_ad AFTER DELETE ON file_fts BEGIN
-  INSERT INTO file_fts_idx(file_fts_idx, rowid, content)
-  VALUES ('delete', old.rowid, old.content);
+DROP TRIGGER IF EXISTS file_fts_idx_ad;
+CREATE TRIGGER file_fts_idx_ad AFTER DELETE ON file_fts BEGIN
+  DELETE FROM file_fts_idx WHERE rowid = old.rowid;
 END;
-CREATE TRIGGER IF NOT EXISTS file_fts_idx_au AFTER UPDATE ON file_fts BEGIN
-  INSERT INTO file_fts_idx(file_fts_idx, rowid, content)
-  VALUES ('delete', old.rowid, old.content);
+DROP TRIGGER IF EXISTS file_fts_idx_au;
+CREATE TRIGGER file_fts_idx_au AFTER UPDATE ON file_fts BEGIN
+  DELETE FROM file_fts_idx WHERE rowid = old.rowid;
   INSERT INTO file_fts_idx(rowid, content)
   VALUES (new.rowid, new.content);
 END;
+
+INSERT INTO file_fts_idx(rowid, content)
+  SELECT rowid, content FROM file_fts
+  WHERE rowid NOT IN (SELECT rowid FROM file_fts_idx);
 "#;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

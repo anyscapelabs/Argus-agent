@@ -78,6 +78,8 @@ async function handle(msg) {
       return clickEl(d.tabId, d.path);
     case "fill":
       return fillEl(d.tabId, d.path, d.text, !!d.submit);
+    case "scroll":
+      return scrollTab(d.tabId, d.dy);
     case "closeTab":
       await chrome.tabs.remove(d.tabId).catch(() => {});
       return {};
@@ -189,6 +191,25 @@ async function runTab(tabId, func, args) {
   });
 
   return res?.result;
+}
+
+async function scrollTab(tabId, dy) {
+  if (!(await hasTab(tabId))) {
+    throw new Error("tab was closed — run browser.open again");
+  }
+
+  await runTab(
+    tabId,
+    (amount) => {
+      window.scrollBy(0, amount);
+      return "ok";
+    },
+    [Number(dy) || 800]
+  );
+
+  await new Promise((r) => setTimeout(r, 400));
+
+  return {};
 }
 
 async function clickEl(tabId, path) {

@@ -25,7 +25,7 @@ import { type PendingApproval } from "../stores/sessions";
 import ActionBlock from "./agent/ActionBlock";
 import AlertBanner from "./agent/AlertBanner";
 import ApprovalBlock from "./agent/ApprovalBlock";
-import BrowserActionCard from "./agent/BrowserActionCard";
+import BrowserGroup from "./agent/BrowserGroup";
 import DiffBlock from "./agent/DiffBlock";
 import DocumentCard from "./agent/DocumentCard";
 import EmailDraftCard from "./agent/EmailDraftCard";
@@ -459,8 +459,6 @@ function renderBlk(
       return <TerminalBlock key={key} block={blk} />;
     case "email-draft":
       return <EmailDraftCard key={key} block={blk} />;
-    case "browser-action":
-      return <BrowserActionCard key={key} block={blk} />;
     case "memory-ref":
       return <MemoryRefChip key={key} block={blk} />;
     case "table":
@@ -496,6 +494,7 @@ function renderTree(
   let gIdx = 0;
   let pIdx = 0;
   let wIdx = 0;
+  let bIdx = 0;
   let aIdx = 0;
 
   const actFor = (idx: number): LiveAction | undefined =>
@@ -597,6 +596,46 @@ function renderTree(
     ) {
       aIdx++;
       i++;
+      continue;
+    }
+
+    const isBrowserStep =
+      (blk.tag === "action" &&
+        (blk.attrs.tool ?? "").startsWith("browser.")) ||
+      blk.tag === "browser-action";
+
+    if (isBrowserStep) {
+      const grp: BlockNode[] = [];
+      const idxs: number[] = [];
+
+      while (
+        i < tree.length &&
+        ((tree[i].tag === "action" &&
+          (tree[i].attrs.tool ?? "").startsWith("browser.")) ||
+          tree[i].tag === "browser-action")
+      ) {
+        grp.push(tree[i]);
+
+        if (tree[i].tag === "action") {
+          idxs.push(aIdx);
+          aIdx++;
+        } else {
+          idxs.push(-1);
+        }
+
+        i++;
+      }
+
+      out.push(
+        <BrowserGroup
+          key={`browser-${bIdx++}`}
+          blocks={grp}
+          idxs={idxs}
+          live={live}
+          approval={liveTerm?.approval ?? null}
+          sessionId={liveTerm?.sessionId}
+        />,
+      );
       continue;
     }
 

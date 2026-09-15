@@ -19,32 +19,38 @@ const IDLE: Duration = Duration::from_secs(600);
 pub const META: &[ToolMeta] = &[
     ToolMeta {
         name: "browser.open",
-        desc: "open a url in the Argus browser (headed Chrome window) and read the page",
-        args: "{\"url\":\"https://...\",\"profile\":\"main\"}",
+        desc: "open a url in the user's current Chrome and read the page; omit profile unless an isolated window was asked for",
+        args: "{\"url\":\"https://...\"}",
         mutating: false,
     },
     ToolMeta {
         name: "browser.click",
         desc: "click an element from the last browser snapshot by its ref number",
-        args: "{\"ref\":3,\"profile\":\"main\"}",
+        args: "{\"ref\":3}",
         mutating: true,
     },
     ToolMeta {
         name: "browser.type",
         desc: "type text into an element from the last browser snapshot; set submit true to press Enter",
-        args: "{\"ref\":7,\"text\":\"...\",\"submit\":false,\"profile\":\"main\"}",
+        args: "{\"ref\":7,\"text\":\"...\",\"submit\":false}",
         mutating: true,
     },
     ToolMeta {
         name: "browser.read",
         desc: "read the current browser page text and elements",
-        args: "{\"profile\":\"main\"}",
+        args: "{}",
+        mutating: false,
+    },
+    ToolMeta {
+        name: "browser.scroll",
+        desc: "scroll the current browser page up or down by pixels",
+        args: "{\"direction\":\"down\",\"pixels\":800}",
         mutating: false,
     },
     ToolMeta {
         name: "browser.close",
-        desc: "close the Argus browser for a profile",
-        args: "{\"profile\":\"main\"}",
+        desc: "close the browser tab",
+        args: "{}",
         mutating: false,
     },
 ];
@@ -437,6 +443,33 @@ pub async fn read(args: &Value) -> Result<String, String> {
     let mut map = sess(&name).await?;
     let s = map.get_mut(&name).ok_or("browser session missing")?;
     s.last_used = Instant::now();
+
+    page_out(s).await
+}
+
+pub async fn scroll(args: &Value) -> Result<String, String> {
+    let name = route_profile(args).await;
+
+    if self::ext::is_real(&name) {
+        return self::ext::scroll(args).await;
+    }
+
+    let dir = args
+        .get("direction")
+        .and_then(|v| v.as_str())
+        .unwrap_or("down");
+    let px = args
+        .get("pixels")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(800)
+        .clamp(100, 5000);
+    let dy = if dir == "up" { -px } else { px };
+
+    let mut map = sess(&name).await?;
+    let s = map.get_mut(&name).ok_or("browser session missing")?;
+    s.last_used = Instant::now();
+
+    eval_str(&s.page, &format!("(() => window.scrollBy(0, {dy}))()")).await;
 
     page_out(s).await
 }

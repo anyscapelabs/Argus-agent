@@ -547,6 +547,7 @@ pub async fn exec(
         "browser.click" => browser::click(&args).await,
         "browser.type" => browser::type_text(&args).await,
         "browser.read" => browser::read(&args).await,
+        "browser.scroll" => browser::scroll(&args).await,
         "browser.close" => browser::close(&args).await,
         "computer.observe" => computer::x11::observe().await,
         "computer.act" => computer::atspi::act(&args).await,
@@ -643,9 +644,11 @@ The next message is:\n\
 So your reply is: The file says hello.\n\
 \n\
 Rules:\n\
+- Batch every independent action into one reply: open once, then click, type, scroll and read in the fewest replies possible, reusing the same tab. Never dribble one action per reply when several are needed.\n\
 - Independent reads may share one reply; desktop actions run one per reply.\n\
 - A result with status err (including \"action denied by user\") ends that line of action: \
 explain the failure and what would fix it, never repeat the same call.\n\
+- Attempt the full plan first; only when every route is exhausted write one summary of what failed — never a report after each single failure.\n\
 - Never narrate a screenshot you were not given, and never claim a tool ran \
 without its result message.\n\
 - The action block is the only way to run a tool: never <tool_call> or any other \

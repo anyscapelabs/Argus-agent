@@ -61,7 +61,7 @@ pub fn start_listener(data_dir: PathBuf) {
     });
 }
 
-async fn serve_conn(stream: UnixStream) {
+pub async fn serve_conn(stream: UnixStream) {
     let (rd, mut wr) = stream.into_split();
     let (tx, mut rx) = mpsc::channel::<String>(64);
 
@@ -75,7 +75,7 @@ async fn serve_conn(stream: UnixStream) {
         r.pending.lock().map(|mut p| p.clear()).ok();
     }
 
-    let writer = tauri::async_runtime::spawn(async move {
+    let writer = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
             if write_frame(&mut wr, &msg).await.is_err() {
                 break;

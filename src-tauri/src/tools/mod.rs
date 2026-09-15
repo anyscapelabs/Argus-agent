@@ -1017,7 +1017,10 @@ structured text with element refs. Those [n] refs work only in computer.act \
 and computer.type — never use one in a browser.* tool. Act by ref with \
 computer.act (press, toggle, select) — it runs the app's own action, no \
 coordinates involved. \
-computer.type takes a ref to focus a field. After every action the result \
+computer.type takes a ref to focus a field. Every observation prints its number: \
+pass it back as \"observation\" with computer.act, computer.type, computer.click \
+and computer.scroll, since refs and coordinates from an older observation are \
+rejected. After every action the result \
 is a fresh screenshot and tree: verify the action worked before the next \
 step, one action per step. If an action changed nothing, do not repeat it — \
 switch tiers or ask the user. Resolve \

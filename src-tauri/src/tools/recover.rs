@@ -97,9 +97,28 @@ pub fn classify(err: &str) -> RecoveryKind {
     if has_any(
         &e,
         &[
+            "not found",
+            "no such",
+            "does not exist",
+            "vanished",
+            "item file missing",
+            " 404",
+            "(404)",
+            "page not found",
+        ],
+    ) {
+        return RecoveryKind::NotFound;
+    }
+
+    if has_any(
+        &e,
+        &[
             "stale ref",
+            "stale screenshot",
             "unknown ref",
             "for a fresh list",
+            "for a fresh screenshot",
+            "focus changed",
             "no screenshot yet",
         ],
     ) {
@@ -145,22 +164,6 @@ pub fn classify(err: &str) -> RecoveryKind {
         ],
     ) {
         return RecoveryKind::AuthenticationRequired;
-    }
-
-    if has_any(
-        &e,
-        &[
-            "not found",
-            "no such",
-            "does not exist",
-            "vanished",
-            "item file missing",
-            " 404",
-            "(404)",
-            "page not found",
-        ],
-    ) {
-        return RecoveryKind::NotFound;
     }
 
     if has_any(

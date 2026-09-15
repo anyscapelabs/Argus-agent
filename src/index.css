@@ -153,3 +153,18 @@ button:focus-visible {
     background-position: -200% 0;
   }
 }
+
+.toast-in {
+  animation: argus-toast-in 220ms ease-out;
+}
+
+@keyframes argus-toast-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

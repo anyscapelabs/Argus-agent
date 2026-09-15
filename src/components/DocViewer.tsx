@@ -7,6 +7,7 @@ import { LuFileText, LuPresentation, LuSheet } from "react-icons/lu";
 import type { LibPreview } from "../lib/ipc";
 import { libraryDownload, libraryPath, libraryPreview } from "../lib/ipc";
 import { docViewerStore, useDocViewer } from "../stores/docViewer";
+import { toast } from "../stores/toast";
 
 function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -122,8 +123,10 @@ export default function DocViewer() {
     try {
       const res = await libraryDownload(id);
       setSaved(res.dest);
+      toast.success("Downloaded");
     } catch (e) {
       setErr(String(e));
+      toast.error("Download failed");
     } finally {
       setBusy(false);
     }

@@ -3,6 +3,7 @@ import { LuBrain, LuSearch } from "react-icons/lu";
 
 import type { Memory, MemoryGraph } from "../lib/ipc";
 import { memoryDelete, memoryGraph, memoryList, memorySearch } from "../lib/ipc";
+import { toast } from "../stores/toast";
 
 function layout(nodes: { id: string }[]) {
   const n = nodes.length;
@@ -81,7 +82,9 @@ export default function MemoryPage() {
   const remove = async (id: string) => {
     try {
       await memoryDelete(id);
+      toast.success("Memory forgotten");
     } catch {
+      toast.error("Delete failed");
       return;
     }
     setMems((prev) => prev.filter((m) => m.id !== id));

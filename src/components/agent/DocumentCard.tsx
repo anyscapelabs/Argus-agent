@@ -5,6 +5,7 @@ import { FiDownload, FiLoader } from "react-icons/fi";
 import type { BlockNode } from "../../lib/agentXml";
 import { libraryDownload } from "../../lib/ipc";
 import { docViewerStore } from "../../stores/docViewer";
+import { toast } from "../../stores/toast";
 
 type Props = { block: BlockNode };
 
@@ -32,8 +33,10 @@ export default function DocumentCard({ block }: Props) {
     try {
       const res = await libraryDownload(libId);
       setSaved(res.dest);
+      toast.success("Downloaded");
     } catch {
       setFailed(true);
+      toast.error("Download failed");
     } finally {
       setBusy(false);
     }

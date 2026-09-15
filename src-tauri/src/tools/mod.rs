@@ -990,7 +990,8 @@ always need the user's approval; if one is denied, never retry it. \
 When the user granted Chrome permission in Connectors, browser tools act \
 inside their everyday Chrome via the Argus extension by default — even with \
 no profile given. Use an isolated profile (any other name) only when the \
-user asks for one. Chrome is only opened when you run a real-profile \
+user asks for one. A stale ref is rejected with the current snapshot included: \
+choose the replacement ref from that snapshot and act once, then re-read if it fails again. Chrome is only opened when you run a real-profile \
 action, so just act — no need to ask first. If a real-profile action \
 errors, relay the exact error to the user: permission off means they enable \
 Chrome in Connectors; a message about loading the extension unpacked means \

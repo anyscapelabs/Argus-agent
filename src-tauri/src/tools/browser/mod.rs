@@ -3,7 +3,10 @@ pub mod extpipe;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Mutex, OnceLock,
+};
 use std::time::{Duration, Instant};
 
 use chromiumoxide::browser::{Browser, BrowserConfig};
@@ -55,11 +58,60 @@ pub const META: &[ToolMeta] = &[
     },
 ];
 
+static NEXT_SNAP: AtomicU64 = AtomicU64::new(1);
+
+pub(crate) fn next_snap() -> u64 {
+    NEXT_SNAP.fetch_add(1, Ordering::Relaxed)
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct RefEntry {
+    pub(crate) path: String,
+    pub(crate) label: String,
+    pub(crate) kind: String,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct RefTable {
+    pub(crate) gen: u64,
+    pub(crate) items: Vec<RefEntry>,
+}
+
+impl RefTable {
+    pub(crate) fn refresh(&mut self, items: Vec<RefEntry>) -> u64 {
+        self.gen = next_snap();
+        self.items = items;
+        self.gen
+    }
+
+    pub(crate) fn resolve(&self, index: usize, presented: Option<u64>) -> Result<String, String> {
+        let entry = self.items.get(index).ok_or_else(|| {
+            "unknown ref — run browser.open or browser.read for a fresh list".to_string()
+        })?;
+        if let Some(g) = presented {
+            if g != self.gen {
+                return Err(format!(
+                    "stale ref {index} from snapshot {g} — snapshot {} is current; run browser.read for a fresh list",
+                    self.gen
+                ));
+            }
+        }
+        Ok(entry.path.clone())
+    }
+
+    pub(crate) fn label(&self, index: usize) -> Option<String> {
+        self.items.get(index).map(|e| e.label.clone())
+    }
+}
+
+pub(crate) fn snap_of(args: &Value) -> Option<u64> {
+    args.get("snapshot").and_then(|v| v.as_u64())
+}
+
 struct Sess {
     _browser: Browser,
     page: Page,
-    refs: Vec<String>,
-    labels: Vec<String>,
+    elements: RefTable,
     url: String,
     last_used: Instant,
 }
@@ -183,8 +235,7 @@ async fn launch(root: &PathBuf, name: &str) -> Result<Sess, String> {
     Ok(Sess {
         _browser: browser,
         page,
-        refs: vec![],
-        labels: vec![],
+        elements: RefTable::default(),
         url: String::new(),
         last_used: Instant::now(),
     })
@@ -263,23 +314,26 @@ struct ElRef {
     path: String,
 }
 
-async fn snapshot(page: &Page, refs: &mut Vec<String>, labels: &mut Vec<String>) -> String {
-    refs.clear();
-    labels.clear();
-
+async fn snapshot(page: &Page, table: &mut RefTable) -> String {
     let raw = eval_str(page, SNAP_JS).await;
     let els: Vec<ElRef> = serde_json::from_str(&raw).unwrap_or_default();
 
-    let mut list = String::from("\nElements:\n");
-    for (i, el) in els.iter().enumerate() {
-        let label = redact(&el.label);
-        refs.push(el.path.clone());
-        labels.push(label.clone());
+    let items: Vec<RefEntry> = els
+        .iter()
+        .map(|el| RefEntry {
+            path: el.path.clone(),
+            label: redact(&el.label),
+            kind: el.kind.clone(),
+        })
+        .collect();
+    let gen = table.refresh(items);
 
-        if label.is_empty() {
+    let mut list = format!("\nElements (snapshot {gen}):\n");
+    for (i, el) in table.items.iter().enumerate() {
+        if el.label.is_empty() {
             list.push_str(&format!("[{}] {}\n", i, el.kind));
         } else {
-            list.push_str(&format!("[{}] {} \"{}\"\n", i, el.kind, label));
+            list.push_str(&format!("[{}] {} \"{}\"\n", i, el.kind, el.label));
         }
     }
 
@@ -311,7 +365,7 @@ async fn page_out(s: &mut Sess) -> Result<String, String> {
         .unwrap_or_default();
     let text = eval_str(&s.page, TEXT_JS).await;
     let text = redact(&text);
-    let list = snapshot(&s.page, &mut s.refs, &mut s.labels).await;
+    let list = snapshot(&s.page, &mut s.elements).await;
 
     s.url = url.clone();
 
@@ -353,11 +407,8 @@ fn ref_of(args: &Value) -> Result<usize, String> {
         .ok_or_else(|| "missing ref".into())
 }
 
-async fn target(s: &Sess, r: usize) -> Result<String, String> {
-    match s.refs.get(r) {
-        Some(p) => Ok(p.clone()),
-        None => Err("unknown ref — run browser.open or browser.read for a fresh list".into()),
-    }
+async fn target(s: &Sess, r: usize, snap: Option<u64>) -> Result<String, String> {
+    s.elements.resolve(r, snap)
 }
 
 pub async fn click(args: &Value) -> Result<String, String> {
@@ -368,12 +419,13 @@ pub async fn click(args: &Value) -> Result<String, String> {
     }
 
     let r = ref_of(args)?;
+    let snap = snap_of(args);
 
     let mut map = sess(&name).await?;
     let s = map.get_mut(&name).ok_or("browser session missing")?;
     s.last_used = Instant::now();
 
-    let path = target(s, r).await?;
+    let path = target(s, r, snap).await?;
 
     let el = s
         .page
@@ -397,6 +449,7 @@ pub async fn type_text(args: &Value) -> Result<String, String> {
     }
 
     let r = ref_of(args)?;
+    let snap = snap_of(args);
     let text = args
         .get("text")
         .and_then(|v| v.as_str())
@@ -410,7 +463,7 @@ pub async fn type_text(args: &Value) -> Result<String, String> {
     let s = map.get_mut(&name).ok_or("browser session missing")?;
     s.last_used = Instant::now();
 
-    let path = target(s, r).await?;
+    let path = target(s, r, snap).await?;
 
     let el = s
         .page
@@ -587,8 +640,8 @@ pub async fn sensitive(tool: &str, args: &Value) -> bool {
                     return true;
                 }
 
-                if let Some(l) = s.labels.get(r) {
-                    if label_re.is_match(l) {
+                if let Some(l) = s.elements.label(r) {
+                    if label_re.is_match(&l) {
                         return true;
                     }
                 }

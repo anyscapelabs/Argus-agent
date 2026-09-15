@@ -1,6 +1,6 @@
 pub mod connectors;
 pub mod gateway;
-mod library;
+pub mod library;
 pub mod mcp;
 pub mod memory;
 pub mod prompt;
@@ -138,6 +138,7 @@ pub fn run() {
             library::library_delete,
             library::library_search,
             library::library_path,
+            library::library_create_doc,
             memory::memory_save,
             memory::memory_get,
             memory::memory_list,

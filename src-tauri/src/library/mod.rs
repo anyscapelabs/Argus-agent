@@ -1,3 +1,4 @@
+pub mod doc;
 pub mod schema;
 pub mod store;
 
@@ -51,6 +52,29 @@ pub fn library_path(gw: State<'_, Gateway>, id: String) -> Result<String, String
         .join(&item.path)
         .to_string_lossy()
         .into_owned())
+}
+
+#[tauri::command]
+pub fn library_create_doc(
+    gw: State<'_, Gateway>,
+    name: String,
+    kind: String,
+    title: Option<String>,
+    content: Option<String>,
+    rows: Option<serde_json::Value>,
+    slides: Option<serde_json::Value>,
+    session_id: Option<String>,
+) -> Result<LibItem, String> {
+    let args = serde_json::json!({
+        "name": name,
+        "kind": kind,
+        "title": title.unwrap_or_default(),
+        "content": content.unwrap_or_default(),
+        "rows": rows.unwrap_or(serde_json::Value::Null),
+        "slides": slides.unwrap_or(serde_json::Value::Null),
+    });
+    let (item, _) = doc::create(&gw, &args, session_id.as_deref())?;
+    Ok(item)
 }
 
 pub fn default_dir(app_data: &PathBuf) -> PathBuf {

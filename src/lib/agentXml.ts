@@ -72,9 +72,13 @@ export const TAG_SCHEMA: readonly TagSchema[] = [
     tag: "document",
     selfClosing: true,
     attributes: [
+      { name: "id" },
       { name: "path" },
       { name: "title" },
-      { name: "doctype", values: ["docx", "pdf"] },
+      {
+        name: "doctype",
+        values: ["docx", "pdf", "pptx", "xlsx", "csv", "md", "txt"],
+      },
       { name: "pages" },
       { name: "status", values: ["ready", "generating"] },
     ],

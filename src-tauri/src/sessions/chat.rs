@@ -277,6 +277,23 @@ fn browser_block(idx: usize, tool: &str, url: &str, what: &str) -> String {
     )
 }
 
+fn doc_field(body: &str, key: &str) -> String {
+    body.lines()
+        .find(|l| l.starts_with(key))
+        .map(|l| l[key.len()..].trim().to_string())
+        .unwrap_or_default()
+}
+
+fn doc_block(id: &str, title: &str, doctype: &str, pages: &str) -> String {
+    format!(
+        "<document id=\"{}\" title=\"{}\" doctype=\"{}\" pages=\"{}\" status=\"ready\" />",
+        esc_attr(id),
+        esc_attr(title),
+        esc_attr(doctype),
+        esc_attr(pages)
+    )
+}
+
 fn body_url(body: &str) -> String {
     body.lines()
         .find(|l| l.starts_with("url "))
@@ -563,6 +580,12 @@ pub async fn send(
             if !allow {
                 let what = if is_browser {
                     browser_what(&a.tool, &args_v, false)
+                } else if a.tool == "doc.create" {
+                    args_v
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .map(|s| format!("doc.create {}", s))
+                        .unwrap_or_else(|| "doc.create".into())
                 } else {
                     cmd.clone()
                 };
@@ -664,6 +687,19 @@ pub async fn send(
 
                 let blk =
                     browser_block(idx, &a.tool, &url, &browser_what(&a.tool, &args_v, true));
+                match (a.start, a.end) {
+                    (Some(s), Some(e)) => edits.push((s, e, blk)),
+                    _ => append_blocks.push(blk),
+                }
+            }
+
+            if a.tool == "doc.create" && status == "ok" {
+                let id = doc_field(&body, "id=");
+                let name = doc_field(&body, "name=");
+                let ext = doc_field(&body, "ext=");
+                let pages = doc_field(&body, "pages=");
+                let title = if name.is_empty() { "Untitled document".into() } else { name };
+                let blk = doc_block(&id, &title, &ext, &pages);
                 match (a.start, a.end) {
                     (Some(s), Some(e)) => edits.push((s, e, blk)),
                     _ => append_blocks.push(blk),

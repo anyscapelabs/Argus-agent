@@ -1,9 +1,10 @@
-import { openPath } from "@tauri-apps/plugin-opener";
+import { useState } from "react";
 import { FcDocument } from "react-icons/fc";
 import { FiDownload, FiLoader } from "react-icons/fi";
 
 import type { BlockNode } from "../../lib/agentXml";
-import { libraryPath } from "../../lib/ipc";
+import { libraryDownload } from "../../lib/ipc";
+import { docViewerStore } from "../../stores/docViewer";
 
 type Props = { block: BlockNode };
 
@@ -14,20 +15,36 @@ export default function DocumentCard({ block }: Props) {
   const status = block.attrs.status ?? "ready";
   const isGenerating = status === "generating";
   const libId = block.attrs.id ?? "";
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
 
-  const open = async () => {
+  const open = () => {
     if (!libId) return;
+    docViewerStore.open(libId);
+  };
+
+  const download = async () => {
+    if (!libId || busy) return;
+    setBusy(true);
+    setSaved(null);
+    setFailed(false);
     try {
-      const abs = await libraryPath(libId);
-      await openPath(abs);
-    } catch {}
+      const res = await libraryDownload(libId);
+      setSaved(res.dest);
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <div
       data-component-id={block.attrs.id}
-      className="flex items-center gap-3 rounded-lg border border-border-primary bg-bg-secondary p-3 font-sans"
+      className="flex flex-col gap-1 rounded-lg border border-border-primary bg-bg-secondary p-3 font-sans"
     >
+      <div className="flex items-center gap-3">
       <FcDocument size={28} className="mt-0.5 shrink-0 self-start" />
       <div className="min-w-0 flex-1 leading-tight">
         <div className="truncate text-sm font-medium text-text-primary">
@@ -73,18 +90,33 @@ export default function DocumentCard({ block }: Props) {
           </button>
           <button
             type="button"
-            onClick={open}
+            onClick={download}
+            disabled={busy}
             className={
               "flex h-7 w-7 items-center justify-center rounded-md border " +
               "border-border-primary text-text-secondary transition-colors " +
               "hover:bg-bg-hover-primary hover:text-text-primary " +
-              "focus:outline-none focus-visible:bg-bg-hover-primary"
+              "focus:outline-none focus-visible:bg-bg-hover-primary " +
+              "disabled:opacity-50"
             }
             aria-label="Download"
           >
-            <FiDownload size={12} />
+            {busy ? (
+              <FiLoader size={12} className="animate-spin" />
+            ) : (
+              <FiDownload size={12} />
+            )}
           </button>
         </div>
+      )}
+      </div>
+      {saved && (
+        <div className="truncate text-xs text-text-secondary">
+          Saved to {saved}
+        </div>
+      )}
+      {failed && (
+        <div className="text-xs text-red-400">Download failed</div>
       )}
     </div>
   );

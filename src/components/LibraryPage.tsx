@@ -1,4 +1,3 @@
-import { openPath } from "@tauri-apps/plugin-opener";
 import { useEffect, useState } from "react";
 import {
   LuFileText,
@@ -9,8 +8,9 @@ import {
 } from "react-icons/lu";
 
 import type { LibItem } from "../lib/ipc";
-import { libraryList, libraryPath, librarySearch } from "../lib/ipc";
+import { libraryDownload, libraryList, librarySearch } from "../lib/ipc";
 import LibraryCard from "./LibraryCard";
+import { docViewerStore } from "../stores/docViewer";
 
 function iconFor(item: LibItem) {
   if (item.kind === "presentation") return <LuPresentation />;
@@ -60,10 +60,13 @@ export default function LibraryPage() {
     return () => clearTimeout(t);
   }, [query]);
 
-  const open = async (id: string) => {
+  const open = (id: string) => {
+    docViewerStore.open(id);
+  };
+
+  const download = async (id: string) => {
     try {
-      const abs = await libraryPath(id);
-      await openPath(abs);
+      await libraryDownload(id);
     } catch {}
   };
 
@@ -98,16 +101,17 @@ export default function LibraryPage() {
       )}
       <div className="mt-6 grid grid-cols-2 gap-4">
         {items.map((item) => (
-          <div key={item.id} onClick={() => open(item.id)}>
-            <LibraryCard
-              item={{
-                id: item.id,
-                name: item.name,
-                description: describe(item),
-                icon: iconFor(item),
-              }}
-            />
-          </div>
+          <LibraryCard
+            key={item.id}
+            onOpen={open}
+            onDownload={download}
+            item={{
+              id: item.id,
+              name: item.name,
+              description: describe(item),
+              icon: iconFor(item),
+            }}
+          />
         ))}
       </div>
       {err === null && items.length === 0 && (

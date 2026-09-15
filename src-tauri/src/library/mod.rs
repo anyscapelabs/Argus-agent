@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use tauri::State;
 
 use crate::gateway::Gateway;
-use schema::{LibItem, NewLibItem};
+use schema::{LibDownload, LibItem, LibPreview, NewLibItem};
 
 #[tauri::command]
 pub fn library_add(gw: State<'_, Gateway>, item: NewLibItem) -> Result<LibItem, String> {
@@ -52,6 +52,23 @@ pub fn library_path(gw: State<'_, Gateway>, id: String) -> Result<String, String
         .join(&item.path)
         .to_string_lossy()
         .into_owned())
+}
+
+#[tauri::command]
+pub fn library_download(gw: State<'_, Gateway>, id: String) -> Result<LibDownload, String> {
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+    store::download(&conn, &gw.library_dir, &id)
+}
+
+#[tauri::command]
+pub fn library_preview(
+    gw: State<'_, Gateway>,
+    id: String,
+    max_chars: Option<i64>,
+) -> Result<LibPreview, String> {
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+    let max = max_chars.unwrap_or(12000).clamp(1000, 60000) as usize;
+    store::preview(&conn, &gw.library_dir, &id, max)
 }
 
 #[tauri::command]

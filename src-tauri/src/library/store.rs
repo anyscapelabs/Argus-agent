@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
-use super::schema::{LibItem, NewLibItem, NAME_MAX};
+use super::schema::{LibDownload, LibItem, LibPreview, NewLibItem, NAME_MAX};
 
 const COLS: &str = "id, name, kind, ext, path, session_id, sz, created_at";
 
@@ -243,6 +243,81 @@ pub fn delete(conn: &Connection, dir: &Path, id: &str) -> Result<(), String> {
         .map_err(|err| err.to_string())?;
 
     Ok(())
+}
+
+fn downloads_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+    let dl = Path::new(&home).join("Downloads").join("Argus");
+    if fs::create_dir_all(&dl).is_ok() {
+        return dl;
+    }
+    std::env::temp_dir()
+}
+
+pub fn download(conn: &Connection, dir: &Path, id: &str) -> Result<LibDownload, String> {
+    let item = get(conn, dir, id)?;
+    let src = abs_path(dir, &item.path);
+    let stem = Path::new(&item.name)
+        .file_stem()
+        .and_then(|x| x.to_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("file");
+    let out_dir = downloads_dir();
+    let mut dest = out_dir.join(format!("{stem}.{}", item.ext));
+    let mut n = 1;
+    while dest.exists() {
+        n += 1;
+        dest = out_dir.join(format!("{stem}-{n}.{}", item.ext));
+    }
+    fs::copy(&src, &dest).map_err(|err| err.to_string())?;
+    Ok(LibDownload {
+        id: item.id,
+        dest: dest.to_string_lossy().into_owned(),
+    })
+}
+
+pub fn preview(
+    conn: &Connection,
+    dir: &Path,
+    id: &str,
+    max_chars: usize,
+) -> Result<LibPreview, String> {
+    let item = get(conn, dir, &id)?;
+    let text = match item.ext.as_str() {
+        "txt" | "md" | "csv" => fs::read(abs_path(dir, &item.path))
+            .ok()
+            .and_then(|b| {
+                if b.len() > 200_000 {
+                    None
+                } else {
+                    Some(String::from_utf8_lossy(&b).into_owned())
+                }
+            }),
+        _ => None,
+    };
+    let (text, truncated) = match text {
+        Some(t) => {
+            let n = t.chars().count();
+            if n > max_chars {
+                (
+                    Some(t.chars().take(max_chars).collect()),
+                    true,
+                )
+            } else {
+                (Some(t), false)
+            }
+        }
+        None => (None, false),
+    };
+    Ok(LibPreview {
+        id: item.id,
+        name: item.name,
+        kind: item.kind,
+        ext: item.ext,
+        sz: item.sz,
+        text,
+        truncated,
+    })
 }
 
 pub fn search(conn: &Connection, query: &str, limit: i64) -> Result<Vec<LibItem>, String> {

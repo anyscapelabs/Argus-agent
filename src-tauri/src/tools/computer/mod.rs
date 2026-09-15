@@ -1,9 +1,23 @@
 pub mod atspi;
 pub mod x11;
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use serde_json::Value;
+
 use super::ToolMeta;
 
 use crate::sessions::ext_install::data_dir;
+
+static NEXT_OBS: AtomicU64 = AtomicU64::new(1);
+
+pub(crate) fn next_obs() -> u64 {
+    NEXT_OBS.fetch_add(1, Ordering::Relaxed)
+}
+
+pub(crate) fn obs_token(args: &Value) -> Option<u64> {
+    args.get("observation").and_then(|v| v.as_u64())
+}
 
 pub fn shot_dir() -> std::path::PathBuf {
     data_dir().join("screenshots")

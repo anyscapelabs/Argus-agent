@@ -31,7 +31,15 @@ pub struct Elem {
     pub path: String,
 }
 
-static SNAPSHOT: AsyncMutex<Vec<Elem>> = AsyncMutex::const_new(Vec::new());
+struct ObsSnap {
+    gen: u64,
+    elems: Vec<Elem>,
+}
+
+static SNAPSHOT: AsyncMutex<ObsSnap> = AsyncMutex::const_new(ObsSnap {
+    gen: 0,
+    elems: Vec::new(),
+});
 static CONN: OnceCell<atspi::AccessibilityConnection> = OnceCell::const_new();
 
 async fn conn() -> Result<&'static atspi::AccessibilityConnection, String> {
@@ -91,8 +99,9 @@ fn interactive_role(role: &str) -> bool {
 
 pub async fn tree() -> Result<String, String> {
     let c = conn().await?;
+    let gen = super::next_obs();
 
-    let mut out = String::new();
+    let mut out = format!("Desktop observation {gen} (element refs):\n");
     let mut elems: Vec<Elem> = Vec::new();
 
     let root = accessible(c, ROOT_DEST, ROOT_PATH).await?;
@@ -148,9 +157,12 @@ pub async fn tree() -> Result<String, String> {
     }
 
     elems.truncate(MAX_ELEMS);
-    *SNAPSHOT.lock().await = elems.clone();
+    *SNAPSHOT.lock().await = ObsSnap {
+        gen,
+        elems: elems.clone(),
+    };
 
-    if out.is_empty() {
+    if elems.is_empty() {
         out.push_str(
             "(no accessible elements — some apps expose no tree; fall back to \
              computer.screen + coordinates)\n",
@@ -287,6 +299,7 @@ fn walk<'a>(
 
 pub async fn act(args: &Value) -> Result<String, String> {
     let e = resolve(args).await?;
+    let before = super::x11::win_state().await;
     let c = conn().await?;
 
     let want = args
@@ -326,7 +339,7 @@ pub async fn act(args: &Value) -> Result<String, String> {
         ));
     }
 
-    super::x11::refresh().await
+    super::x11::finish_verify(before, super::x11::refresh().await).await
 }
 
 pub fn ref_index(r: i64, len: usize) -> Option<usize> {
@@ -349,11 +362,20 @@ async fn resolve(args: &Value) -> Result<Elem, String> {
         .and_then(|v| v.as_i64())
         .ok_or_else(|| "missing ref".to_string())?;
 
-    let snap = SNAPSHOT.lock().await.clone();
-    let len = snap.len();
+    let tok = super::obs_token(args);
+    let snap = SNAPSHOT.lock().await;
 
-    match ref_index(r, len) {
-        Some(i) => Ok(snap[i].clone()),
+    if let Some(g) = tok {
+        if g != snap.gen {
+            return Err(format!(
+                "stale ref {r} from observation {g} — observation {} is current; run computer.observe for a fresh list",
+                snap.gen
+            ));
+        }
+    }
+
+    match ref_index(r, snap.elems.len()) {
+        Some(i) => Ok(snap.elems[i].clone()),
         None => Err("unknown ref — run computer.observe for a fresh list".to_string()),
     }
 }

@@ -1,7 +1,9 @@
+import { openPath } from "@tauri-apps/plugin-opener";
 import { FcDocument } from "react-icons/fc";
 import { FiDownload, FiLoader } from "react-icons/fi";
 
 import type { BlockNode } from "../../lib/agentXml";
+import { libraryPath } from "../../lib/ipc";
 
 type Props = { block: BlockNode };
 
@@ -11,6 +13,15 @@ export default function DocumentCard({ block }: Props) {
   const pages = block.attrs.pages;
   const status = block.attrs.status ?? "ready";
   const isGenerating = status === "generating";
+  const libId = block.attrs.id ?? "";
+
+  const open = async () => {
+    if (!libId) return;
+    try {
+      const abs = await libraryPath(libId);
+      await openPath(abs);
+    } catch {}
+  };
 
   return (
     <div
@@ -49,6 +60,7 @@ export default function DocumentCard({ block }: Props) {
         <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
+            onClick={open}
             className={
               "flex h-7 items-center gap-1 rounded-md border " +
               "border-border-primary px-2 text-xs text-text-secondary " +
@@ -61,6 +73,7 @@ export default function DocumentCard({ block }: Props) {
           </button>
           <button
             type="button"
+            onClick={open}
             className={
               "flex h-7 w-7 items-center justify-center rounded-md border " +
               "border-border-primary text-text-secondary transition-colors " +

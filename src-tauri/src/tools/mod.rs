@@ -45,6 +45,12 @@ const TOOLS: &[ToolMeta] = &[
         mutating: true,
     },
     ToolMeta {
+        name: "doc.create",
+        desc: "create a document in the library: docx, pdf, pptx, xlsx, csv, md or txt",
+        args: "{\"name\":\"...\",\"kind\":\"docx\",\"title\":\"...\",\"content\":\"...\"}",
+        mutating: true,
+    },
+    ToolMeta {
         name: "skill.read",
         desc: "read one skill's full body by name from the Skills index",
         args: "{\"name\":\"...\"}",
@@ -407,6 +413,13 @@ pub async fn exec(
         }
         "grep" => grep::run(&args).await,
         "fs.write" => fs::write(&args),
+        "doc.create" => {
+            let (item, pages) = crate::library::doc::create(gw, &args, None)?;
+            Ok(format!(
+                "id={}\npath={}\nname={}\nkind={}\next={}\npages={}",
+                item.id, item.path, item.name, item.kind, item.ext, pages
+            ))
+        }
         "skill.read" => {
             let name = args
                 .get("name")

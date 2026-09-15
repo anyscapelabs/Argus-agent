@@ -123,6 +123,43 @@ pub fn add(conn: &Connection, dir: &Path, item: &NewLibItem) -> Result<LibItem, 
     get(conn, dir, &id)
 }
 
+pub fn create_bytes(
+    conn: &Connection,
+    dir: &Path,
+    name: &str,
+    ext: &str,
+    bytes: &[u8],
+    session_id: Option<&str>,
+) -> Result<LibItem, String> {
+    chk_name(name)?;
+    let ext = ext.trim().to_lowercase();
+    if ext.is_empty() || ext.len() > 8 {
+        return Err("bad extension".into());
+    }
+    let ym = chrono_ym();
+    fs::create_dir_all(dir.join(&ym)).map_err(|err| err.to_string())?;
+    let file_name = sanitize(name);
+    let mut rel = format!("{ym}/{file_name}.{ext}");
+    let mut n = 1;
+    while dir.join(&rel).exists() {
+        n += 1;
+        rel = format!("{ym}/{file_name}-{n}.{ext}");
+    }
+    fs::write(abs_path(dir, &rel), bytes).map_err(|err| err.to_string())?;
+    let sz = bytes.len() as i64;
+    let id = Uuid::new_v4().to_string();
+    conn.execute(
+        "INSERT INTO library (id, name, kind, ext, path, session_id, sz) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![id, name, kind_of(&ext), ext, rel, session_id, sz],
+    )
+    .map_err(|err| err.to_string())?;
+    if bytes.len() <= 200_000 {
+        let text = String::from_utf8_lossy(bytes).into_owned();
+        let _ = crate::memory::store::index_file(conn, &id, session_id, &text);
+    }
+    get(conn, dir, &id)
+}
+
 fn chrono_ym() -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

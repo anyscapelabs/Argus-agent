@@ -407,6 +407,29 @@ export function memoryDelete(id: string): Promise<void> {
   return invoke<void>("memory_delete", { id });
 }
 
+export type LibItem = {
+  id: string;
+  name: string;
+  kind: string;
+  ext: string;
+  path: string;
+  session_id: string | null;
+  sz: number;
+  created_at: string;
+};
+
+export function libraryList(kind?: string): Promise<LibItem[]> {
+  return invoke<LibItem[]>("library_list", { kind: kind ?? null });
+}
+
+export function librarySearch(query: string): Promise<LibItem[]> {
+  return invoke<LibItem[]>("library_search", { query });
+}
+
+export function libraryPath(id: string): Promise<string> {
+  return invoke<string>("library_path", { id });
+}
+
 export type NewAgentPrefs = {
   modelId: string | null;
   permission: string;

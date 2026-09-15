@@ -18,6 +18,7 @@ const VERB: Record<string, string> = {
   "bash.run": "command",
   grep: "search",
   "fs.write": "file write",
+  "doc.create": "document",
   "web.search": "web search",
   "web.read": "web read",
   "browser.open": "browser open",

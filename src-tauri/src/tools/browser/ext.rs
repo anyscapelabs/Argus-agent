@@ -13,7 +13,33 @@ struct Sess {
     tab_id: i32,
     elements: super::RefTable,
     url: String,
+    title: String,
+    text_hash: u64,
     last_used: Instant,
+}
+
+async fn current_state() -> Option<super::PageState> {
+    let g = SESS.lock().await;
+    g.as_ref()
+        .map(|s| super::PageState::capture(&s.url, &s.title, s.text_hash, &s.elements.items))
+}
+
+async fn apply_verify(before: Option<super::PageState>, out: String) -> String {
+    let Some(before) = before else {
+        return out;
+    };
+    let g = SESS.lock().await;
+    let Some(s) = g.as_ref() else {
+        return out;
+    };
+    super::verify_outcome(
+        &before,
+        &s.url,
+        &s.title,
+        s.text_hash,
+        &s.elements.items,
+        out,
+    )
 }
 
 static SESS: AsyncMutex<Option<Sess>> = AsyncMutex::const_new(None);
@@ -66,6 +92,8 @@ pub async fn open(args: &Value) -> Result<String, String> {
         tab_id,
         elements: super::RefTable::default(),
         url: page_url.clone(),
+        title: String::new(),
+        text_hash: 0,
         last_used: Instant::now(),
     };
 
@@ -140,6 +168,8 @@ async fn snapshot_list(tab_id: i32, s: &mut Sess) -> String {
 async fn page_out(s: &mut Sess, text: String, url: String, title: String) -> String {
     let list = snapshot_list(s.tab_id, s).await;
     s.url = url.clone();
+    s.title = title.clone();
+    s.text_hash = super::text_hash(&super::redact(&text));
     s.last_used = Instant::now();
 
     format!(
@@ -191,16 +221,19 @@ pub async fn click(args: &Value) -> Result<String, String> {
     ext_install::ensure_real().await?;
 
     let (tab_id, path) = path_of(args).await?;
+    let before = current_state().await;
 
     extpipe::request("click", serde_json::json!({"tabId": tab_id, "path": path})).await?;
 
-    read_page(tab_id).await
+    let out = read_page(tab_id).await?;
+    Ok(apply_verify(before, out).await)
 }
 
 pub async fn type_text(args: &Value) -> Result<String, String> {
     ext_install::ensure_real().await?;
 
     let (tab_id, path) = path_of(args).await?;
+    let before = current_state().await;
 
     let text = args
         .get("text")
@@ -217,7 +250,8 @@ pub async fn type_text(args: &Value) -> Result<String, String> {
     )
     .await?;
 
-    read_page(tab_id).await
+    let out = read_page(tab_id).await?;
+    Ok(apply_verify(before, out).await)
 }
 
 pub async fn scroll(args: &Value) -> Result<String, String> {

@@ -150,7 +150,73 @@ struct Sess {
     page: Page,
     elements: RefTable,
     url: String,
+    title: String,
+    text_hash: u64,
     last_used: Instant,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PageState {
+    pub(crate) url: String,
+    pub(crate) title: String,
+    pub(crate) text_hash: u64,
+    pub(crate) rows: Vec<(String, String)>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum VerifyOutcome {
+    Navigated,
+    Changed,
+    Same,
+}
+
+impl PageState {
+    pub(crate) fn capture(url: &str, title: &str, text_hash: u64, items: &[RefEntry]) -> Self {
+        Self {
+            url: url.into(),
+            title: title.into(),
+            text_hash,
+            rows: items
+                .iter()
+                .map(|e| (e.kind.clone(), e.label.clone()))
+                .collect(),
+        }
+    }
+
+    pub(crate) fn check_against(&self, current: &PageState) -> VerifyOutcome {
+        if current.url.trim().is_empty() {
+            return VerifyOutcome::Same;
+        }
+        if !same_url(&self.url, &current.url) {
+            return VerifyOutcome::Navigated;
+        }
+        if self.title != current.title
+            || self.text_hash != current.text_hash
+            || self.rows != current.rows
+        {
+            return VerifyOutcome::Changed;
+        }
+        VerifyOutcome::Same
+    }
+}
+
+pub(crate) fn text_hash(text: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    text.hash(&mut h);
+    h.finish()
+}
+
+pub(crate) fn same_url(a: &str, b: &str) -> bool {
+    a.trim_end_matches('/') == b.trim_end_matches('/')
+}
+
+pub(crate) fn verify_note(outcome: &VerifyOutcome, url: &str) -> Option<String> {
+    match outcome {
+        VerifyOutcome::Navigated => Some(format!("note: verified: navigated to {url}")),
+        VerifyOutcome::Changed => Some("note: verified: page content changed".into()),
+        VerifyOutcome::Same => None,
+    }
 }
 
 struct Pool {
@@ -274,6 +340,8 @@ async fn launch(root: &PathBuf, name: &str) -> Result<Sess, String> {
         page,
         elements: RefTable::default(),
         url: String::new(),
+        title: String::new(),
+        text_hash: 0,
         last_used: Instant::now(),
     })
 }
@@ -384,6 +452,14 @@ fn url_of(args: &Value) -> Result<String, String> {
 }
 
 async fn page_out(s: &mut Sess) -> Result<String, String> {
+    let out = observe(s).await?;
+    if s.url.trim().is_empty() {
+        return observe(s).await;
+    }
+    Ok(out)
+}
+
+async fn observe(s: &mut Sess) -> Result<String, String> {
     let url = eval_str(&s.page, LOC_JS).await;
     let title = s
         .page
@@ -396,6 +472,8 @@ async fn page_out(s: &mut Sess) -> Result<String, String> {
     let list = snapshot(&s.page, &mut s.elements).await;
 
     s.url = url.clone();
+    s.title = title.clone();
+    s.text_hash = text_hash(&text);
 
     Ok(format!(
         "url {url}\ntitle {title}\n\n---\n{}\n---{list}",
@@ -451,10 +529,25 @@ async fn target(s: &mut Sess, r: usize, snap: Option<u64>) -> Result<String, Str
 }
 
 pub(crate) fn landed_note(requested: &str, landed: &str, out: String) -> String {
-    if requested.trim_end_matches('/') == landed.trim_end_matches('/') {
+    if same_url(requested, landed) {
         out
     } else {
         format!("{out}\nnote: landed on {landed} (requested {requested})")
+    }
+}
+
+pub(crate) fn verify_outcome(
+    before: &PageState,
+    url: &str,
+    title: &str,
+    text_hash: u64,
+    items: &[RefEntry],
+    out: String,
+) -> String {
+    let after = PageState::capture(url, title, text_hash, items);
+    match verify_note(&before.check_against(&after), url) {
+        Some(note) => format!("{out}\n{note}"),
+        None => out,
     }
 }
 
@@ -473,6 +566,7 @@ pub async fn click(args: &Value) -> Result<String, String> {
     s.last_used = Instant::now();
 
     let path = target(s, r, snap).await?;
+    let before = PageState::capture(&s.url, &s.title, s.text_hash, &s.elements.items);
 
     let el = s
         .page
@@ -485,7 +579,15 @@ pub async fn click(args: &Value) -> Result<String, String> {
         .map_err(|err| format!("click failed: {err}"))?;
     let _ = s.page.wait_for_navigation().await;
 
-    page_out(s).await
+    let out = page_out(s).await?;
+    Ok(verify_outcome(
+        &before,
+        &s.url,
+        &s.title,
+        s.text_hash,
+        &s.elements.items,
+        out,
+    ))
 }
 
 pub async fn type_text(args: &Value) -> Result<String, String> {
@@ -511,6 +613,7 @@ pub async fn type_text(args: &Value) -> Result<String, String> {
     s.last_used = Instant::now();
 
     let path = target(s, r, snap).await?;
+    let before = PageState::capture(&s.url, &s.title, s.text_hash, &s.elements.items);
 
     let el = s
         .page
@@ -530,7 +633,15 @@ pub async fn type_text(args: &Value) -> Result<String, String> {
         let _ = s.page.wait_for_navigation().await;
     }
 
-    page_out(s).await
+    let out = page_out(s).await?;
+    Ok(verify_outcome(
+        &before,
+        &s.url,
+        &s.title,
+        s.text_hash,
+        &s.elements.items,
+        out,
+    ))
 }
 
 pub async fn read(args: &Value) -> Result<String, String> {

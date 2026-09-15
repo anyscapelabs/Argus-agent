@@ -16,26 +16,32 @@ CREATE TABLE IF NOT EXISTS skills (
   body_hash   TEXT NOT NULL DEFAULT ''
 );
 
-CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(
-  name, description, body, content='skills', content_rowid='rowid'
+DROP TRIGGER IF EXISTS skills_fts_ai;
+DROP TRIGGER IF EXISTS skills_fts_ad;
+DROP TRIGGER IF EXISTS skills_fts_au;
+DROP TABLE IF EXISTS skills_fts;
+CREATE VIRTUAL TABLE skills_fts USING fts5(
+  name, description, body
 );
 
-CREATE TRIGGER IF NOT EXISTS skills_fts_ai AFTER INSERT ON skills BEGIN
+CREATE TRIGGER skills_fts_ai AFTER INSERT ON skills BEGIN
   INSERT INTO skills_fts(rowid, name, description, body)
   VALUES (new.rowid, new.name, new.description, new.body);
 END;
 
-CREATE TRIGGER IF NOT EXISTS skills_fts_ad AFTER DELETE ON skills BEGIN
-  INSERT INTO skills_fts(skills_fts, rowid, name, description, body)
-  VALUES ('delete', old.rowid, old.name, old.description, old.body);
+CREATE TRIGGER skills_fts_ad AFTER DELETE ON skills BEGIN
+  DELETE FROM skills_fts WHERE rowid = old.rowid;
 END;
 
-CREATE TRIGGER IF NOT EXISTS skills_fts_au AFTER UPDATE ON skills BEGIN
-  INSERT INTO skills_fts(skills_fts, rowid, name, description, body)
-  VALUES ('delete', old.rowid, old.name, old.description, old.body);
+CREATE TRIGGER skills_fts_au AFTER UPDATE ON skills BEGIN
+  DELETE FROM skills_fts WHERE rowid = old.rowid;
   INSERT INTO skills_fts(rowid, name, description, body)
   VALUES (new.rowid, new.name, new.description, new.body);
 END;
+
+INSERT INTO skills_fts(rowid, name, description, body)
+  SELECT rowid, name, description, body FROM skills
+  WHERE rowid NOT IN (SELECT rowid FROM skills_fts);
 
 CREATE TABLE IF NOT EXISTS skill_stats (
   name         TEXT PRIMARY KEY REFERENCES skills(name) ON DELETE CASCADE,

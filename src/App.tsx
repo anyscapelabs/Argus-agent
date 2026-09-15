@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import ChatDetailPage from "./components/ChatDetailPage";
 import ConnectorsPage from "./components/ConnectorsPage";
+import DocViewer from "./components/DocViewer";
 import LibraryPage from "./components/LibraryPage";
 import MemoryPage from "./components/MemoryPage";
 import NewAgentPage from "./components/NewAgentPage";
@@ -192,6 +193,7 @@ function App() {
         </div>
       </div>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <DocViewer />
     </div>
   );
 }

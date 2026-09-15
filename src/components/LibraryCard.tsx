@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { FiDownload } from "react-icons/fi";
 
 export type LibraryItem = {
   id: string;
@@ -9,11 +10,14 @@ export type LibraryItem = {
 
 type LibraryCardProps = {
   item: LibraryItem;
+  onOpen?: (id: string) => void;
+  onDownload?: (id: string) => void;
 };
 
-export default function LibraryCard({ item }: LibraryCardProps) {
+export default function LibraryCard({ item, onOpen, onDownload }: LibraryCardProps) {
   return (
     <div
+      onClick={() => onOpen?.(item.id)}
       className={
         "flex items-center gap-4 rounded-xl bg-transparent px-2 py-1 " +
         "transition-colors hover:bg-bg-hover-primary cursor-pointer"
@@ -38,6 +42,10 @@ export default function LibraryCard({ item }: LibraryCardProps) {
       </div>
       <button
         type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpen?.(item.id);
+        }}
         className={
           "shrink-0 rounded-full border border-border-primary " +
           "bg-bg-hover-secondary px-3 py-1.5 text-xs font-medium " +
@@ -47,6 +55,23 @@ export default function LibraryCard({ item }: LibraryCardProps) {
       >
         Open
       </button>
+      {onDownload && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDownload(item.id);
+          }}
+          aria-label="Download"
+          className={
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-full " +
+            "border border-border-primary text-text-secondary transition-colors " +
+            "hover:bg-bg-hover-primary hover:text-text-primary cursor-pointer"
+          }
+        >
+          <FiDownload size={12} />
+        </button>
+      )}
     </div>
   );
 }

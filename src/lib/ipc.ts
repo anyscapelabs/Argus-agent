@@ -430,6 +430,29 @@ export function libraryPath(id: string): Promise<string> {
   return invoke<string>("library_path", { id });
 }
 
+export type LibPreview = {
+  id: string;
+  name: string;
+  kind: string;
+  ext: string;
+  sz: number;
+  text: string | null;
+  truncated: boolean;
+};
+
+export type LibDownload = {
+  id: string;
+  dest: string;
+};
+
+export function libraryPreview(id: string): Promise<LibPreview> {
+  return invoke<LibPreview>("library_preview", { id });
+}
+
+export function libraryDownload(id: string): Promise<LibDownload> {
+  return invoke<LibDownload>("library_download", { id });
+}
+
 export type NewAgentPrefs = {
   modelId: string | null;
   permission: string;

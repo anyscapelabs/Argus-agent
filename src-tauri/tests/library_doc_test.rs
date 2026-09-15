@@ -92,3 +92,60 @@ fn library_create_bytes_roundtrip() {
     assert!(dir.join(&item.path).exists());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn library_download_copies_to_downloads_with_dedupe() {
+    let dir = std::env::temp_dir().join(format!("argus-lib-dl-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE messages (id TEXT PRIMARY KEY, session_id TEXT, seq INTEGER, role TEXT, content TEXT, active INTEGER DEFAULT 1);
+         CREATE TABLE summaries (id TEXT PRIMARY KEY, session_id TEXT, covers_to INTEGER, content TEXT);",
+    )
+    .unwrap();
+    conn.execute_batch(argus_lib::library::schema::MIGRATE).unwrap();
+    argus_lib::memory::store::migrate(&conn).unwrap();
+    let item = argus_lib::library::store::create_bytes(&conn, &dir, "Notes", "txt", b"hello", None)
+        .unwrap();
+    let first = argus_lib::library::store::download(&conn, &dir, &item.id).unwrap();
+    let second = argus_lib::library::store::download(&conn, &dir, &item.id).unwrap();
+    assert!(std::path::Path::new(&first.dest).exists());
+    assert!(std::path::Path::new(&second.dest).exists());
+    assert_ne!(first.dest, second.dest);
+    assert_eq!(std::fs::read(&second.dest).unwrap(), b"hello");
+    let _ = std::fs::remove_file(&first.dest);
+    let _ = std::fs::remove_file(&second.dest);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn library_preview_returns_text_for_text_and_none_for_office() {
+    let dir = std::env::temp_dir().join(format!("argus-lib-pv-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE messages (id TEXT PRIMARY KEY, session_id TEXT, seq INTEGER, role TEXT, content TEXT, active INTEGER DEFAULT 1);
+         CREATE TABLE summaries (id TEXT PRIMARY KEY, session_id TEXT, covers_to INTEGER, content TEXT);",
+    )
+    .unwrap();
+    conn.execute_batch(argus_lib::library::schema::MIGRATE).unwrap();
+    argus_lib::memory::store::migrate(&conn).unwrap();
+    let txt = argus_lib::library::store::create_bytes(&conn, &dir, "Doc", "md", b"# hi", None)
+        .unwrap();
+    let pv = argus_lib::library::store::preview(&conn, &dir, &txt.id, 12000).unwrap();
+    assert_eq!(pv.text.as_deref(), Some("# hi"));
+    assert!(!pv.truncated);
+    let long = "w ".repeat(9000);
+    let big =
+        argus_lib::library::store::create_bytes(&conn, &dir, "Big", "txt", long.as_bytes(), None)
+            .unwrap();
+    let pv2 = argus_lib::library::store::preview(&conn, &dir, &big.id, 1000).unwrap();
+    assert!(pv2.truncated);
+    assert_eq!(pv2.text.map(|t| t.chars().count()), Some(1000));
+    let pdf = argus_lib::library::store::create_bytes(&conn, &dir, "R", "pdf", b"%PDF-1.4", None)
+        .unwrap();
+    let pv3 = argus_lib::library::store::preview(&conn, &dir, &pdf.id, 12000).unwrap();
+    assert!(pv3.text.is_none());
+    assert!(argus_lib::library::store::preview(&conn, &dir, "missing", 12000).is_err());
+    let _ = std::fs::remove_dir_all(&dir);
+}

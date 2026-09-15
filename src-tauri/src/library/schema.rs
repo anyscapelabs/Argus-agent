@@ -59,3 +59,20 @@ pub struct NewLibItem {
     pub name: String,
     pub session_id: Option<String>,
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LibPreview {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub ext: String,
+    pub sz: i64,
+    pub text: Option<String>,
+    pub truncated: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LibDownload {
+    pub id: String,
+    pub dest: String,
+}

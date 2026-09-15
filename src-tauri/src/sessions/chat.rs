@@ -621,7 +621,11 @@ pub async fn send(
                     exec.cancel("action denied by user".to_string());
                     code = DENIED_CODE;
                 } else {
-                    match tools::exec(
+                    // Bounded recovery: transient failures (timeout /
+                    // rate-limit / infra) retry at most once inside this one
+                    // execution; every other kind fails fast. Either way the
+                    // execution below ends with exactly one tool result.
+                    let outcome = tools::recover::exec_with_recovery(
                         gw,
                         &exec.tool,
                         &exec.args,
@@ -630,8 +634,8 @@ pub async fn send(
                         allow,
                         Some((&chan, idx as u32)),
                     )
-                    .await
-                    {
+                    .await;
+                    match outcome.result {
                         Ok(t) => {
                             code = exit_of(&t);
                             exec.succeed(t);

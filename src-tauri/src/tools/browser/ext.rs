@@ -11,8 +11,7 @@ use super::sensitive_pats;
 
 struct Sess {
     tab_id: i32,
-    refs: Vec<String>,
-    labels: Vec<String>,
+    elements: super::RefTable,
     url: String,
     last_used: Instant,
 }
@@ -65,8 +64,7 @@ pub async fn open(args: &Value) -> Result<String, String> {
 
     let mut s = Sess {
         tab_id,
-        refs: vec![],
-        labels: vec![],
+        elements: super::RefTable::default(),
         url: page_url.clone(),
         last_used: Instant::now(),
     };
@@ -87,14 +85,12 @@ fn ref_of(args: &Value) -> Result<usize, String> {
 
 async fn path_of(args: &Value) -> Result<(i32, String), String> {
     let r = ref_of(args)?;
+    let snap = super::snap_of(args);
     let mut g = SESS.lock().await;
     let s = g.as_mut().ok_or("no page open — run browser.open first")?;
     s.last_used = Instant::now();
 
-    match s.refs.get(r) {
-        Some(p) => Ok((s.tab_id, p.clone())),
-        None => Err("unknown ref — run browser.open or browser.read for a fresh list".into()),
-    }
+    s.elements.resolve(r, snap).map(|p| (s.tab_id, p))
 }
 
 #[derive(serde::Deserialize)]
@@ -105,44 +101,41 @@ struct ElRef {
 }
 
 async fn snapshot_list(tab_id: i32, s: &mut Sess) -> String {
-    let refs: Vec<String>;
-    let labels: Vec<String>;
-    let list: String;
-
-    match extpipe::request("snapshot", serde_json::json!({"tabId": tab_id})).await {
-        Ok(data) => {
-            let els: Vec<ElRef> = serde_json::from_value(data).unwrap_or_default();
-            let mut r = vec![];
-            let mut l = vec![];
-            let mut out = String::from("\nElements:\n");
-
-            for (i, el) in els.iter().enumerate() {
-                let label = super::redact(&el.label);
-                r.push(el.path.clone());
-                l.push(label.clone());
-
-                if label.is_empty() {
-                    out.push_str(&format!("[{}] {}\n", i, el.kind));
-                } else {
-                    out.push_str(&format!("[{}] {} \"{}\"\n", i, el.kind, label));
-                }
+    let failed: bool;
+    let items: Vec<super::RefEntry> =
+        match extpipe::request("snapshot", serde_json::json!({"tabId": tab_id})).await {
+            Ok(data) => {
+                failed = false;
+                let els: Vec<ElRef> = serde_json::from_value(data).unwrap_or_default();
+                els.into_iter()
+                    .map(|el| super::RefEntry {
+                        path: el.path,
+                        label: super::redact(&el.label),
+                        kind: el.kind,
+                    })
+                    .collect()
             }
+            Err(_) => {
+                failed = true;
+                vec![]
+            }
+        };
 
-            refs = r;
-            labels = l;
-            list = out;
-        }
-        Err(_) => {
-            refs = vec![];
-            labels = vec![];
-            list = String::from("\nElements: (snapshot failed)\n");
+    let gen = s.elements.refresh(items);
+    let mut out = format!("\nElements (snapshot {gen}):");
+    if failed {
+        out.push_str(" (snapshot failed)");
+    }
+    out.push('\n');
+    for (i, el) in s.elements.items.iter().enumerate() {
+        if el.label.is_empty() {
+            out.push_str(&format!("[{}] {}\n", i, el.kind));
+        } else {
+            out.push_str(&format!("[{}] {} \"{}\"\n", i, el.kind, el.label));
         }
     }
 
-    s.refs = refs;
-    s.labels = labels;
-
-    list
+    out
 }
 
 async fn page_out(s: &mut Sess, text: String, url: String, title: String) -> String {
@@ -295,8 +288,8 @@ pub async fn sensitive(args: &Value) -> bool {
     }
 
     if let Ok(r) = ref_of(args) {
-        if let Some(l) = s.labels.get(r) {
-            if label_re.is_match(l) {
+        if let Some(l) = s.elements.label(r) {
+            if label_re.is_match(&l) {
                 return true;
             }
         }

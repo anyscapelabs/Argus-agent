@@ -70,6 +70,7 @@ pub async fn open(args: &Value) -> Result<String, String> {
     };
 
     let out = page_out(&mut s, text, page_url.clone(), title).await;
+    let out = super::landed_note(url, &page_url, out);
 
     *SESS.lock().await = Some(s);
 
@@ -90,7 +91,17 @@ async fn path_of(args: &Value) -> Result<(i32, String), String> {
     let s = g.as_mut().ok_or("no page open — run browser.open first")?;
     s.last_used = Instant::now();
 
-    s.elements.resolve(r, snap).map(|p| (s.tab_id, p))
+    match s.elements.resolve(r, snap) {
+        Ok(p) => Ok((s.tab_id, p)),
+        Err(e) => {
+            let superseded =
+                snap.is_some_and(|g| g != s.elements.gen) && s.elements.items.get(r).is_some();
+            if superseded {
+                return Err(s.elements.stale_recovery(r, snap.unwrap_or(0)));
+            }
+            Err(e)
+        }
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -122,20 +133,8 @@ async fn snapshot_list(tab_id: i32, s: &mut Sess) -> String {
         };
 
     let gen = s.elements.refresh(items);
-    let mut out = format!("\nElements (snapshot {gen}):");
-    if failed {
-        out.push_str(" (snapshot failed)");
-    }
-    out.push('\n');
-    for (i, el) in s.elements.items.iter().enumerate() {
-        if el.label.is_empty() {
-            out.push_str(&format!("[{}] {}\n", i, el.kind));
-        } else {
-            out.push_str(&format!("[{}] {} \"{}\"\n", i, el.kind, el.label));
-        }
-    }
 
-    out
+    super::render_elements(&s.elements.items, gen, failed)
 }
 
 async fn page_out(s: &mut Sess, text: String, url: String, title: String) -> String {

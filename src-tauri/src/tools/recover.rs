@@ -136,6 +136,12 @@ pub fn classify(err: &str) -> RecoveryKind {
             "api key",
             "unauthorized",
             "unauthenticated",
+            " 401",
+            " 403",
+            "(401)",
+            "(403)",
+            "requires authentication",
+            "forbids automated",
         ],
     ) {
         return RecoveryKind::AuthenticationRequired;
@@ -149,6 +155,9 @@ pub fn classify(err: &str) -> RecoveryKind {
             "does not exist",
             "vanished",
             "item file missing",
+            " 404",
+            "(404)",
+            "page not found",
         ],
     ) {
         return RecoveryKind::NotFound;

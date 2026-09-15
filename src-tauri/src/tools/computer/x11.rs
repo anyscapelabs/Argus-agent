@@ -8,9 +8,75 @@ struct Shot {
     h: i64,
     screen_w: i64,
     screen_h: i64,
+    gen: u64,
+    win: Option<String>,
 }
 
 static SHOT: AsyncMutex<Option<Shot>> = AsyncMutex::const_new(None);
+
+#[derive(Clone, Debug, Default)]
+pub struct WinState {
+    pub ids: Vec<String>,
+    pub active: Option<String>,
+}
+
+fn windows_changed(before: &[String], after: &[String]) -> bool {
+    let mut b: Vec<&String> = before.iter().collect();
+    let mut a: Vec<&String> = after.iter().collect();
+    b.sort();
+    a.sort();
+    b != a
+}
+
+fn active_changed(before: Option<&str>, after: Option<&str>) -> bool {
+    before.is_some() && after.is_some() && before != after
+}
+
+pub fn verify_windows_note(before: &WinState, after: &WinState) -> Option<String> {
+    if windows_changed(&before.ids, &after.ids) {
+        Some("note: verified: window list changed".into())
+    } else if active_changed(before.active.as_deref(), after.active.as_deref()) {
+        Some("note: verified: active window changed".into())
+    } else {
+        None
+    }
+}
+
+pub fn valid_window_id(id: &str) -> bool {
+    !id.is_empty() && id.chars().all(|c| c.is_ascii_hexdigit() || c == 'x')
+}
+
+pub(crate) async fn win_state() -> WinState {
+    let list = run("wmctrl", &["l"]).await.unwrap_or_default();
+    let ids = list
+        .lines()
+        .filter_map(|l| l.split_whitespace().next().map(str::to_string))
+        .collect();
+    WinState {
+        ids,
+        active: active_window().await,
+    }
+}
+
+pub(crate) async fn finish_verify(
+    before: WinState,
+    out: Result<String, String>,
+) -> Result<String, String> {
+    let out = out?;
+    let after = win_state().await;
+    Ok(match verify_windows_note(&before, &after) {
+        Some(note) => format!("{out}\n{note}"),
+        None => out,
+    })
+}
+
+async fn active_window() -> Option<String> {
+    run("xdotool", &["getactivewindow"])
+        .await
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
 
 const BIN_TOOLS: &[&str] = &["xdotool", "import", "convert", "identify", "wmctrl"];
 
@@ -92,12 +158,15 @@ fn dims(s: &str) -> Result<(i64, i64), String> {
 async fn set_shot(shot_w: i64, shot_h: i64) -> Result<(), String> {
     let geom = run("xdotool", &["getdisplaygeometry"]).await?;
     let (screen_w, screen_h) = dims(&geom)?;
+    let win = active_window().await;
 
     *SHOT.lock().await = Some(Shot {
         w: shot_w,
         h: shot_h,
         screen_w,
         screen_h,
+        gen: super::next_obs(),
+        win,
     });
 
     Ok(())
@@ -141,8 +210,10 @@ pub async fn screen() -> Result<String, String> {
     let wins = run("wmctrl", &["l"]).await.unwrap_or_default();
     let wins: String = wins.lines().take(40).collect::<Vec<_>>().join("\n");
 
+    let gen = SHOT.lock().await.as_ref().map(|s| s.gen).unwrap_or(0);
+
     Ok(format!(
-        "screenshot: {p}\nimage {w}x{h} of screen — give x,y in image coordinates\n\nWindows:\n{wins}",
+        "screenshot: {p} (screenshot observation {gen})\nimage {w}x{h} of screen — give x,y in image coordinates\n\nWindows:\n{wins}",
         p = shot.display()
     ))
 }
@@ -166,21 +237,44 @@ pub fn scale_coords(
 }
 
 async fn coords(args: &Value) -> Result<(String, String), String> {
+    if let Some(tok) = super::obs_token(args) {
+        let cur = SHOT.lock().await.as_ref().map(|s| s.gen).unwrap_or(0);
+        if tok != cur {
+            return Err(format!(
+                "stale screenshot from observation {tok} — observation {cur} is current; run computer.screen for a fresh screenshot"
+            ));
+        }
+    }
+
     let g = SHOT.lock().await;
     let s = g
         .as_ref()
         .ok_or("no screenshot yet — run computer.screen first")?;
 
+    let (w, h, sw, sh, captured) = (s.w, s.h, s.screen_w, s.screen_h, s.win.clone());
+    drop(g);
+
     let x = args.get("x").and_then(|v| v.as_f64()).ok_or("missing x")?;
     let y = args.get("y").and_then(|v| v.as_f64()).ok_or("missing y")?;
 
-    match scale_coords(x, y, s.w, s.h, s.screen_w, s.screen_h) {
-        Some((rx, ry)) => Ok((rx.to_string(), ry.to_string())),
-        None => Err(format!(
-            "x,y outside the screenshot ({}x{}) — run computer.screen for a fresh one",
-            s.w, s.h
-        )),
+    let (rx, ry) = match scale_coords(x, y, w, h, sw, sh) {
+        Some(p) => p,
+        None => {
+            return Err(format!(
+                "x,y outside the screenshot ({w}x{h}) — run computer.screen for a fresh one"
+            ));
+        }
+    };
+
+    if let (Some(was), Some(now)) = (captured, active_window().await) {
+        if was != now {
+            return Err(format!(
+                "focus changed since the screenshot ({was} → {now}) — run computer.screen for a fresh screenshot"
+            ));
+        }
     }
+
+    Ok((rx.to_string(), ry.to_string()))
 }
 
 pub async fn click_xy(x: i32, y: i32) -> Result<(), String> {
@@ -203,6 +297,7 @@ pub async fn refresh() -> Result<String, String> {
 
 pub async fn click(args: &Value) -> Result<String, String> {
     check_tools()?;
+    let before = win_state().await;
     let (x, y) = coords(args).await?;
 
     let button = args
@@ -225,7 +320,7 @@ pub async fn click(args: &Value) -> Result<String, String> {
     a.push(&button);
     run("xdotool", &a).await?;
 
-    refresh().await
+    finish_verify(before, refresh().await).await
 }
 
 pub async fn type_text(args: &Value) -> Result<String, String> {
@@ -237,11 +332,12 @@ pub async fn type_text(args: &Value) -> Result<String, String> {
         .filter(|s| !s.is_empty())
         .ok_or("missing text")?;
 
+    let before = win_state().await;
     super::atspi::focus_ref(args).await?;
 
     run("xdotool", &["type", "--delay", "20", "--", text]).await?;
 
-    refresh().await
+    finish_verify(before, refresh().await).await
 }
 
 pub async fn key(args: &Value) -> Result<String, String> {
@@ -260,9 +356,10 @@ pub async fn key(args: &Value) -> Result<String, String> {
         return Err("key must be a combo like Return, ctrl+c, alt+Tab".into());
     }
 
+    let before = win_state().await;
     run("xdotool", &["key", "--", k]).await?;
 
-    refresh().await
+    finish_verify(before, refresh().await).await
 }
 
 pub async fn scroll(args: &Value) -> Result<String, String> {
@@ -290,9 +387,10 @@ pub async fn scroll(args: &Value) -> Result<String, String> {
 
     a.extend(["click".into(), "--repeat".into(), amount, btn.into()]);
     let refs: Vec<&str> = a.iter().map(|s| s.as_str()).collect();
+    let before = win_state().await;
     run("xdotool", &refs).await?;
 
-    refresh().await
+    finish_verify(before, refresh().await).await
 }
 
 pub async fn window(args: &Value) -> Result<String, String> {
@@ -308,8 +406,16 @@ pub async fn window(args: &Value) -> Result<String, String> {
         .filter(|s| !s.is_empty())
         .ok_or("missing id")?;
 
-    if !id.chars().all(|c| c.is_ascii_hexdigit() || c == 'x') {
+    if !valid_window_id(id) {
         return Err("id must be a hex window id from the observe list".into());
+    }
+
+    let before = win_state().await;
+    let live: Vec<String> = before.ids.iter().map(|w| w.to_lowercase()).collect();
+    if !live.iter().any(|w| w == &id.to_lowercase()) {
+        return Err(format!(
+            "window id {id} not found — run computer.observe for a fresh list"
+        ));
     }
 
     match action {
@@ -322,7 +428,7 @@ pub async fn window(args: &Value) -> Result<String, String> {
         _ => return Err("action must be activate or close".into()),
     }
 
-    refresh().await
+    finish_verify(before, refresh().await).await
 }
 
 pub fn app_dirs() -> Vec<std::path::PathBuf> {
@@ -444,7 +550,8 @@ pub async fn launch(args: &Value) -> Result<String, String> {
         return Err("app launching needs gtk-launch or gio".into());
     }
 
+    let before = win_state().await;
     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
 
-    refresh().await
+    finish_verify(before, refresh().await).await
 }

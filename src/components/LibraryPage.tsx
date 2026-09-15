@@ -11,6 +11,7 @@ import type { LibItem } from "../lib/ipc";
 import { libraryDownload, libraryList, librarySearch } from "../lib/ipc";
 import LibraryCard from "./LibraryCard";
 import { docViewerStore } from "../stores/docViewer";
+import { toast } from "../stores/toast";
 
 function iconFor(item: LibItem) {
   if (item.kind === "presentation") return <LuPresentation />;
@@ -67,7 +68,10 @@ export default function LibraryPage() {
   const download = async (id: string) => {
     try {
       await libraryDownload(id);
-    } catch {}
+      toast.success("Downloaded");
+    } catch {
+      toast.error("Download failed");
+    }
   };
 
   return (

@@ -4,6 +4,7 @@ import { LuBrain, LuSearch } from "react-icons/lu";
 
 import type { Skill } from "../lib/ipc";
 import { skillDelete, skillList, skillSearch } from "../lib/ipc";
+import { toast } from "../stores/toast";
 import SkillCard from "./SkillCard";
 
 type SkillsPageProps = {
@@ -52,7 +53,9 @@ export default function SkillsPage({ onAddSkill }: SkillsPageProps) {
   const remove = async (name: string) => {
     try {
       await skillDelete(name);
+      toast.success("Skill deleted");
     } catch {
+      toast.error("Delete failed");
       return;
     }
 

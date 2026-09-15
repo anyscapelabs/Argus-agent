@@ -11,11 +11,13 @@ import ProjectsPage from "./components/ProjectsPage";
 import SettingsModal from "./components/SettingsModal";
 import Sidebar from "./components/Sidebar";
 import SkillsPage from "./components/SkillsPage";
+import Toasts from "./components/Toasts";
 import Toolbar from "./components/Toolbar";
 import type { Session } from "./components/SessionList";
 import { sessExportJson, type ChatModel } from "./lib/ipc";
 import { notifyDone } from "./lib/notify";
 import { sessionStore, useSessions } from "./stores/sessions";
+import { toast } from "./stores/toast";
 
 export type View =
   | "new-agent"
@@ -119,20 +121,43 @@ function App() {
   const chatTitle = view === "chat" ? activeSession?.title ?? "New chat" : null;
 
   const exportSession = async (sessionId: string) => {
-    const json = await sessExportJson(sessionId);
-
     try {
-      await navigator.clipboard.writeText(json);
-    } catch {}
+      const json = await sessExportJson(sessionId);
 
-    const title = sessions.find((s) => s.id === sessionId)?.title ?? "session";
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${title.replace(/[^\w-]+/g, "-") || "session"}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+      try {
+        await navigator.clipboard.writeText(json);
+      } catch {}
+
+      const title = sessions.find((s) => s.id === sessionId)?.title ?? "session";
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${title.replace(/[^\w-]+/g, "-") || "session"}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Chat exported");
+    } catch {
+      toast.error("Export failed");
+    }
+  };
+
+  const deleteSession = async (id: string) => {
+    try {
+      await sessionStore.remove(id);
+      toast.success("Chat deleted");
+    } catch {
+      toast.error("Delete failed");
+    }
+  };
+
+  const archiveSession = async (id: string) => {
+    try {
+      await sessionStore.archive(id);
+      toast.success("Chat archived");
+    } catch {
+      toast.error("Archive failed");
+    }
   };
 
   const sidebarSessions: Session[] = sessions
@@ -155,9 +180,9 @@ function App() {
           activeView={view}
           activeSessionId={activeId}
           sessions={sidebarSessions}
-          onArchive={(id) => sessionStore.archive(id)}
+          onArchive={(id) => archiveSession(id)}
           onExport={exportSession}
-          onDelete={(id) => sessionStore.remove(id)}
+          onDelete={(id) => deleteSession(id)}
         />
         <div className="flex min-w-0 min-h-0 flex-1 flex-col">
           <Toolbar
@@ -194,6 +219,7 @@ function App() {
       </div>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <DocViewer />
+      <Toasts />
     </div>
   );
 }

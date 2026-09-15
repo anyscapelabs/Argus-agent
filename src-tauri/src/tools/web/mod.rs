@@ -34,51 +34,114 @@ fn arg_str<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
         .ok_or_else(|| format!("missing {key}"))
 }
 
-pub async fn search(args: &Value) -> Result<String, String> {
-    let query = arg_str(args, "query")?;
+#[derive(Clone, Debug)]
+pub struct WebConfig {
+    pub searxng_pool: Vec<String>,
+    pub ddg_url: String,
+    pub jina_base: String,
+}
 
-    if let Some(hits) = searxng_pool_search(query).await {
-        if !hits.is_empty() {
-            return format_hits(&hits);
+impl Default for WebConfig {
+    fn default() -> Self {
+        Self {
+            searxng_pool: SEARXNG_POOL.iter().map(|s| s.to_string()).collect(),
+            ddg_url: "https://html.duckduckgo.com/html/".into(),
+            jina_base: "https://r.jina.ai".into(),
         }
     }
+}
 
-    if let Ok(out) = duck_search(query).await {
+impl WebConfig {
+    pub fn from_env() -> Self {
+        let base = Self::default();
+        let pool = std::env::var("ARGUS_SEARXNG_POOL")
+            .ok()
+            .map(|v| {
+                v.split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .filter(|v| !v.is_empty())
+            .unwrap_or(base.searxng_pool);
+        let non_empty = |key: &str, fallback: String| {
+            std::env::var(key)
+                .ok()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+                .unwrap_or(fallback)
+        };
+        Self {
+            searxng_pool: pool,
+            ddg_url: non_empty("ARGUS_DDG_URL", base.ddg_url),
+            jina_base: non_empty("ARGUS_JINA_URL", base.jina_base),
+        }
+    }
+}
+
+pub async fn search(args: &Value) -> Result<String, String> {
+    search_with(args, &WebConfig::from_env()).await
+}
+
+pub async fn search_with(args: &Value, cfg: &WebConfig) -> Result<String, String> {
+    let query = arg_str(args, "query")?;
+    let mut failures: Vec<String> = vec![];
+    let mut empty_from: Vec<&str> = vec![];
+
+    match searxng_search(&cfg.searxng_pool, query).await {
+        Ok(hits) if !hits.is_empty() => return Ok(format_hits(&hits, "searxng")),
+        Ok(_) => empty_from.push("searxng"),
+        Err(e) => failures.push(format!("searxng: {e}")),
+    }
+
+    match duck_fetch(&cfg.ddg_url, query).await {
+        Ok(hits) if !hits.is_empty() => return Ok(format_hits(&hits, "duckduckgo")),
+        Ok(_) => empty_from.push("duckduckgo"),
+        Err(e) => failures.push(format!("duckduckgo: {e}")),
+    }
+
+    if !empty_from.is_empty() {
+        let mut out = format!(
+            "No results found for \"{query}\" ({} returned none). Try rewording the query.",
+            empty_from.join(", ")
+        );
+        if !failures.is_empty() {
+            out.push_str(&format!(" Note: {}.", failures.join("; ")));
+        }
         return Ok(out);
     }
 
-    browser_search(query).await
+    Err(format!(
+        "All search providers failed for \"{query}\": {}",
+        failures.join("; ")
+    ))
 }
 
-async fn browser_search(query: &str) -> Result<String, String> {
-    let url = url::Url::parse_with_params("https://www.bing.com/search", &[("q", query)])
-        .map_err(|err| format!("search url failed: {err}"))?;
-
-    crate::tools::browser::open(&serde_json::json!({ "url": url.as_str() }))
-        .await
-        .map(|out| {
-            format!(
-                "results fetched via the real browser because every text search \
-                 engine failed:\n{out}"
-            )
-        })
+fn domain_of(url: &str) -> String {
+    url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .unwrap_or_default()
 }
 
-fn format_hits(hits: &[(String, String, String)]) -> Result<String, String> {
-    if hits.is_empty() {
-        return Err(
-            "search returned no results (the engine may be rate-limiting automated queries — try again in a moment)".into(),
-        );
+fn format_hits(hits: &[(String, String, String)], provider: &str) -> String {
+    let mut out = String::new();
+    for (i, (title, url, snippet)) in hits.iter().take(MAX_RESULTS).enumerate() {
+        let dom = domain_of(url);
+        let head = if dom.is_empty() {
+            title.clone()
+        } else {
+            format!("{title} — {dom}")
+        };
+        let snip = if snippet.trim().is_empty() {
+            "(no snippet)".to_string()
+        } else {
+            snippet.clone()
+        };
+        out.push_str(&format!("{}. {head}\n   {url}\n   {snip}\n", i + 1));
     }
-
-    let out: String = hits
-        .iter()
-        .take(MAX_RESULTS)
-        .enumerate()
-        .map(|(i, (title, url, snippet))| format!("{}. {title}\n   {url}\n   {snippet}\n", i + 1))
-        .collect();
-
-    Ok(out)
+    out.push_str(&format!("Provider: {provider}\n"));
+    out
 }
 
 #[derive(Deserialize, Debug)]
@@ -95,31 +158,43 @@ struct SearxngResp {
     results: Vec<SearxngHit>,
 }
 
-async fn searxng_pool_search(query: &str) -> Option<Vec<(String, String, String)>> {
-    for base in SEARXNG_POOL {
-        if let Some(hits) = searxng_fetch(base, query).await.filter(|h| !h.is_empty()) {
-            return Some(hits);
+async fn searxng_search(
+    pool: &[String],
+    query: &str,
+) -> Result<Vec<(String, String, String)>, String> {
+    if pool.is_empty() {
+        return Err("no instances configured".into());
+    }
+
+    let mut last = String::new();
+    for base in pool {
+        match searxng_fetch(base, query).await {
+            Ok(hits) => return Ok(hits),
+            Err(e) => last = format!("{base}: {e}"),
         }
     }
 
-    None
+    Err(format!("searxng pool failed ({last})"))
 }
 
-async fn searxng_fetch(base: &str, query: &str) -> Option<Vec<(String, String, String)>> {
+async fn searxng_fetch(base: &str, query: &str) -> Result<Vec<(String, String, String)>, String> {
     let resp = client()
         .get(base)
         .query(&[("q", query), ("format", "json"), ("categories", "general")])
         .header("Accept", "application/json")
         .send()
         .await
-        .ok()?;
+        .map_err(|err| format!("request failed: {err}"))?;
 
     if !resp.status().is_success() {
-        return None;
+        return Err(format!("answered {}", resp.status()));
     }
 
-    let body: SearxngResp = resp.json().await.ok()?;
-    let hits: Vec<(String, String, String)> = body
+    let body: SearxngResp = resp
+        .json()
+        .await
+        .map_err(|_| "invalid response".to_string())?;
+    Ok(body
         .results
         .into_iter()
         .filter_map(|r| {
@@ -129,14 +204,12 @@ async fn searxng_fetch(base: &str, query: &str) -> Option<Vec<(String, String, S
             (!title.is_empty() && !url.is_empty()).then(|| (title, url, strip(&r.content)))
         })
         .take(MAX_RESULTS)
-        .collect();
-
-    (!hits.is_empty()).then_some(hits)
+        .collect())
 }
 
-async fn duck_search(query: &str) -> Result<String, String> {
+async fn duck_fetch(ddg_url: &str, query: &str) -> Result<Vec<(String, String, String)>, String> {
     let resp = client()
-        .get("https://html.duckduckgo.com/html/")
+        .get(ddg_url)
         .query(&[("q", query)])
         .send()
         .await
@@ -162,9 +235,7 @@ async fn duck_search(query: &str) -> Result<String, String> {
         );
     }
 
-    let results = parse_results(&html);
-
-    format_hits(&results)
+    Ok(parse_results(&html))
 }
 
 struct Hit {
@@ -301,74 +372,116 @@ fn decode_entities(s: &str) -> String {
 }
 
 pub async fn read(args: &Value) -> Result<String, String> {
+    read_with(args, &WebConfig::from_env()).await
+}
+
+pub async fn read_with(args: &Value, cfg: &WebConfig) -> Result<String, String> {
     let url = arg_str(args, "url")?;
 
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("url must start with http:// or https://".into());
     }
 
-    let via_jina = client()
-        .get(format!("https://r.jina.ai/{url}"))
-        .send()
-        .await;
-
-    if let Ok(resp) = via_jina {
-        if resp.status().is_success() {
-            let body = resp
-                .text()
-                .await
-                .map_err(|err| format!("page read failed: {err}"))?;
-            let body = body.trim().to_string();
-            if !body.is_empty() {
-                let text = crate::tools::page_text(&body);
-
-                if bot_wall(&text).is_none() {
-                    return Ok(text);
-                }
-            }
-        }
+    let host_ok = url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| !h.is_empty()))
+        .unwrap_or(false);
+    if !host_ok {
+        return Err(format!("invalid URL: {url}"));
     }
 
+    crate::tools::browser::url_guard(url)?;
+
+    if let Some(text) = jina_read(&cfg.jina_base, url).await {
+        return Ok(format!("Source: {url}\n\n{text}"));
+    }
+
+    Ok(format!("Source: {url}\n\n{}", direct_read(url).await?))
+}
+
+async fn jina_read(jina_base: &str, url: &str) -> Option<String> {
+    let base = jina_base.trim_end_matches('/');
+    let resp = client().get(format!("{base}/{url}")).send().await.ok()?;
+
+    if !resp.status().is_success() {
+        return None;
+    }
+
+    let body = resp.text().await.ok()?.trim().to_string();
+    if body.is_empty() {
+        return None;
+    }
+
+    let text = crate::tools::page_text(&body);
+    if text.trim().is_empty() || bot_wall(&text).is_some() {
+        return None;
+    }
+
+    Some(text)
+}
+
+async fn direct_read(url: &str) -> Result<String, String> {
     let resp = client()
         .get(url)
         .send()
         .await
         .map_err(|err| format!("page fetch failed: {err}"))?;
 
+    let status = resp.status().as_u16();
     let ct = resp
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
-
-    let status = resp.status();
     let body = resp
         .text()
         .await
         .map_err(|err| format!("page read failed: {err}"))?;
 
-    if !status.is_success() {
-        return Err(format!("page answered {status}"));
+    if status == 404 {
+        return Err(format!("page not found (404): {url}"));
     }
 
-    if ct.contains("html") {
-        let text = crate::tools::page_text(&html_to_text(&body));
+    if status == 401 || status == 403 {
+        return Err(format!(
+            "page requires authentication or forbids automated access ({status}): {url}"
+        ));
+    }
 
-        if let Some(err) = bot_wall(&text) {
-            return Err(err);
+    if status == 429 {
+        return Err(format!("page rate limited (429): {url}"));
+    }
+
+    if !(200..300).contains(&status) {
+        if status >= 500 {
+            return Err(format!("page fetch failed: server error {status}: {url}"));
         }
+        return Err(format!("page answered {status}: {url}"));
+    }
 
-        Ok(text)
+    let text = if ct.contains("html") {
+        crate::tools::page_text(&html_to_text(&body))
+    } else if ct.is_empty()
+        || ct.starts_with("text/")
+        || ct.contains("json")
+        || ct.contains("xml")
+        || ct.contains("javascript")
+    {
+        crate::tools::page_text(&body)
     } else {
-        let text = crate::tools::page_text(&body);
+        return Err(format!("unsupported content type ({ct}): {url}"));
+    };
 
-        if let Some(err) = bot_wall(&text) {
-            return Err(err);
-        }
-
-        Ok(text)
+    if let Some(err) = bot_wall(&text) {
+        return Err(err);
     }
+
+    if text.trim().is_empty() {
+        return Err(format!("page had no readable text: {url}"));
+    }
+
+    Ok(text)
 }
 
 const WALL_SIGNS: &[&str] = &[

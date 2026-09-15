@@ -441,43 +441,11 @@ pub async fn send(
         }
 
         let base_text = sanitize_tags(&tools::normalize_actions(&stats.text));
-        let text_actions = tools::parse_actions(&base_text);
-
-        struct PendingAction {
-            tool: String,
-            args: String,
-            start: Option<usize>,
-            end: Option<usize>,
-            tool_call_id: Option<String>,
-        }
-
-        let mut pending: Vec<PendingAction> = Vec::new();
-        for a in &text_actions {
-            pending.push(PendingAction {
-                tool: a.tool.clone(),
-                args: a.args.clone(),
-                start: Some(a.start),
-                end: Some(a.end),
-                tool_call_id: None,
-            });
-        }
-        for c in &stats.tool_calls {
-            if c.name.is_empty() {
-                continue;
-            }
-            let args = if c.args.trim().is_empty() {
-                "{}".to_string()
-            } else {
-                c.args.clone()
-            };
-            pending.push(PendingAction {
-                tool: c.name.clone(),
-                args,
-                start: None,
-                end: None,
-                tool_call_id: Some(c.id.clone()),
-            });
-        }
+        // Native structured calls are authoritative; XML `<action>` blocks stay
+        // compatible. `build_executions` dedups exact duplicates so one intent
+        // never runs twice, and turns empty-name calls into pre-Failed
+        // executions instead of silently dropping them.
+        let mut pending = tools::build_executions(&base_text, &stats.tool_calls, act_base);
 
         let done = pending.is_empty();
         let text = base_text.clone();
@@ -506,26 +474,38 @@ pub async fn send(
             )?
         };
 
+        // When the reply was cut off but already contains accepted tool calls,
+        // those calls must still run exactly once before continuing: dropping
+        // them would break the one-call-one-result invariant.
+        let mut trunc_overflow = false;
         if stats.truncated {
             trunc_conts += 1;
 
             if trunc_conts > MAX_TRUNC_CONTS {
-                let _ = chan.send(StreamEvent::Notice {
-                    msg: "the model's reply was cut off at its output limit twice — \
-                          partial work above is saved; send 'continue' to resume"
-                        .into(),
-                });
-                finished = true;
-                break;
-            }
+                if done {
+                    let _ = chan.send(StreamEvent::Notice {
+                        msg: "the model's reply was cut off at its output limit twice — \
+                              partial work above is saved; send 'continue' to resume"
+                            .into(),
+                    });
+                    finished = true;
+                    break;
+                }
+                // Non-empty pending: fall through to execute below, then finish
+                // with a notice instead of scheduling another continuation.
+                trunc_overflow = true;
+            } else {
+                nudge = Some(TRUNC_CONT.into());
 
-            nudge = Some(TRUNC_CONT.into());
-
-            if done {
-                continue;
+                if done {
+                    continue;
+                }
             }
         } else if done {
-            if claims_action(&text) || fakes_output(&text) {
+            // An `<action` block that parsed to nothing (unclosed/invalid) must
+            // not finish silently; nudge a clean re-emit like claim/fake cases.
+            let orphaned = tools::has_orphaned_action_block(&base_text);
+            if claims_action(&text) || fakes_output(&text) || orphaned {
                 if claim_nudges < MAX_CLAIM_NUDGES {
                     claim_nudges += 1;
                     nudge = Some(NUDGE.into());
@@ -556,14 +536,28 @@ pub async fn send(
         let mut edits: Vec<(usize, usize, String)> = vec![];
         let mut append_blocks: Vec<String> = vec![];
 
-        for a in &pending {
-            let idx = act_base;
-            act_base += 1;
-            let is_term = a.tool == "terminal" || a.tool == "bash.run";
-            let is_browser = a.tool.starts_with("browser.");
+        // Every accepted execution runs exactly once, in order, and yields
+        // exactly one `<tool-result>` before the next model request — whether
+        // it succeeds, fails, is denied, loops, or arrives malformed.
+        for exec in pending.iter_mut() {
+            // `build_executions` pre-fails empty-name native calls; they still
+            // get one structured result below without hitting `tools::exec`.
+            let idx: usize = exec
+                .id
+                .strip_prefix('a')
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(act_base);
+            // Keep the stream index allocator in sync with the stable ids so
+            // `Term`/`Approval` events stay aligned across steps.
+            if idx >= act_base {
+                act_base = idx + 1;
+            }
+
+            let is_term = exec.is_terminal_tool();
+            let is_browser = exec.is_browser_tool();
 
             let args_v: serde_json::Value =
-                serde_json::from_str(&a.args).unwrap_or(serde_json::Value::Null);
+                serde_json::from_str(&exec.args).unwrap_or(serde_json::Value::Null);
 
             let cmd = if is_term {
                 args_v["command"].as_str().unwrap_or_default().to_string()
@@ -571,75 +565,93 @@ pub async fn send(
                 String::new()
             };
 
-            let sensitive = is_browser && tools::browser::sensitive(&a.tool, &args_v).await;
-            let needs_ask = (perm == "ask" && tools::is_mutating(&a.tool)) || sensitive;
-
-            let key = (a.tool.clone(), a.args.clone());
-            let looped = repeated(&recent, &key);
-            recent.push(key);
-
-            let mut allow = !needs_ask && !looped;
+            let pre_failed = exec.status.is_terminal();
             let mut denied = false;
+            // `code` mirrors the old contract: real exit code on success,
+            // -1 on failure, DENIED_CODE on denial/cancel.
+            let code: i64;
 
-            if !allow {
-                let what = if is_browser {
-                    browser_what(&a.tool, &args_v, false)
-                } else if a.tool == "doc.create" {
-                    args_v
-                        .get("name")
-                        .and_then(|v| v.as_str())
-                        .map(|s| format!("doc.create {}", s))
-                        .unwrap_or_else(|| "doc.create".into())
+            if pre_failed {
+                // Already Failed at build time (e.g. empty tool name): no
+                // approval, no exec call — just emit its structured result.
+                code = -1;
+            } else {
+                exec.begin();
+
+                let sensitive = is_browser && tools::browser::sensitive(&exec.tool, &args_v).await;
+                let needs_ask = (perm == "ask" && tools::is_mutating(&exec.tool)) || sensitive;
+
+                let key = (exec.tool.clone(), exec.args.clone());
+                let looped = repeated(&recent, &key);
+                recent.push(key);
+
+                let mut allow = !needs_ask && !looped;
+
+                if !allow {
+                    let what = if is_browser {
+                        browser_what(&exec.tool, &args_v, false)
+                    } else if exec.tool == "doc.create" {
+                        args_v
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .map(|s| format!("doc.create {}", s))
+                            .unwrap_or_else(|| "doc.create".into())
+                    } else {
+                        cmd.clone()
+                    };
+
+                    allow = ask_approval(gw, &chan, &approval_id(), idx as u32, &what).await;
+                    denied = !allow;
+
+                    if denied && is_term {
+                        let _ = chan.send(StreamEvent::TermEnd {
+                            idx: idx as u32,
+                            code: DENIED_CODE,
+                        });
+                    }
+                }
+
+                if looped {
+                    exec.fail(
+                        "same action 3 times without visible progress — change approach or ask the user"
+                            .to_string(),
+                    );
+                    code = -1;
+                } else if denied {
+                    exec.cancel("action denied by user".to_string());
+                    code = DENIED_CODE;
                 } else {
-                    cmd.clone()
-                };
-
-                allow = ask_approval(gw, &chan, &approval_id(), idx as u32, &what).await;
-                denied = !allow;
-
-                if denied && is_term {
-                    let _ = chan.send(StreamEvent::TermEnd {
-                        idx: idx as u32,
-                        code: DENIED_CODE,
-                    });
+                    match tools::exec(
+                        gw,
+                        &exec.tool,
+                        &exec.args,
+                        &perm,
+                        web,
+                        allow,
+                        Some((&chan, idx as u32)),
+                    )
+                    .await
+                    {
+                        Ok(t) => {
+                            code = exit_of(&t);
+                            exec.succeed(t);
+                        }
+                        Err(err) => {
+                            exec.fail(err);
+                            code = -1;
+                        }
+                    }
                 }
             }
 
-            let (status, body, code) = if looped {
-                (
-                    "err",
-                    "same action 3 times without visible progress — change approach or ask the user"
-                        .to_string(),
-                    -1,
-                )
-            } else if denied {
-                ("err", "action denied by user".to_string(), DENIED_CODE)
-            } else {
-                match tools::exec(
-                    gw,
-                    &a.tool,
-                    &a.args,
-                    &perm,
-                    web,
-                    allow,
-                    Some((&chan, idx as u32)),
-                )
-                .await
-                {
-                    Ok(t) => {
-                        let code = exit_of(&t);
-                        ("ok", t, code)
-                    }
-                    Err(err) => ("err", err, -1),
-                }
-            };
-
-            let msg = format!(
-                "<tool-result tool=\"{}\" status=\"{}\">{}</tool-result>",
-                a.tool,
-                status,
-                truncate_chars(&body, RESULT_CLIP)
+            debug_assert!(
+                exec.status.is_terminal(),
+                "tool execution must end terminal: {}",
+                exec.tool
             );
+            let status = exec.result_status();
+            let body = exec.result_body().to_string();
+            let msg = exec.to_tool_result(RESULT_CLIP);
 
             {
                 let conn = gw.conn.lock().map_err(|err| err.to_string())?;
@@ -654,20 +666,25 @@ pub async fn send(
                         tok_in: None,
                         tok_out: None,
                         tool_calls: None,
-                        tool_call_id: a.tool_call_id.clone(),
+                        tool_call_id: exec.tool_call_id.clone(),
                     },
                 )?;
             }
 
             if is_term {
-                if status == "ok" {
+                // Always close the live terminal view on completion; the old
+                // code only closed on `ok`/denied, leaving failures hanging.
+                // Denied already sent its TermEnd above — don't double-send.
+                let terminal_failed = exec.status == tools::ToolStatus::Failed;
+                if status == "ok" || terminal_failed {
+                    let term_code = if denied { DENIED_CODE } else { code };
                     let _ = chan.send(StreamEvent::TermEnd {
                         idx: idx as u32,
-                        code,
+                        code: term_code,
                     });
                 }
 
-                let out = if denied {
+                let out = if denied || exec.status == tools::ToolStatus::Cancelled {
                     "command denied by user".to_string()
                 } else {
                     body.strip_prefix("exit ")
@@ -677,7 +694,7 @@ pub async fn send(
                 };
 
                 let blk = terminal_block(idx, &cmd, code, &out);
-                match (a.start, a.end) {
+                match (exec.start, exec.end) {
                     (Some(s), Some(e)) => edits.push((s, e, blk)),
                     _ => append_blocks.push(blk),
                 }
@@ -689,22 +706,30 @@ pub async fn send(
                     .map(Into::into)
                     .unwrap_or_else(|| body_url(&body));
 
-                let blk =
-                    browser_block(idx, &a.tool, &url, &browser_what(&a.tool, &args_v, true));
-                match (a.start, a.end) {
+                let blk = browser_block(
+                    idx,
+                    &exec.tool,
+                    &url,
+                    &browser_what(&exec.tool, &args_v, true),
+                );
+                match (exec.start, exec.end) {
                     (Some(s), Some(e)) => edits.push((s, e, blk)),
                     _ => append_blocks.push(blk),
                 }
             }
 
-            if a.tool == "doc.create" && status == "ok" {
+            if exec.tool == "doc.create" && status == "ok" {
                 let id = doc_field(&body, "id=");
                 let name = doc_field(&body, "name=");
                 let ext = doc_field(&body, "ext=");
                 let pages = doc_field(&body, "pages=");
-                let title = if name.is_empty() { "Untitled document".into() } else { name };
+                let title = if name.is_empty() {
+                    "Untitled document".into()
+                } else {
+                    name
+                };
                 let blk = doc_block(&id, &title, &ext, &pages);
-                match (a.start, a.end) {
+                match (exec.start, exec.end) {
                     (Some(s), Some(e)) => edits.push((s, e, blk)),
                     _ => append_blocks.push(blk),
                 }
@@ -715,7 +740,11 @@ pub async fn send(
             let mut updated = text.clone();
 
             for (s, end, blk) in edits.into_iter().rev() {
-                if s <= end && end <= updated.len() && updated.is_char_boundary(s) && updated.is_char_boundary(end) {
+                if s <= end
+                    && end <= updated.len()
+                    && updated.is_char_boundary(s)
+                    && updated.is_char_boundary(end)
+                {
                     updated.replace_range(s..end, &blk);
                 }
             }
@@ -735,6 +764,16 @@ pub async fn send(
         }
 
         acts_run += pending.len();
+
+        if trunc_overflow {
+            let _ = chan.send(StreamEvent::Notice {
+                msg: "the model's reply was cut off at its output limit twice — \
+                      partial work above is saved; send 'continue' to resume"
+                    .into(),
+            });
+            finished = true;
+            break;
+        }
     }
 
     if !finished {

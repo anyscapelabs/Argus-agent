@@ -8,7 +8,7 @@ pub mod web;
 use serde_json::Value;
 use tauri::ipc::Channel;
 
-use crate::gateway::schema::StreamEvent;
+use crate::gateway::schema::{StreamEvent, ToolCall};
 
 const MAX_OUT: usize = 6000;
 
@@ -108,6 +108,273 @@ pub struct Action {
     pub args: String,
     pub start: usize,
     pub end: usize,
+}
+
+/// Explicit lifecycle for one accepted tool call.
+///
+/// Invariant: every accepted call moves through exactly one
+/// `CREATED -> EXECUTING -> (SUCCEEDED | FAILED | CANCELLED)` transition
+/// and produces exactly one `<tool-result>` for the model, whether the
+/// underlying tool succeeds or fails. Failures are structured results,
+/// never silent drops.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ToolStatus {
+    Created,
+    Executing,
+    Succeeded,
+    Failed,
+    Cancelled,
+}
+
+impl ToolStatus {
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            ToolStatus::Succeeded | ToolStatus::Failed | ToolStatus::Cancelled
+        )
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ToolStatus::Created => "created",
+            ToolStatus::Executing => "executing",
+            ToolStatus::Succeeded => "succeeded",
+            ToolStatus::Failed => "failed",
+            ToolStatus::Cancelled => "cancelled",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ToolExecution {
+    /// Stable id for UI/DB correlation: native `tool_call_id` when present,
+    /// otherwise `a{idx}` matching the terminal/approval stream indices.
+    pub id: String,
+    pub tool: String,
+    /// Raw JSON args as received (may be invalid; validated at exec time so
+    /// malformed args become a structured `err` result instead of a drop).
+    pub args: String,
+    pub status: ToolStatus,
+    pub result: Option<String>,
+    pub error: Option<String>,
+    /// Byte offsets of the source `<action>` block in the sanitized reply,
+    /// used to replace it with a read-only `<terminal>/<browser-action>/`
+    /// `<document>` record. `None` for native calls.
+    pub start: Option<usize>,
+    pub end: Option<usize>,
+    /// Native provider tool-call id, preserved so `prompt::to_wire` can map
+    /// the result back to `role: tool`. `None` for XML actions (sent back as
+    /// `<tool-result>` user text).
+    pub tool_call_id: Option<String>,
+}
+
+impl ToolExecution {
+    pub fn new(
+        id: String,
+        tool: String,
+        args: String,
+        start: Option<usize>,
+        end: Option<usize>,
+        tool_call_id: Option<String>,
+    ) -> Self {
+        Self {
+            id,
+            tool,
+            args,
+            status: ToolStatus::Created,
+            result: None,
+            error: None,
+            start,
+            end,
+            tool_call_id,
+        }
+    }
+
+    /// Native structured calls are authoritative. An empty name is not a
+    /// valid call, but it must not disappear silently: model it as an
+    /// already-`Failed` execution so the loop still emits one `err` result.
+    pub fn from_native(call: &ToolCall, idx: usize) -> Self {
+        if call.name.trim().is_empty() {
+            let mut e = Self::new(
+                if call.id.is_empty() {
+                    format!("a{idx}")
+                } else {
+                    call.id.clone()
+                },
+                "(unknown)".into(),
+                call.args.clone(),
+                None,
+                None,
+                Some(call.id.clone()),
+            );
+            e.fail("model returned a tool call with no name — ignored".into());
+            return e;
+        }
+
+        let args = if call.args.trim().is_empty() {
+            "{}".to_string()
+        } else {
+            call.args.clone()
+        };
+
+        Self::new(
+            call.id.clone(),
+            call.name.clone(),
+            args,
+            None,
+            None,
+            Some(call.id.clone()),
+        )
+    }
+
+    pub fn from_action(a: &Action, idx: usize) -> Self {
+        Self::new(
+            format!("a{idx}"),
+            a.tool.clone(),
+            a.args.clone(),
+            Some(a.start),
+            Some(a.end),
+            None,
+        )
+    }
+
+    pub fn begin(&mut self) {
+        if self.status == ToolStatus::Created {
+            self.status = ToolStatus::Executing;
+        }
+    }
+
+    pub fn succeed(&mut self, result: String) {
+        self.status = ToolStatus::Succeeded;
+        self.result = Some(result);
+        self.error = None;
+    }
+
+    pub fn fail(&mut self, err: String) {
+        // `fail` is terminal from any non-terminal state, and also allows
+        // pre-failing at construction time (e.g. empty native name).
+        self.status = ToolStatus::Failed;
+        self.error = Some(err);
+        self.result = None;
+    }
+
+    pub fn cancel(&mut self, reason: String) {
+        self.status = ToolStatus::Cancelled;
+        self.error = Some(reason);
+        self.result = None;
+    }
+
+    pub fn is_terminal_tool(&self) -> bool {
+        self.tool == "terminal" || self.tool == "bash.run"
+    }
+
+    pub fn is_browser_tool(&self) -> bool {
+        self.tool.starts_with("browser.")
+    }
+
+    fn body_inner(&self) -> &str {
+        if let Some(r) = self.result.as_deref() {
+            return r;
+        }
+        self.error.as_deref().unwrap_or("")
+    }
+
+    /// `ok` only for `Succeeded`; `Failed` and `Cancelled` both surface as
+    /// `err` so the model always gets a structured failure to react to.
+    pub fn result_status(&self) -> &'static str {
+        match self.status {
+            ToolStatus::Succeeded => "ok",
+            _ => "err",
+        }
+    }
+
+    pub fn result_body(&self) -> &str {
+        self.body_inner()
+    }
+
+    /// Always returns exactly one `<tool-result>` block. Callers must invoke
+    /// this once per execution after it reaches a terminal status.
+    pub fn to_tool_result(&self, max_chars: usize) -> String {
+        let body = self.body_inner();
+        let clipped = if body.chars().count() <= max_chars {
+            body.to_string()
+        } else {
+            let cut: String = body.chars().take(max_chars).collect();
+            format!("{cut}…")
+        };
+        format!(
+            "<tool-result tool=\"{}\" status=\"{}\">{}</tool-result>",
+            self.tool,
+            self.result_status(),
+            clipped
+        )
+    }
+}
+
+fn args_equal(a: &str, b: &str) -> bool {
+    let va: Result<Value, _> = serde_json::from_str(a.trim());
+    let vb: Result<Value, _> = serde_json::from_str(b.trim());
+    match (va, vb) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => a.trim() == b.trim(),
+    }
+}
+
+/// Build the deterministic pending-execution list for one model response.
+///
+/// Order is stable: native structured calls first (authoritative, in wire
+/// order), then XML `<action>` blocks in text order, skipping exact
+/// `(tool, args)` duplicates of an already-accepted native call so one
+/// intent never executes twice. Empty-name natives become pre-`Failed`
+/// executions instead of silent drops, preserving the one-call-one-result
+/// invariant. `act_base` seeds stable `a{idx}` ids matching the
+/// `Term`/`Approval` stream indices.
+pub fn build_executions(
+    base_text: &str,
+    native_calls: &[ToolCall],
+    act_base: usize,
+) -> Vec<ToolExecution> {
+    let mut out: Vec<ToolExecution> = Vec::new();
+    let mut idx = act_base;
+
+    for c in native_calls {
+        // Native empty-name calls are kept as Failed executions (see
+        // `from_native`) so they still produce one `err` result.
+        // Truly empty placeholder calls with no id either are still kept:
+        // dropping them would break the invariant silently.
+        let e = ToolExecution::from_native(c, idx);
+        idx += 1;
+        out.push(e);
+    }
+
+    for a in parse_actions(base_text) {
+        if a.tool.trim().is_empty() {
+            continue;
+        }
+        let dup = out
+            .iter()
+            .any(|e| e.tool == a.tool && args_equal(&e.args, &a.args));
+        if dup {
+            continue;
+        }
+        let e = ToolExecution::from_action(&a, idx);
+        idx += 1;
+        out.push(e);
+    }
+
+    out
+}
+
+/// True when the reply attempted an `<action>` block but nothing parsed.
+///
+/// This covers unclosed blocks and invalid bodies that `parse_actions`
+/// drops. Callers should nudge the model to re-emit instead of silently
+/// finishing, mirroring the existing claim/truncation nudges.
+pub fn has_orphaned_action_block(text: &str) -> bool {
+    if !text.contains("<action") {
+        return false;
+    }
+    parse_actions(text).is_empty()
 }
 
 pub fn parse_actions(text: &str) -> Vec<Action> {

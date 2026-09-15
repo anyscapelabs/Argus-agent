@@ -979,8 +979,10 @@ command with >/dev/null 2>&1 & — xdg-open and similar block until the app clos
     }
     s.push_str(
         "Browser refs are the [n] numbers from the last browser snapshot, and they \
-work only in browser.* tools — never use one in a computer.* tool. After every page \
-change re-check the list before using a ref, and re-read if a ref is stale. \
+work only in browser.* tools — never use one in a computer.* tool. Every snapshot \
+prints its number above the Elements list: pass it back as \"snapshot\" with \
+browser.click and browser.type, since a ref from an older snapshot is rejected. \
+After every page change re-check the list before using a ref, and re-read if a ref is stale. \
 Never type passwords or payment details into the browser yourself — if a page \
 asks you to log in or pay, tell the user to do it inside the Argus browser \
 window, then browser.read to confirm. Login, checkout and purchase actions \

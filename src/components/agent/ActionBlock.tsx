@@ -25,6 +25,7 @@ const VERB: Record<string, string> = {
   "browser.click": "browser click",
   "browser.type": "browser type",
   "browser.read": "browser read",
+  "browser.scroll": "browser scroll",
   "browser.close": "browser close",
 };
 

@@ -73,6 +73,8 @@ pub async fn open(args: &Value) -> Result<String, String> {
 
     let out = page_out(&mut s, text, page_url.clone(), title).await;
 
+    *SESS.lock().await = Some(s);
+
     Ok(super::sensitive_note(&page_url, out))
 }
 
@@ -222,6 +224,32 @@ pub async fn type_text(args: &Value) -> Result<String, String> {
         serde_json::json!({"tabId": tab_id, "path": path, "text": text, "submit": submit}),
     )
     .await?;
+
+    read_page(tab_id).await
+}
+
+pub async fn scroll(args: &Value) -> Result<String, String> {
+    ext_install::ensure_real().await?;
+
+    let tab_id = {
+        let g = SESS.lock().await;
+        g.as_ref()
+            .map(|s| s.tab_id)
+            .ok_or("no page open — run browser.open first")?
+    };
+
+    let dir = args
+        .get("direction")
+        .and_then(|v| v.as_str())
+        .unwrap_or("down");
+    let px = args
+        .get("pixels")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(800)
+        .clamp(100, 5000);
+    let dy = if dir == "up" { -px } else { px };
+
+    extpipe::request("scroll", serde_json::json!({"tabId": tab_id, "dy": dy})).await?;
 
     read_page(tab_id).await
 }

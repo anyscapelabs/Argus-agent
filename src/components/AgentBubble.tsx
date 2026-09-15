@@ -22,10 +22,14 @@ import {
 import type { BlockNode, InlineNode, XmlTree } from "../lib/agentXml";
 import { parse } from "../lib/agentXml";
 import { type PendingApproval } from "../stores/sessions";
-import ActionBlock from "./agent/ActionBlock";
 import AlertBanner from "./agent/AlertBanner";
 import ApprovalBlock from "./agent/ApprovalBlock";
-import BrowserGroup from "./agent/BrowserGroup";
+import ToolActivity, {
+  actionStep,
+  browserDoneStep,
+  terminalStep,
+  type ToolStep,
+} from "./agent/ToolActivity";
 import DiffBlock from "./agent/DiffBlock";
 import DocumentCard from "./agent/DocumentCard";
 import EmailDraftCard from "./agent/EmailDraftCard";
@@ -34,7 +38,6 @@ import MemoryRefChip from "./agent/MemoryRefChip";
 import PathChip from "./agent/PathChip";
 import PlanBlock from "./agent/PlanBlock";
 import TableBlock from "./agent/TableBlock";
-import TerminalBlock from "./agent/TerminalBlock";
 import ThinkingBlock from "./agent/ThinkingBlock";
 import WebSearchGroup, { WEB_ACTIONS } from "./agent/WebSearchGroup";
 
@@ -345,12 +348,7 @@ type LiveAction = {
   sessionId: string;
 };
 
-function renderBlk(
-  blk: BlockNode,
-  key: string,
-  live: boolean,
-  act?: LiveAction,
-): React.ReactNode {
+function renderBlk(blk: BlockNode, key: string): React.ReactNode {
   if (blk.kind === "paragraph") {
     const raw = blk.children.map((c) => c.value).join("");
     const isBulleted = /^\s*[-•*]\s+/m.test(raw);
@@ -437,26 +435,12 @@ function renderBlk(
       return <ThinkingBlock key={key} block={blk} />;
     case "plan":
       return <PlanBlock key={key} block={blk} />;
-    case "action":
-      return (
-        <ActionBlock
-          key={key}
-          block={blk}
-          live={live}
-          output={act?.output}
-          code={act?.code}
-          approval={act?.approval}
-          sessionId={act?.sessionId}
-        />
-      );
     case "approval":
       return <ApprovalBlock key={key} block={blk} />;
     case "diff":
       return <DiffBlock key={key} block={blk} />;
     case "document":
       return <DocumentCard key={key} block={blk} />;
-    case "terminal":
-      return <TerminalBlock key={key} block={blk} />;
     case "email-draft":
       return <EmailDraftCard key={key} block={blk} />;
     case "memory-ref":
@@ -494,8 +478,8 @@ function renderTree(
   let gIdx = 0;
   let pIdx = 0;
   let wIdx = 0;
-  let bIdx = 0;
   let aIdx = 0;
+  let tIdx = 0;
 
   const actFor = (idx: number): LiveAction | undefined =>
     liveTerm === undefined
@@ -599,38 +583,39 @@ function renderTree(
       continue;
     }
 
-    const isBrowserStep =
-      (blk.tag === "action" &&
-        (blk.attrs.tool ?? "").startsWith("browser.")) ||
-      blk.tag === "browser-action";
-
-    if (isBrowserStep) {
-      const grp: BlockNode[] = [];
-      const idxs: number[] = [];
+    if (
+      blk.tag === "action" ||
+      blk.tag === "terminal" ||
+      blk.tag === "browser-action"
+    ) {
+      const steps: ToolStep[] = [];
 
       while (
         i < tree.length &&
-        ((tree[i].tag === "action" &&
-          (tree[i].attrs.tool ?? "").startsWith("browser.")) ||
+        (tree[i].tag === "action" ||
+          tree[i].tag === "terminal" ||
           tree[i].tag === "browser-action")
       ) {
-        grp.push(tree[i]);
+        const b = tree[i];
 
-        if (tree[i].tag === "action") {
-          idxs.push(aIdx);
+        if (b.tag === "action") {
+          const act = actFor(aIdx);
+          steps.push(actionStep(b, aIdx, live, act?.output, act?.code));
+          aIdx++;
+        } else if (b.tag === "terminal") {
+          steps.push(terminalStep(b));
           aIdx++;
         } else {
-          idxs.push(-1);
+          steps.push(browserDoneStep(b));
         }
 
         i++;
       }
 
       out.push(
-        <BrowserGroup
-          key={`browser-${bIdx++}`}
-          blocks={grp}
-          idxs={idxs}
+        <ToolActivity
+          key={`tools-${tIdx++}`}
+          steps={steps}
           live={live}
           approval={liveTerm?.approval ?? null}
           sessionId={liveTerm?.sessionId}
@@ -639,21 +624,7 @@ function renderTree(
       continue;
     }
 
-    if (blk.tag === "action") {
-      out.push(renderBlk(blk, `b-${i}`, live, actFor(aIdx)));
-      aIdx++;
-      i++;
-      continue;
-    }
-
-    if (blk.tag === "terminal") {
-      out.push(renderBlk(blk, `b-${i}`, live));
-      aIdx++;
-      i++;
-      continue;
-    }
-
-    out.push(renderBlk(blk, `b-${i}`, live));
+    out.push(renderBlk(blk, `b-${i}`));
     i++;
   }
 

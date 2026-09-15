@@ -241,7 +241,9 @@ export function tokenize(buf: string): Token[] {
     }
 
     if (!isKnownTag(tag)) {
-      i++;
+      flush(i);
+      start = end + 1;
+      i = end + 1;
       continue;
     }
 

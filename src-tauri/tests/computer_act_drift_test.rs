@@ -129,7 +129,7 @@ const LABEL_V1: &str = "relay-v1";
 const LABEL_V2: &str = "relay-v2";
 
 const APP_PY: &str = r#"
-import sys, os
+import sys, os, time
 import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('GLib', '2.0')
@@ -137,10 +137,12 @@ from gi.repository import Gtk, GLib
 
 log_path, trigger_path, ack_path = sys.argv[1], sys.argv[2], sys.argv[3]
 swapped = []
+seq = [0]
 
 def fire(name):
+    seq[0] += 1
     with open(log_path, 'a') as f:
-        f.write(name + '\n')
+        f.write("%d %s %d\n" % (seq[0], name, int(time.time() * 1000)))
         f.flush()
         os.fsync(f.fileno())
 
@@ -386,6 +388,16 @@ fn read_log(path: &std::path::Path) -> Vec<String> {
         .collect()
 }
 
+fn parse_effects(lines: &[String]) -> Vec<(u64, String)> {
+    lines
+        .iter()
+        .filter_map(|l| {
+            let mut it = l.split_whitespace();
+            Some((it.next()?.parse().ok()?, it.next()?.to_string()))
+        })
+        .collect()
+}
+
 #[tokio::test]
 async fn tokenless_act_after_atspi_reorder_executes_current_occupant() {
     let _guard = serial();
@@ -605,7 +617,7 @@ async fn tokenless_act_after_atspi_reorder_executes_current_occupant() {
     eprintln!("act_result={act_out:?}");
     eprintln!("side_effect_log={effects:?}");
 
-    let verdict = if effects == vec![LABEL_V2.to_string()] {
+    let verdict = if parse_effects(&effects) == vec![(1, LABEL_V2.to_string())] {
         "PROVEN"
     } else {
         "NOT-REPRODUCED"

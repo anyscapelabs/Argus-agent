@@ -40,7 +40,7 @@ const LABEL_V1: &str = "relay-v1";
 const LABEL_V2: &str = "relay-v2";
 
 const APP_PY: &str = r#"
-import sys, os
+import sys, os, time
 import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('GLib', '2.0')
@@ -48,10 +48,12 @@ from gi.repository import Gtk, GLib
 
 log_path, trigger_path, ack_path = sys.argv[1], sys.argv[2], sys.argv[3]
 swapped = []
+seq = [0]
 
 def fire(name):
+    seq[0] += 1
     with open(log_path, 'a') as f:
-        f.write(name + '\n')
+        f.write("%d %s %d\n" % (seq[0], name, int(time.time() * 1000)))
         f.flush()
         os.fsync(f.fileno())
 
@@ -250,6 +252,16 @@ fn read_log(path: &std::path::Path) -> Vec<String> {
         .unwrap_or_default()
         .lines()
         .map(str::to_string)
+        .collect()
+}
+
+fn parse_effects(lines: &[String]) -> Vec<(u64, String)> {
+    lines
+        .iter()
+        .filter_map(|l| {
+            let mut it = l.split_whitespace();
+            Some((it.next()?.parse().ok()?, it.next()?.to_string()))
+        })
         .collect()
 }
 
@@ -557,7 +569,9 @@ async fn eval_real_computer_ground_task() {
 
     let done = Arc::new(AtomicBool::new(false));
     let fixture_events: Arc<StdMutex<Vec<String>>> = Arc::new(StdMutex::new(vec![]));
+    let stale_log: Arc<StdMutex<Option<Vec<String>>>> = Arc::new(StdMutex::new(None));
     let t0 = std::time::Instant::now();
+    let log_probe = log_path.clone();
     let (status_run, _) = tokio::join!(
         async {
             let r =
@@ -566,22 +580,23 @@ async fn eval_real_computer_ground_task() {
             r
         },
         async {
+            let mut invalidated = false;
+            let mut stale_seen = false;
             loop {
                 if done.load(Ordering::SeqCst) {
                     break;
                 }
-                let saw_observe = {
+                let msgs = {
                     let conn = gw.conn.lock().unwrap();
-                    argus_lib::sessions::store::list_msgs(&conn, &session_id)
-                        .map(|msgs| {
-                            msgs.iter().any(|m| {
-                                m.content.contains("tool=\"computer.observe\"")
-                                    && m.content.contains(LABEL_V1)
-                            })
-                        })
-                        .unwrap_or(false)
+                    argus_lib::sessions::store::list_msgs(&conn, &session_id).unwrap_or_default()
                 };
-                if saw_observe {
+                if !invalidated
+                    && msgs.iter().any(|m| {
+                        m.content.contains("tool=\"computer.observe\"")
+                            && m.content.contains(LABEL_V1)
+                    })
+                {
+                    invalidated = true;
                     fixture_events.lock().unwrap().push(format!(
                         "harness: observe tool-result delivered at {:?}; flipping layout",
                         t0.elapsed()
@@ -620,7 +635,21 @@ async fn eval_real_computer_ground_task() {
                             .unwrap()
                             .push(format!("harness: refresh observe err={e}")),
                     }
-                    break;
+                }
+                if invalidated
+                    && !stale_seen
+                    && msgs.iter().any(|m| {
+                        m.content.contains("tool=\"computer.act\"")
+                            && m.content.contains("stale ref")
+                    })
+                {
+                    stale_seen = true;
+                    let at_stale = read_log(&log_probe);
+                    fixture_events.lock().unwrap().push(format!(
+                        "harness: stale act result observed at {:?}; log_at_stale={at_stale:?}",
+                        t0.elapsed()
+                    ));
+                    *stale_log.lock().unwrap() = Some(at_stale);
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(25)).await;
             }
@@ -644,6 +673,8 @@ async fn eval_real_computer_ground_task() {
             .unwrap()
     };
     let click_paths = read_log(&log_path);
+    let effects = parse_effects(&click_paths);
+    let stale_log = stale_log.lock().unwrap().clone();
     let fixture_events = fixture_events.lock().unwrap().clone();
 
     for mut p in procs {
@@ -767,12 +798,34 @@ async fn eval_real_computer_ground_task() {
         short(&stale_text)
     );
     eprintln!("success_pos={success_pos:?} side_effect_log={click_paths:?}");
+    eprintln!("parsed_effects={effects:?}");
+    eprintln!(
+        "log_at_stale={stale_log:?} seqs_contiguous={}",
+        effects
+            .iter()
+            .enumerate()
+            .all(|(k, (seq, _))| *seq == k as u64 + 1)
+    );
+    let ok_mutations: Vec<usize> = act_positions
+        .iter()
+        .copied()
+        .filter(|&i| {
+            !results[i].content.contains("stale ref")
+                && results[i].content.contains("status=\"ok\"")
+        })
+        .collect();
+    eprintln!("ok_mutation_result_idxs={ok_mutations:?} (effect #k belongs to k-th ok mutation)");
     eprintln!("final_answer={}", short(&final_text));
     eprintln!("mining={mining}");
     eprintln!("=== REAL COMPUTER-GROUND EVAL TRACE (COMPLETE TAIL) ===");
 
-    let no_v2_effect = !click_paths.iter().any(|l| l == LABEL_V2);
-    let only_v1_effect = !click_paths.is_empty() && click_paths.iter().all(|l| l == LABEL_V1);
+    let stale_log_empty = stale_log.as_deref().unwrap_or(&[]).is_empty();
+    let contiguous = effects
+        .iter()
+        .enumerate()
+        .all(|(k, (seq, _))| *seq == k as u64 + 1);
+    let no_v2_effect = !effects.iter().any(|(_, l)| l == LABEL_V2);
+    let only_v1_effect = effects == vec![(1, LABEL_V1.to_string())];
     let first_act_tokenless = match first_act {
         Some(a) => a.snap_opt.is_none(),
         None => false,
@@ -783,7 +836,7 @@ async fn eval_real_computer_ground_task() {
         "FAIL"
     } else if !first_act_tokenless {
         "FAIL"
-    } else if !stale_rejected || !no_v2_effect {
+    } else if !stale_rejected || !stale_log_empty || !no_v2_effect || !contiguous {
         "FAIL"
     } else if mining {
         "FAIL"

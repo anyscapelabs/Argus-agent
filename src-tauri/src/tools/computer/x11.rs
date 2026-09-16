@@ -17,6 +17,7 @@ static SHOT: AsyncMutex<Option<Shot>> = AsyncMutex::const_new(None);
 #[derive(Clone, Debug, Default)]
 pub struct WinState {
     pub ids: Vec<String>,
+    pub titles: Vec<(String, String)>,
     pub active: Option<String>,
 }
 
@@ -35,6 +36,8 @@ fn active_changed(before: Option<&str>, after: Option<&str>) -> bool {
 pub fn verify_windows_note(before: &WinState, after: &WinState) -> Option<String> {
     if windows_changed(&before.ids, &after.ids) {
         Some("note: verified: window list changed".into())
+    } else if titles_changed(&before.titles, &after.titles) {
+        Some("note: verified: window title changed".into())
     } else if active_changed(before.active.as_deref(), after.active.as_deref()) {
         Some("note: verified: active window changed".into())
     } else {
@@ -42,18 +45,33 @@ pub fn verify_windows_note(before: &WinState, after: &WinState) -> Option<String
     }
 }
 
+fn titles_changed(before: &[(String, String)], after: &[(String, String)]) -> bool {
+    let mut b: Vec<&(String, String)> = before.iter().collect();
+    let mut a: Vec<&(String, String)> = after.iter().collect();
+    b.sort();
+    a.sort();
+    b != a
+}
+
 pub fn valid_window_id(id: &str) -> bool {
     !id.is_empty() && id.chars().all(|c| c.is_ascii_hexdigit() || c == 'x')
 }
 
 pub(crate) async fn win_state() -> WinState {
-    let list = run("wmctrl", &["l"]).await.unwrap_or_default();
-    let ids = list
-        .lines()
-        .filter_map(|l| l.split_whitespace().next().map(str::to_string))
-        .collect();
+    let list = run("wmctrl", &["-l"]).await.unwrap_or_default();
+    let mut ids = vec![];
+    let mut titles = vec![];
+    for line in list.lines() {
+        let mut parts = line.split_whitespace();
+        if let Some(id) = parts.next() {
+            ids.push(id.to_string());
+            let title = parts.skip(2).collect::<Vec<_>>().join(" ");
+            titles.push((id.to_string(), title));
+        }
+    }
     WinState {
         ids,
+        titles,
         active: active_window().await,
     }
 }
@@ -175,7 +193,7 @@ async fn set_shot(shot_w: i64, shot_h: i64) -> Result<(), String> {
 pub async fn observe() -> Result<String, String> {
     let tree = super::atspi::tree().await?;
 
-    let wins = run("wmctrl", &["l"]).await.unwrap_or_default();
+    let wins = run("wmctrl", &["-l"]).await.unwrap_or_default();
     let wins: String = wins.lines().take(40).collect::<Vec<_>>().join("\n");
 
     Ok(format!(
@@ -207,7 +225,7 @@ pub async fn screen() -> Result<String, String> {
     let (w, h) = dims(&ident)?;
     set_shot(w, h).await?;
 
-    let wins = run("wmctrl", &["l"]).await.unwrap_or_default();
+    let wins = run("wmctrl", &["-l"]).await.unwrap_or_default();
     let wins: String = wins.lines().take(40).collect::<Vec<_>>().join("\n");
 
     let gen = SHOT.lock().await.as_ref().map(|s| s.gen).unwrap_or(0);

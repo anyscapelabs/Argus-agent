@@ -19,6 +19,20 @@ pub(crate) fn obs_token(args: &Value) -> Option<u64> {
     args.get("observation").and_then(|v| v.as_u64())
 }
 
+pub(crate) fn shown_gen_in(output: &str) -> Option<u64> {
+    output
+        .split("Desktop observation ")
+        .nth(1)?
+        .split(|c: char| !c.is_ascii_digit())
+        .next()?
+        .parse()
+        .ok()
+}
+
+pub(crate) async fn note_shown(gen: u64) {
+    atspi::note_shown(gen).await;
+}
+
 pub fn shot_dir() -> std::path::PathBuf {
     data_dir().join("screenshots")
 }

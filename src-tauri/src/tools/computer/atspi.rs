@@ -40,6 +40,11 @@ static SNAPSHOT: AsyncMutex<ObsSnap> = AsyncMutex::const_new(ObsSnap {
     gen: 0,
     elems: Vec::new(),
 });
+static SHOWN: AsyncMutex<Option<u64>> = AsyncMutex::const_new(None);
+
+pub(crate) async fn note_shown(gen: u64) {
+    *SHOWN.lock().await = Some(gen);
+}
 static CONN: OnceCell<atspi::AccessibilityConnection> = OnceCell::const_new();
 
 async fn conn() -> Result<&'static atspi::AccessibilityConnection, String> {
@@ -372,6 +377,13 @@ async fn resolve(args: &Value) -> Result<Elem, String> {
                 snap.gen
             ));
         }
+    } else if let Some(shown) = *SHOWN.lock().await {
+        if shown != snap.gen && ref_index(r, snap.elems.len()).is_some() {
+            return Err(format!(
+                "stale ref {r} from observation {shown} — observation {} is current; run computer.observe for a fresh list",
+                snap.gen
+            ));
+        }
     }
 
     match ref_index(r, snap.elems.len()) {
@@ -415,4 +427,114 @@ pub async fn focus_ref(args: &Value) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod shown_tests {
+    use super::{resolve, Elem, ObsSnap, SHOWN, SNAPSHOT};
+    use std::sync::{Mutex as StdMutex, OnceLock};
+
+    static SERIAL: OnceLock<StdMutex<()>> = OnceLock::new();
+
+    fn elem(name: &str) -> Elem {
+        Elem {
+            role: "push button".into(),
+            name: name.into(),
+            center: Some((10, 10)),
+            password: false,
+            actions: vec!["click".into()],
+            dest: "d".into(),
+            path: "p".into(),
+        }
+    }
+
+    async fn set_table(gen: u64, names: &[&str], shown: Option<u64>) {
+        let mut s = SNAPSHOT.lock().await;
+        *s = ObsSnap {
+            gen,
+            elems: names.iter().map(|n| elem(n)).collect(),
+        };
+        *SHOWN.lock().await = shown;
+    }
+
+    #[tokio::test]
+    async fn tokenless_steady_state_resolves() {
+        let _guard = SERIAL.get_or_init(|| StdMutex::new(())).lock().unwrap();
+        set_table(5, &["a", "b"], Some(5)).await;
+        match resolve(&serde_json::json!({"ref": 1})).await {
+            Ok(e) => assert_eq!(e.name, "a"),
+            Err(e) => panic!("unexpected: {e}"),
+        }
+        match resolve(&serde_json::json!({"ref": 2})).await {
+            Ok(e) => assert_eq!(e.name, "b"),
+            Err(e) => panic!("unexpected: {e}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn tokenless_drift_is_rejected_without_touching_state() {
+        let _guard = SERIAL.get_or_init(|| StdMutex::new(())).lock().unwrap();
+        set_table(5, &["x", "y"], Some(4)).await;
+        match resolve(&serde_json::json!({"ref": 1})).await {
+            Ok(_) => panic!("drifted token-less ref must be stale"),
+            Err(err) => {
+                assert!(err.contains("stale ref 1 from observation 4"), "got: {err}");
+                assert!(err.contains("observation 5 is current"), "got: {err}");
+                assert!(err.contains("computer.observe"), "got: {err}");
+            }
+        }
+        assert_eq!(*SHOWN.lock().await, Some(4));
+        assert_eq!(SNAPSHOT.lock().await.gen, 5);
+    }
+
+    #[tokio::test]
+    async fn tokenless_without_presentation_proceeds() {
+        let _guard = SERIAL.get_or_init(|| StdMutex::new(())).lock().unwrap();
+        set_table(5, &["a"], None).await;
+        match resolve(&serde_json::json!({"ref": 1})).await {
+            Ok(e) => assert_eq!(e.name, "a"),
+            Err(e) => panic!("unexpected: {e}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn tokenless_unknown_ref_under_drift_falls_through() {
+        let _guard = SERIAL.get_or_init(|| StdMutex::new(())).lock().unwrap();
+        set_table(5, &["a"], Some(4)).await;
+        match resolve(&serde_json::json!({"ref": 9})).await {
+            Ok(_) => panic!("out of range ref must fail"),
+            Err(err) => assert!(err.contains("unknown ref"), "got: {err}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_token_paths_unchanged() {
+        let _guard = SERIAL.get_or_init(|| StdMutex::new(())).lock().unwrap();
+        set_table(5, &["a"], Some(5)).await;
+        match resolve(&serde_json::json!({"ref": 1, "observation": 4})).await {
+            Ok(_) => panic!("old explicit token must be stale"),
+            Err(err) => assert!(err.contains("stale ref 1 from observation 4"), "got: {err}"),
+        }
+        match resolve(&serde_json::json!({"ref": 1, "observation": 5})).await {
+            Ok(e) => assert_eq!(e.name, "a"),
+            Err(e) => panic!("unexpected: {e}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn presented_marker_extraction() {
+        assert_eq!(
+            crate::tools::computer::shown_gen_in(
+                "Desktop observation 12 (element refs):\n[0] button 'Go'\n"
+            ),
+            Some(12)
+        );
+        assert_eq!(
+            crate::tools::computer::shown_gen_in(
+                "screenshot: p.png (screenshot observation 4)\nimage 1x1"
+            ),
+            None
+        );
+        assert_eq!(crate::tools::computer::shown_gen_in(""), None);
+    }
 }

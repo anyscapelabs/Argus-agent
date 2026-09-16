@@ -251,6 +251,10 @@ impl ToolExecution {
         self.tool.starts_with("browser.")
     }
 
+    pub fn is_computer_tool(&self) -> bool {
+        self.tool.starts_with("computer.")
+    }
+
     fn body_inner(&self) -> &str {
         if let Some(r) = self.result.as_deref() {
             return r;

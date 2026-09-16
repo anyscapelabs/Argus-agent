@@ -17,9 +17,13 @@
 //! really registered.
 //!
 //! Lock-in: with the walker enumerating, the token-less action fires the
-//! post-drift occupant and the log records exactly that effect. If a
-//! computer-use presented-watermark (browser Design A equivalent) is ever
-//! added, this test must be updated to expect stale rejection instead.
+//! post-drift occupant and the log records exactly that effect.
+//!
+//! Note: this file drives production tools directly, bypassing the agent
+//! loop, so no presented watermark is ever recorded here and the legacy
+//! path stays fully open by design. Loop-level presented grounding (the
+//! browser Design A equivalent for computer use) is covered in
+//! computer_shown_test.rs.
 
 use std::collections::HashMap;
 use std::sync::{Mutex as StdMutex, OnceLock};

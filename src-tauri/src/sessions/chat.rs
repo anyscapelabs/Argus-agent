@@ -358,9 +358,9 @@ pub fn sanitize_tags(s: &str) -> String {
     t
 }
 
-pub async fn send(
+pub async fn send<R: tauri::Runtime>(
     gw: &Gateway,
-    app: &AppHandle,
+    app: &AppHandle<R>,
     session_id: &str,
     content: &str,
     chan: &Channel<StreamEvent>,

@@ -79,6 +79,6 @@ MIT © 2026 Anyscape Labs. See [LICENSE](LICENSE).
 
 Argus exists because of the people who build it. Thank you!
 
-<a href="https://github.com/BYRON-lang"><img src="https://github.com/BYRON-lang.png?size=100" width="100" height="100" alt="BYRON-lang" /></a>
+<a href="https://github.com/BYRON-lang"><img src="https://github.com/BYRON-lang.png?size=64" width="64" height="64" alt="BYRON-lang" style="border-radius:50%" /></a>
 
 Want to contribute? Start with the [contributing guide](docs/README.md) — issues and pull requests are welcome.

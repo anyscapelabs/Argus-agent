@@ -524,6 +524,7 @@ pub async fn send<R: tauri::Runtime>(
 
         let mut edits: Vec<(usize, usize, String)> = vec![];
         let mut append_blocks: Vec<String> = vec![];
+        let mut shown_candidates: Vec<(String, &'static str, String)> = vec![];
 
         for exec in pending.iter_mut() {
             let idx: usize = exec
@@ -629,6 +630,9 @@ pub async fn send<R: tauri::Runtime>(
             );
             let status = exec.result_status();
             let body = exec.result_body().to_string();
+            if is_browser {
+                shown_candidates.push((exec.args.clone(), status, body.clone()));
+            }
             let msg = exec.to_tool_result(RESULT_CLIP);
 
             {
@@ -736,6 +740,18 @@ pub async fn send<R: tauri::Runtime>(
                 params![&asst.id, &updated],
             )
             .map_err(|err| err.to_string())?;
+        }
+
+        for (args_json, status, body) in shown_candidates {
+            if status != "ok" {
+                continue;
+            }
+            let Ok(args_v) = serde_json::from_str::<serde_json::Value>(&args_json) else {
+                continue;
+            };
+            if let Some(gen) = tools::browser::shown_gen_in(&body) {
+                tools::browser::note_shown(&args_v, gen).await;
+            }
         }
 
         acts_run += pending.len();

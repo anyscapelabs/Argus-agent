@@ -85,6 +85,19 @@ impl RefTable {
         self.gen
     }
 
+    pub(crate) fn stale_for_tokenless(
+        &mut self,
+        index: usize,
+        shown: Option<u64>,
+    ) -> Option<String> {
+        match shown {
+            Some(g) if g != self.gen && self.items.get(index).is_some() => {
+                Some(self.stale_recovery(index, g))
+            }
+            _ => None,
+        }
+    }
+
     pub(crate) fn resolve(&self, index: usize, presented: Option<u64>) -> Result<String, String> {
         let entry = self.items.get(index).ok_or_else(|| {
             "unknown ref — run browser.open or browser.read for a fresh list".to_string()
@@ -149,6 +162,7 @@ struct Sess {
     _browser: Browser,
     page: Page,
     elements: RefTable,
+    shown: Option<u64>,
     url: String,
     title: String,
     text_hash: u64,
@@ -282,7 +296,7 @@ fn profile_of(args: &Value) -> String {
         .to_string()
 }
 
-async fn route_profile(args: &Value) -> String {
+pub(crate) fn session_key_for(args: &Value) -> String {
     if let Some(p) = args
         .get("profile")
         .and_then(|v| v.as_str())
@@ -295,6 +309,33 @@ async fn route_profile(args: &Value) -> String {
     match crate::sessions::ext_install::real_enabled() {
         true => "real".into(),
         false => "main".into(),
+    }
+}
+
+async fn route_profile(args: &Value) -> String {
+    session_key_for(args)
+}
+
+pub(crate) fn shown_gen_in(output: &str) -> Option<u64> {
+    output
+        .split("(snapshot ")
+        .nth(1)?
+        .split(|c: char| !c.is_ascii_digit())
+        .next()?
+        .parse()
+        .ok()
+}
+
+pub(crate) async fn note_shown(args: &Value, gen: u64) {
+    let key = session_key_for(args);
+    if self::ext::is_real(&key) {
+        self::ext::note_shown(gen).await;
+        return;
+    }
+    if let Ok(mut map) = pool().sess.try_lock() {
+        if let Some(s) = map.get_mut(&key) {
+            s.shown = Some(gen);
+        }
     }
 }
 
@@ -339,6 +380,7 @@ async fn launch(root: &PathBuf, name: &str) -> Result<Sess, String> {
         _browser: browser,
         page,
         elements: RefTable::default(),
+        shown: None,
         url: String::new(),
         title: String::new(),
         text_hash: 0,
@@ -515,6 +557,11 @@ fn ref_of(args: &Value) -> Result<usize, String> {
 }
 
 async fn target(s: &mut Sess, r: usize, snap: Option<u64>) -> Result<String, String> {
+    if snap.is_none() {
+        if let Some(err) = s.elements.stale_for_tokenless(r, s.shown) {
+            return Err(err);
+        }
+    }
     match s.elements.resolve(r, snap) {
         Ok(p) => Ok(p),
         Err(e) => {
@@ -808,4 +855,95 @@ pub async fn sensitive(tool: &str, args: &Value) -> bool {
     }
 
     false
+}
+
+#[cfg(test)]
+mod shown_tests {
+    use super::{shown_gen_in, RefEntry, RefTable};
+
+    fn table(gen: u64, rows: &[(&str, &str, &str)]) -> RefTable {
+        RefTable {
+            gen,
+            items: rows
+                .iter()
+                .map(|(kind, label, path)| RefEntry {
+                    kind: kind.to_string(),
+                    label: label.to_string(),
+                    path: path.to_string(),
+                })
+                .collect(),
+            recovery_gen: None,
+        }
+    }
+
+    #[test]
+    fn tokenless_steady_state_proceeds() {
+        let mut t = table(5, &[("button", "Go", "b1"), ("input", "Name", "i1")]);
+        assert!(t.stale_for_tokenless(0, Some(5)).is_none());
+        assert!(t.stale_for_tokenless(1, Some(5)).is_none());
+        assert!(t.recovery_gen.is_none());
+    }
+
+    #[test]
+    fn tokenless_drift_returns_bounded_recovery() {
+        let mut t = table(5, &[("button", "Overview", "ov"), ("button", "Go", "b2")]);
+        let first = t
+            .stale_for_tokenless(0, Some(4))
+            .expect("drifted token-less ref must be rejected");
+        assert!(first.contains("stale ref 0 from snapshot 4"));
+        assert!(first.contains("snapshot 5 is current"));
+        assert!(first.contains("Elements (snapshot 5)"));
+        assert!(first.contains("Choose the replacement ref"));
+        assert_eq!(t.recovery_gen, Some(5));
+
+        let second = t
+            .stale_for_tokenless(0, Some(4))
+            .expect("repeat must still be rejected");
+        assert!(second.contains("stale ref"));
+        assert!(
+            !second.contains("Elements (snapshot"),
+            "repeat must not smuggle another snapshot: {second}"
+        );
+        assert!(second.contains("run browser.read"));
+    }
+
+    #[test]
+    fn tokenless_without_presentation_proceeds() {
+        let mut t = table(5, &[("button", "Go", "b1")]);
+        assert!(t.stale_for_tokenless(0, None).is_none());
+        assert!(t.recovery_gen.is_none());
+    }
+
+    #[test]
+    fn tokenless_unknown_ref_under_drift_falls_through() {
+        let mut t = table(5, &[("button", "Go", "b1")]);
+        assert!(t.stale_for_tokenless(9, Some(4)).is_none());
+        assert!(t.recovery_gen.is_none());
+    }
+
+    #[test]
+    fn explicit_resolution_keeps_classic_shape() {
+        let t = table(5, &[("button", "Go", "b1")]);
+        let err = t
+            .resolve(0, Some(4))
+            .expect_err("old explicit snapshot must be stale");
+        assert!(err.contains("stale ref 0 from snapshot 4"));
+        assert!(!err.contains("Choose the replacement"));
+    }
+
+    #[test]
+    fn shown_gen_extraction() {
+        assert_eq!(
+            shown_gen_in(
+                "url u\ntitle t\n---\nbody\n---\nElements (snapshot 12):\n[0] button \"Go\"\n"
+            ),
+            Some(12)
+        );
+        assert_eq!(
+            shown_gen_in("\nElements (snapshot 7): (snapshot failed)\n"),
+            Some(7)
+        );
+        assert_eq!(shown_gen_in("browser closed"), None);
+        assert_eq!(shown_gen_in(""), None);
+    }
 }

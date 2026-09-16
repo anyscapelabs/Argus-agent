@@ -12,6 +12,7 @@ use super::sensitive_pats;
 struct Sess {
     tab_id: i32,
     elements: super::RefTable,
+    shown: Option<u64>,
     url: String,
     title: String,
     text_hash: u64,
@@ -43,6 +44,12 @@ async fn apply_verify(before: Option<super::PageState>, out: String) -> String {
 }
 
 static SESS: AsyncMutex<Option<Sess>> = AsyncMutex::const_new(None);
+
+pub(crate) async fn note_shown(gen: u64) {
+    if let Some(s) = SESS.lock().await.as_mut() {
+        s.shown = Some(gen);
+    }
+}
 
 pub fn is_real(name: &str) -> bool {
     matches!(super::sanitize(name).as_str(), "real" | "chrome")
@@ -91,6 +98,7 @@ pub async fn open(args: &Value) -> Result<String, String> {
     let mut s = Sess {
         tab_id,
         elements: super::RefTable::default(),
+        shown: None,
         url: page_url.clone(),
         title: String::new(),
         text_hash: 0,
@@ -119,6 +127,11 @@ async fn path_of(args: &Value) -> Result<(i32, String), String> {
     let s = g.as_mut().ok_or("no page open — run browser.open first")?;
     s.last_used = Instant::now();
 
+    if snap.is_none() {
+        if let Some(err) = s.elements.stale_for_tokenless(r, s.shown) {
+            return Err(err);
+        }
+    }
     match s.elements.resolve(r, snap) {
         Ok(p) => Ok((s.tab_id, p)),
         Err(e) => {

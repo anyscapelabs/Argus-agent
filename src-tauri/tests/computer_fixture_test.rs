@@ -16,16 +16,16 @@
 //! "l" instead of "-l", so every window list in observe/screen/win_state
 //! was silently empty since the original computer-use commit.
 //!
-//! Deliberately NOT covered (documented limitation): AT-SPI element
-//! discovery and semantic element actions. Chrome's atk-bridge registers
-//! on this isolated a11y bus when the identical stack is driven from a
-//! shell (verified manually: registry child-count > 0), but not when
-//! spawned from this harness (tokio::process, same env, including
-//! AT_SPI_BUS_ADDRESS); the root cause was not identified within this
-//! task. The smallest CI-capable upgrade is a small GTK/AT-SPI test app
-//! launched the same way, or upstream at-spi test scaffolding. Until
-//! then, element-ref behaviors (computer.act, stale element refs) are
-//! covered hermetically in computer_ground_test.rs.
+//! A second enumeration bug was fixed alongside: the walker read the
+//! registry root's `ChildCount` property, which the installed registryd
+//! answers with an incompatible signature, so every tree came back empty.
+//! The walker now uses the `GetChildren` method instead; the window
+//! manager's own application node shows up in this fixture's tree while
+//! xclock (Xaw, no AT-SPI bridge) still exposes nothing.
+//!
+//! Semantic element actions against real apps are covered end-to-end in
+//! computer_act_drift_test.rs (small GTK fixture app); failure paths stay
+//! hermetic in computer_ground_test.rs.
 
 use argus_lib::tools::computer::x11::scale_coords;
 use std::path::PathBuf;
@@ -546,9 +546,10 @@ async fn t_observe_lists_windows(fx: &mut Fixture) -> Result<(), String> {
         out.contains("xclock"),
         format!("no xclock: {}", short(&out)),
     )?;
+    let tree = out.split("Windows:").next().unwrap_or("");
     check(
-        out.contains("no accessible elements"),
-        format!("expected empty isolated tree, got: {}", short(&out)),
+        !tree.contains("xclock"),
+        format!("xclock must expose no tree elements: {}", short(&out)),
     )?;
     Ok(())
 }

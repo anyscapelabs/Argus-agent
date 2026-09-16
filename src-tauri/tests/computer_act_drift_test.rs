@@ -1,5 +1,5 @@
-//! Deterministic diagnostic: token-less `computer.act` cannot reach any
-//! target while production app enumeration yields zero rows.
+//! Deterministic reproduction: token-less `computer.act` after AT-SPI ref
+//! drift executes the CURRENT occupant, not the observed one.
 //!
 //! Suspected defect under test (computer-use equivalent of the browser
 //! pre-Design-A hole): `observe` (generation N, ref R means target A) → UI
@@ -7,27 +7,19 @@
 //! `computer.act({"ref": R})` resolves R against the CURRENT table and fires
 //! against B.
 //!
-//! Fixture (fully isolated: private D-Bus + AT-SPI bus, nested Xephyr
-//! display, metacity; no model, no network, no real desktop): a small GTK
-//! app exposing two push buttons, `relay-v1` and `relay-v2`, each appending
+//! Fixture (fully isolated: one private D-Bus + AT-SPI bus shared by the
+//! test binary because the production AT-SPI connection caches the first bus
+//! it sees, nested Xephyr display and metacity per test; no model, no
+//! network, no real desktop): a small GTK app exposing two push buttons, `relay-v1` and `relay-v2`, each appending
 //! its own id to a side-effect log when activated. A trigger file makes the
-//! app swap the buttons' order with ack-file synchronization.
+//! app swap the buttons' order with ack-file synchronization. Bus-level
+//! enumeration (independent of the production walker) proves both apps are
+//! really registered.
 //!
-//! Finding locked in by this test: both apps ARE registered on the fixture
-//! AT-SPI bus (proven below via bus-level enumeration, independent of the
-//! production walker), yet production `computer.observe` reports zero
-//! elements — the `atspi` client's root `ChildCount` read is incompatible
-//! with the system registryd, and production maps that failure to an empty
-//! table. Consequently every ref, token-less or not, fails closed with
-//! `unknown ref` and NOTHING executes (side-effect log stays empty).
-//!
-//! The suspected wrong-target execution is therefore NOT reproducible
-//! end-to-end here: the defect logic (resolve-against-current on omitted
-//! token) still exists in code, but it is unreachable while enumeration
-//! yields no rows. If the walker is ever fixed, this test's `unknown ref`
-//! expectation will fail — that failure is the tripwire showing the latent
-//! token-less drift hole is now live, at which point a computer-use
-//! presented-watermark (browser Design A equivalent) becomes required.
+//! Lock-in: with the walker enumerating, the token-less action fires the
+//! post-drift occupant and the log records exactly that effect. If a
+//! computer-use presented-watermark (browser Design A equivalent) is ever
+//! added, this test must be updated to expect stale rejection instead.
 
 use std::collections::HashMap;
 use std::sync::{Mutex as StdMutex, OnceLock};
@@ -39,8 +31,98 @@ fn serial() -> std::sync::MutexGuard<'static, ()> {
     SERIAL.get_or_init(|| StdMutex::new(())).lock().unwrap()
 }
 
+struct SharedStack {
+    runtime: std::path::PathBuf,
+    session_bus: String,
+    _daemon: tokio::sync::Mutex<Option<Child>>,
+    _launcher: tokio::sync::Mutex<Option<Child>>,
+}
+
+static SHARED: tokio::sync::OnceCell<SharedStack> = tokio::sync::OnceCell::const_new();
+
+fn sweep_stale_shared() {
+    if let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) {
+        for e in entries.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if !name.starts_with("argus-cactdrift-") && !name.starts_with("argus-cactenum-") {
+                continue;
+            }
+            let pid: u32 = name.rsplit('-').next().unwrap_or("").parse().unwrap_or(0);
+            if pid != 0 && std::fs::read_to_string(format!("/proc/{pid}/comm")).is_ok() {
+                continue;
+            }
+            let _ = std::fs::remove_dir_all(std::env::temp_dir().join(&name));
+        }
+    }
+}
+
+async fn shared_stack() -> Result<&'static SharedStack, String> {
+    SHARED
+        .get_or_try_init(|| async {
+            sweep_stale_shared();
+            let runtime =
+                std::env::temp_dir().join(format!("argus-cactdrift-shared-{}", std::process::id()));
+            std::fs::create_dir_all(&runtime).map_err(|e| e.to_string())?;
+            #[cfg(unix)]
+            std::fs::set_permissions(
+                &runtime,
+                std::os::unix::fs::PermissionsExt::from_mode(0o700),
+            )
+            .map_err(|e| e.to_string())?;
+
+            let mut busd = Command::new("dbus-daemon")
+                .args(["--session", "--print-address=1"])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .kill_on_drop(false)
+                .spawn()
+                .map_err(|e| format!("dbus-daemon: {e}"))?;
+            let mut line = String::new();
+            {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let mut r = BufReader::new(busd.stdout.as_mut().unwrap());
+                r.read_line(&mut line).await.map_err(|e| e.to_string())?;
+            }
+            let bus = line.trim().split(',').next().unwrap_or("").to_string();
+            if bus.is_empty() {
+                return Err("no bus address".to_string());
+            }
+            std::env::set_var("DBUS_SESSION_BUS_ADDRESS", &bus);
+
+            let launcher = Command::new("/usr/libexec/at-spi-bus-launcher")
+                .args(["--launch-immediately", "--a11y=1"])
+                .env("DBUS_SESSION_BUS_ADDRESS", &bus)
+                .env("XDG_RUNTIME_DIR", &runtime)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .kill_on_drop(false)
+                .spawn()
+                .map_err(|e| format!("at-spi-bus-launcher: {e}"))?;
+
+            for _ in 0..60 {
+                if let Ok(entries) = std::fs::read_dir(runtime.join("at-spi")) {
+                    if entries.count() > 0 {
+                        return Ok(SharedStack {
+                            runtime,
+                            session_bus: bus,
+                            _daemon: tokio::sync::Mutex::new(Some(busd)),
+                            _launcher: tokio::sync::Mutex::new(Some(launcher)),
+                        });
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
+            Err("a11y bus never appeared".to_string())
+        })
+        .await
+}
+
 const APP_TITLE: &str = "Relay Console";
 const APP_BUS_NAME: &str = "relay_app.py";
+const LABEL_V1: &str = "relay-v1";
+const LABEL_V2: &str = "relay-v2";
 
 const APP_PY: &str = r#"
 import sys, os
@@ -81,17 +163,6 @@ def check():
 GLib.timeout_add(50, check)
 Gtk.main()
 "#;
-
-fn spawn(prog: &str, args: &[&str]) -> Result<Child, String> {
-    Command::new(prog)
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| format!("{prog}: {e}"))
-}
 
 fn pid_alive(pid: u32) -> bool {
     std::fs::read_to_string(format!("/proc/{pid}/comm")).is_ok()
@@ -168,6 +239,23 @@ fn find_window_id(needle: &str) -> Option<String> {
 fn obs_gen(out: &str) -> Option<u64> {
     let re = regex::Regex::new(r"Desktop observation (\d+)").ok()?;
     re.captures(out)?.get(1)?.as_str().parse().ok()
+}
+
+fn button_refs(out: &str) -> Vec<(u64, String)> {
+    let tree = out.split("Windows:").next().unwrap_or(out);
+    let re = regex::Regex::new(r"\[(\d+)\]\s+push button\s+'([^']+)'").unwrap();
+    re.captures_iter(tree)
+        .filter_map(|c| {
+            Some((
+                c.get(1)?.as_str().parse().ok()?,
+                c.get(2)?.as_str().to_string(),
+            ))
+        })
+        .collect()
+}
+
+fn label_at(refs: &[(u64, String)], r: u64) -> Option<String> {
+    refs.iter().find(|(i, _)| *i == r).map(|(_, l)| l.clone())
 }
 
 fn bus_text(args: &[&str]) -> String {
@@ -295,8 +383,9 @@ fn read_log(path: &std::path::Path) -> Vec<String> {
 }
 
 #[tokio::test]
-async fn tokenless_act_with_no_enumerated_refs_fails_closed() {
+async fn tokenless_act_after_atspi_reorder_executes_current_occupant() {
     let _guard = serial();
+    let stack = shared_stack().await.expect("shared bus stack");
 
     let prev = [
         "DISPLAY",
@@ -313,58 +402,12 @@ async fn tokenless_act_with_no_enumerated_refs_fails_closed() {
         uuid::Uuid::new_v4().as_simple()
     ));
     std::fs::create_dir_all(&tmp).unwrap();
-    let runtime = tmp.join("runtime");
-    std::fs::create_dir_all(&runtime).unwrap();
-    #[cfg(unix)]
-    std::fs::set_permissions(
-        &runtime,
-        std::os::unix::fs::PermissionsExt::from_mode(0o700),
-    )
-    .unwrap();
 
-    let mut procs: Vec<Child> = vec![];
-
-    let mut busd = Command::new("dbus-daemon")
-        .args(["--session", "--print-address=1"])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-        .expect("dbus-daemon");
-    let mut line = String::new();
-    {
-        use tokio::io::{AsyncBufReadExt, BufReader};
-        let mut r = BufReader::new(busd.stdout.as_mut().unwrap());
-        r.read_line(&mut line).await.expect("bus address");
-    }
-    let bus = line.trim().split(',').next().unwrap_or("").to_string();
-    assert!(!bus.is_empty(), "no bus address");
-    procs.push(busd);
-
-    std::env::set_var("DBUS_SESSION_BUS_ADDRESS", &bus);
-    std::env::set_var("XDG_RUNTIME_DIR", &runtime);
+    std::env::set_var("DBUS_SESSION_BUS_ADDRESS", &stack.session_bus);
+    std::env::set_var("XDG_RUNTIME_DIR", &stack.runtime);
     std::env::set_var("XDG_DATA_HOME", &tmp);
 
-    procs.push(
-        spawn(
-            "/usr/libexec/at-spi-bus-launcher",
-            &["--launch-immediately", "--a11y=1"],
-        )
-        .expect("launcher"),
-    );
-    let mut a11y_up = false;
-    for _ in 0..60 {
-        if let Ok(entries) = std::fs::read_dir(runtime.join("at-spi")) {
-            if entries.count() > 0 {
-                a11y_up = true;
-                break;
-            }
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-    }
-    assert!(a11y_up, "a11y bus never appeared");
-    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+    let mut procs: Vec<Child> = vec![];
 
     let display = free_display();
     let sock = format!("/tmp/.X11-unix/X{}", display.trim_start_matches(':'));
@@ -465,9 +508,25 @@ async fn tokenless_act_with_no_enumerated_refs_fails_closed() {
         .await
         .expect("observe#1");
     let gen_n = obs_gen(&out1).expect("observe#1 must carry a generation");
+    let refs1 = button_refs(&out1);
     assert!(
-        out1.contains("no accessible elements"),
-        "production walker currently enumerates zero apps: {out1}"
+        refs1.iter().any(|(_, l)| l == LABEL_V1) && refs1.iter().any(|(_, l)| l == LABEL_V2),
+        "production walker must see both relays in observe#1: {refs1:?}\nraw:\n{out1}"
+    );
+    let r = refs1
+        .iter()
+        .find(|(_, l)| l == LABEL_V1)
+        .map(|(i, _)| *i)
+        .unwrap();
+    let r_other = refs1
+        .iter()
+        .find(|(_, l)| l == LABEL_V2)
+        .map(|(i, _)| *i)
+        .unwrap();
+    assert_ne!(r, r_other, "relays must start at distinct refs");
+    assert!(
+        read_log(&log_path).is_empty(),
+        "setup must not activate any relay"
     );
 
     std::fs::write(&trigger_path, "swap\n").unwrap();
@@ -489,12 +548,22 @@ async fn tokenless_act_with_no_enumerated_refs_fails_closed() {
         gen_n, gen_n1,
         "generations must advance across observations"
     );
+    let refs2 = button_refs(&out2);
+    let occupant = label_at(&refs2, r).expect("ref R must still exist after drift");
+    assert_ne!(
+        occupant, LABEL_V1,
+        "ref {r} must identify a different element after drift: {refs2:?}"
+    );
+    assert_eq!(
+        occupant, LABEL_V2,
+        "ref {r} must now mean relay-v2: {refs2:?}"
+    );
     assert!(
         read_log(&log_path).is_empty(),
         "mapping must not activate any relay"
     );
 
-    let args = r#"{"ref":0}"#.to_string();
+    let args = format!(r#"{{"ref":{r}}}"#);
     assert!(
         !args.contains("observation"),
         "this test is token-less by construction"
@@ -505,6 +574,18 @@ async fn tokenless_act_with_no_enumerated_refs_fails_closed() {
     for mut p in procs {
         let _ = p.kill().await;
     }
+    let mut drained = false;
+    for _ in 0..60 {
+        if find_window_id(APP_TITLE).is_none() {
+            drained = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+    assert!(
+        drained,
+        "relay app window must vanish before releasing the fixture"
+    );
     for (k, v) in prev {
         match v {
             Some(v) => std::env::set_var(k, v),
@@ -512,24 +593,184 @@ async fn tokenless_act_with_no_enumerated_refs_fails_closed() {
         }
     }
 
-    eprintln!("=== TOKEN-LESS ACT PRE-ENUMERATION TRACE ===");
+    eprintln!("=== TOKEN-LESS ACT DRIFT TRACE ===");
     eprintln!("registered_apps={registered} app_names={app_names:?}");
-    eprintln!("initial_generation={gen_n} production_refs=none");
-    eprintln!("post_drift_generation={gen_n1} production_refs=none");
+    eprintln!("initial_generation={gen_n} original_ref={r} original_identity={LABEL_V1}");
+    eprintln!("post_drift_generation={gen_n1} occupant_of_ref_{r}={occupant}");
     eprintln!("production_action=computer.act args={args} token_omitted=true");
     eprintln!("act_result={act_out:?}");
     eprintln!("side_effect_log={effects:?}");
 
-    let verdict = match &act_out {
-        Err(e) if e.contains("unknown ref") && effects.is_empty() => "MASKED-FAIL-CLOSED",
-        _ => "UNEXPECTED",
+    let verdict = if effects == vec![LABEL_V2.to_string()] {
+        "PROVEN"
+    } else {
+        "NOT-REPRODUCED"
     };
     eprintln!("verdict={verdict}");
 
     let _ = std::fs::remove_dir_all(&tmp);
     let _ = std::fs::remove_dir_all(&gw_base);
     assert_eq!(
-        verdict, "MASKED-FAIL-CLOSED",
-        "token-less act must fail closed with zero side effects; see trace"
+        verdict, "PROVEN",
+        "expected wrong-target execution; see trace"
     );
+}
+
+#[tokio::test]
+async fn production_observe_enumerates_registered_buttons() {
+    let _guard = serial();
+    let stack = shared_stack().await.expect("shared bus stack");
+
+    let prev = [
+        "DISPLAY",
+        "DBUS_SESSION_BUS_ADDRESS",
+        "XDG_DATA_HOME",
+        "XDG_RUNTIME_DIR",
+    ]
+    .iter()
+    .map(|k| (k.to_string(), std::env::var(k).ok()))
+    .collect::<Vec<_>>();
+    let tmp = std::env::temp_dir().join(format!(
+        "argus-cactenum-{}-{}",
+        std::process::id(),
+        uuid::Uuid::new_v4().as_simple()
+    ));
+    std::fs::create_dir_all(&tmp).unwrap();
+
+    std::env::set_var("DBUS_SESSION_BUS_ADDRESS", &stack.session_bus);
+    std::env::set_var("XDG_RUNTIME_DIR", &stack.runtime);
+    std::env::set_var("XDG_DATA_HOME", &tmp);
+
+    let mut procs: Vec<Child> = vec![];
+
+    let display = free_display();
+    let sock = format!("/tmp/.X11-unix/X{}", display.trim_start_matches(':'));
+    procs.push(
+        Command::new("Xephyr")
+            .args([display.as_str(), "-screen", "800x600", "-ac"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("xephyr"),
+    );
+    let mut up = false;
+    for _ in 0..100 {
+        if std::path::Path::new(&sock).exists() {
+            up = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert!(up, "xephyr never came up");
+    std::env::set_var("DISPLAY", &display);
+
+    procs.push(
+        Command::new("metacity")
+            .args(["--display", display.as_str()])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("metacity"),
+    );
+    let mut wm_ok = false;
+    for _ in 0..60 {
+        let ok = std::process::Command::new("xprop")
+            .args(["-root", "_NET_SUPPORTING_WM_CHECK"])
+            .output()
+            .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).contains("0x"))
+            .unwrap_or(false);
+        if ok {
+            wm_ok = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+    assert!(wm_ok, "no window manager");
+
+    let app_py = tmp.join("relay_app.py");
+    let log_path = tmp.join("relay.log");
+    let trigger_path = tmp.join("reorder.trigger");
+    let ack_path = tmp.join("reorder.ack");
+    std::fs::write(&app_py, APP_PY).unwrap();
+    std::fs::write(&log_path, "").unwrap();
+    procs.push(
+        Command::new("python3")
+            .args([
+                app_py.to_str().unwrap(),
+                log_path.to_str().unwrap(),
+                trigger_path.to_str().unwrap(),
+                ack_path.to_str().unwrap(),
+            ])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("relay app"),
+    );
+    let mut mapped = false;
+    for _ in 0..60 {
+        if find_window_id(APP_TITLE).is_some() {
+            mapped = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+    assert!(mapped, "relay app window never mapped");
+
+    let addr = a11y_address();
+    assert!(!addr.is_empty(), "a11y bus address must be discoverable");
+    let registered = a11y_child_count(&addr).unwrap_or(0);
+    let app_names = a11y_app_names(&addr, registered);
+    assert!(
+        app_names.iter().any(|n| n == APP_BUS_NAME),
+        "relay app must be registered on the fixture a11y bus: {app_names:?}"
+    );
+
+    let (gw, gw_base) = test_gw();
+    let out = exec(&gw, "computer.observe", "{}").await.expect("observe");
+    let gen = obs_gen(&out).expect("observe must carry a generation");
+    assert!(
+        out.contains(APP_BUS_NAME),
+        "production walker must report the registered app: {out}"
+    );
+    let mut labels: Vec<String> = button_refs(&out).into_iter().map(|(_, l)| l).collect();
+    labels.sort();
+    assert_eq!(
+        labels,
+        vec![LABEL_V1.to_string(), LABEL_V2.to_string()],
+        "walker must see exactly the registered buttons"
+    );
+
+    for mut p in procs {
+        let _ = p.kill().await;
+    }
+    let mut drained = false;
+    for _ in 0..60 {
+        if find_window_id(APP_TITLE).is_none() {
+            drained = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+    assert!(
+        drained,
+        "relay app window must vanish before releasing the fixture"
+    );
+    for (k, v) in prev {
+        match v {
+            Some(v) => std::env::set_var(k, v),
+            None => std::env::remove_var(k),
+        }
+    }
+
+    eprintln!("=== ENUMERATION CROSS-CHECK TRACE ===");
+    eprintln!("bus_apps={app_names:?} production_buttons={labels:?} generation={gen}");
+
+    let _ = std::fs::remove_dir_all(&tmp);
+    let _ = std::fs::remove_dir_all(&gw_base);
 }

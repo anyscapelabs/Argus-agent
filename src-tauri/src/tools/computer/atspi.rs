@@ -105,18 +105,18 @@ pub async fn tree() -> Result<String, String> {
     let mut elems: Vec<Elem> = Vec::new();
 
     let root = accessible(c, ROOT_DEST, ROOT_PATH).await?;
-    let count = root.child_count().await.unwrap_or(0);
     let mut g = 0usize;
 
-    for i in 0..count.min(30) {
+    for app in root
+        .get_children()
+        .await
+        .unwrap_or_default()
+        .iter()
+        .take(30)
+    {
         if elems.len() >= MAX_ELEMS {
             break;
         }
-
-        let app = match root.get_child_at_index(i).await {
-            Ok(app) => app,
-            Err(_) => continue,
-        };
 
         let dest = app.name_as_str().unwrap_or_default().to_string();
         if dest.is_empty() {

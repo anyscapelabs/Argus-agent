@@ -51,8 +51,16 @@ async fn exec(gw: &argus_lib::gateway::Gateway, tool: &str, args: &str) -> Resul
 }
 
 fn state(ids: &[&str], active: Option<&str>) -> WinState {
+    state_titled(ids, active, &[])
+}
+
+fn state_titled(ids: &[&str], active: Option<&str>, titles: &[(&str, &str)]) -> WinState {
     WinState {
         ids: ids.iter().map(|s| s.to_string()).collect(),
+        titles: titles
+            .iter()
+            .map(|(id, t)| (id.to_string(), t.to_string()))
+            .collect(),
         active: active.map(str::to_string),
     }
 }
@@ -78,6 +86,15 @@ fn verification_notes_need_real_change() {
 
     let after = state(&["0x2", "0x1"], Some("0x1"));
     assert_eq!(verify_windows_note(&before, &after), None);
+
+    let after = state_titled(&["0x1", "0x2"], Some("0x1"), &[("0x1", "A"), ("0x2", "B2")]);
+    assert_eq!(
+        verify_windows_note(
+            &state_titled(&["0x1", "0x2"], Some("0x1"), &[("0x1", "A"), ("0x2", "B")]),
+            &after
+        ),
+        Some("note: verified: window title changed".into())
+    );
 
     let after = state(&["0x1", "0x2"], Some("0x2"));
     assert_eq!(

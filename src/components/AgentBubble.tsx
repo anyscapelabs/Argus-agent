@@ -56,6 +56,7 @@ type Props = {
   onVote?: (next: "up" | "down" | null) => void;
   onRetry?: () => void;
   liveTerm?: LiveTerm;
+  hideActions?: boolean;
 };
 
 const HEADING_CLS: Record<string, string> = {
@@ -639,6 +640,7 @@ export default function AgentBubble({
   onVote,
   onRetry,
   liveTerm,
+  hideActions,
 }: Props) {
   const tree: XmlTree | null = useMemo(
     () => (text !== undefined ? parse(text) : null),
@@ -674,7 +676,7 @@ export default function AgentBubble({
 
       {caret && !hasBlocks && <span className="stream-caret" />}
 
-      {text !== undefined && text.length > 0 && !caret && (
+      {text !== undefined && text.length > 0 && !caret && !hideActions && (
         <div className="flex items-center gap-1 text-text-secondary">
           <button
             type="button"

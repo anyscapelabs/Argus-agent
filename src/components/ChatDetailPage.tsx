@@ -3,6 +3,11 @@ import { useEffect, useRef, useState } from "react";
 import AgentBubble from "./AgentBubble";
 import ChatInput from "./ChatInput";
 import UserBubble from "./UserBubble";
+import { parse } from "../lib/agentXml";
+import WorkSummary, {
+  formatWorked,
+  parseDbTime,
+} from "./agent/WorkSummary";
 import { useChatModels } from "../hooks/useChatModels";
 import { sessionStore, useSessions, type Turn } from "../stores/sessions";
 import type { MsgRow } from "../lib/ipc";
@@ -207,14 +212,34 @@ export default function ChatDetailPage({ sessionId }: Props) {
           className="mx-auto flex w-full min-w-0 max-w-[700px] flex-col gap-3"
         >
           {groups.map((group, gi) => {
-            const text = group.agent
-              .filter((a) => a.role === "assistant")
-              .map((a) => a.content)
-              .join("\n\n");
-            const last = [...group.agent]
-              .reverse()
-              .find((a) => a.role === "assistant");
+            const assistants = group.agent.filter((a) => a.role === "assistant");
+            const prior = assistants
+              .slice(0, -1)
+              .filter((a) => a.content.trim().length > 0);
+            const last = assistants[assistants.length - 1];
             const live = running && gi === groups.length - 1;
+            const priorText = prior.map((a) => a.content).join("\n\n");
+            let priorHasTools = false;
+            try {
+              priorHasTools = parse(priorText).some(
+                (b) =>
+                  b.tag === "action" ||
+                  b.tag === "terminal" ||
+                  b.tag === "browser-action",
+              );
+            } catch {
+              priorHasTools = false;
+            }
+            const showSummary = !live && priorHasTools;
+            const allText = assistants.map((a) => a.content).join("\n\n");
+
+            const startMs =
+              parseDbTime(prior[0]?.created_at) ??
+              parseDbTime(group.usr?.created_at);
+            const endMs = live
+              ? Date.now()
+              : (parseDbTime(last?.created_at) ?? null);
+            const workLabel = formatWorked(startMs, endMs);
 
             return (
               <div
@@ -233,35 +258,61 @@ export default function ChatDetailPage({ sessionId }: Props) {
                     {group.usr.content}
                   </UserBubble>
                 )}
-                <AgentBubble
-                  text={text}
-                  caret={live}
-                  liveTerm={
-                    live
-                      ? {
-                          term: turn?.term ?? {},
-                          termCode: turn?.termCode ?? {},
-                          approval: turn?.approval ?? null,
-                          sessionId,
+                {showSummary ? (
+                  <>
+                    <WorkSummary label={workLabel}>
+                      <AgentBubble text={priorText} hideActions />
+                    </WorkSummary>
+                    <AgentBubble
+                      text={last?.content}
+                      vote={voteOf(last?.id ?? "")}
+                      onVote={(v) => {
+                        if (last === undefined) {
+                          return;
                         }
-                      : undefined
-                  }
-                  vote={live ? null : voteOf(last?.id ?? "")}
-                  onVote={(v) => {
-                    if (last === undefined) {
-                      return;
-                    }
 
-                    sessionStore.setVote(sessionId, last.id, v);
-                  }}
-                  onRetry={() => {
-                    if (group.usr === null) {
-                      return;
-                    }
+                        sessionStore.setVote(sessionId, last.id, v);
+                      }}
+                      onRetry={() => {
+                        if (group.usr === null) {
+                          return;
+                        }
 
-                    retryFrom(group.usr.id);
-                  }}
-                />
+                        retryFrom(group.usr.id);
+                      }}
+                    />
+                  </>
+                ) : (
+                  <AgentBubble
+                    text={allText}
+                    caret={live}
+                    liveTerm={
+                      live
+                        ? {
+                            term: turn?.term ?? {},
+                            termCode: turn?.termCode ?? {},
+                            approval: turn?.approval ?? null,
+                            sessionId,
+                          }
+                        : undefined
+                    }
+                    vote={live ? null : voteOf(last?.id ?? "")}
+                    onVote={(v) => {
+                      if (last === undefined) {
+                        return;
+                      }
+
+                      sessionStore.setVote(sessionId, last.id, v);
+                    }}
+                    onRetry={() => {
+                      if (group.usr === null) {
+                        return;
+                      }
+
+                      retryFrom(group.usr.id);
+                    }}
+                  />
+                )}
               </div>
             );
           })}

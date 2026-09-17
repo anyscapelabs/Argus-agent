@@ -128,6 +128,11 @@ pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String
         system.push_str(sum);
     }
 
+    if let Some(notes) = crate::tools::notepad::prompt_include(session_id) {
+        system.push_str("\n\n");
+        system.push_str(&notes);
+    }
+
     let mut stmt = conn
         .prepare(
             "SELECT role, content, tool_calls, tool_call_id FROM messages

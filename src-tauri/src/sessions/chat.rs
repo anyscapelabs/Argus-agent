@@ -848,7 +848,7 @@ pub async fn sess_chat_stream(
 
     let out = tokio::select! {
         _ = notify.notified() => Err("stopped".into()),
-        out = send(&gw, &app, &session_id, &content, &on_event) => out,
+        out = crate::tools::notepad::SESSION_ID.scope(Some(session_id.clone()), send(&gw, &app, &session_id, &content, &on_event)) => out,
     };
 
     if let Ok(mut tasks) = gw.tasks.lock() {

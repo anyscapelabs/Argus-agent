@@ -234,28 +234,71 @@ fn search_files(conn: &Connection, q: &str, limit: i64) -> Vec<RecallHit> {
     out
 }
 
-fn neighbors(conn: &Connection, seeds: &HashSet<String>) -> HashSet<String> {
-    let mut extra = HashSet::new();
-    if seeds.is_empty() {
-        return extra;
-    }
-    let Ok(mut stmt) = conn.prepare("SELECT from_id, to_id FROM memory_links") else {
-        return extra;
+fn expand_seeds(
+    conn: &Connection,
+    seeds: &HashSet<String>,
+    depth: u32,
+    cap: usize,
+) -> Vec<(u32, String)> {
+    let mut graph: DiGraph<String, ()> = DiGraph::new();
+    let mut idx: HashMap<String, NodeIndex> = HashMap::new();
+    let mut stmt = match conn.prepare("SELECT from_id, to_id FROM memory_links LIMIT 5000") {
+        Ok(s) => s,
+        Err(_) => return vec![],
     };
-    let Ok(rows) = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))) else {
-        return extra;
+    let rows = match stmt.query_map([], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    }) {
+        Ok(r) => r,
+        Err(_) => return vec![],
     };
     for r in rows.flatten() {
-        let a = r.0.clone();
-        let b = r.1.clone();
-        if seeds.contains(&a) {
-            extra.insert(b.clone());
-        }
-        if seeds.contains(&b) {
-            extra.insert(a);
+        let a = *idx
+            .entry(r.0.clone())
+            .or_insert_with(|| graph.add_node(r.0.clone()));
+        let b = *idx
+            .entry(r.1.clone())
+            .or_insert_with(|| graph.add_node(r.1.clone()));
+        graph.add_edge(a, b, ());
+    }
+
+    let mut dist: HashMap<NodeIndex, u32> = HashMap::new();
+    let mut queue = std::collections::VecDeque::new();
+    for s in seeds {
+        if let Some(n) = idx.get(s) {
+            dist.insert(*n, 0);
+            queue.push_back(*n);
         }
     }
-    extra
+    while let Some(n) = queue.pop_front() {
+        let d = dist[&n];
+        if d >= depth {
+            continue;
+        }
+        for m in graph
+            .neighbors_directed(n, petgraph::Direction::Outgoing)
+            .chain(graph.neighbors_directed(n, petgraph::Direction::Incoming))
+        {
+            if !dist.contains_key(&m) {
+                dist.insert(m, d + 1);
+                queue.push_back(m);
+            }
+        }
+    }
+
+    let mut out: Vec<(u32, String)> = dist
+        .into_iter()
+        .filter_map(|(n, d)| {
+            let id = graph.node_weight(n)?.clone();
+            if d == 0 || seeds.contains(&id) {
+                return None;
+            }
+            Some((d, id))
+        })
+        .collect();
+    out.sort();
+    out.truncate(cap);
+    out
 }
 
 pub fn recall(conn: &Connection, query: &str, limit: i64) -> Result<Vec<RecallHit>, String> {
@@ -278,18 +321,14 @@ pub fn recall(conn: &Connection, query: &str, limit: i64) -> Result<Vec<RecallHi
     hits.extend(search_summaries(conn, &q, per));
     hits.extend(search_files(conn, &q, per));
     let seeds: HashSet<String> = hits.iter().map(|h| h.ref_id.clone()).collect();
-    let extra = neighbors(conn, &seeds);
-    if !extra.is_empty() {
-        let ids: Vec<String> = extra.into_iter().take(per as usize).collect();
-        for id in ids {
-            if let Ok(m) = get(conn, &id) {
-                hits.push(RecallHit {
-                    source: "memory".into(),
-                    ref_id: m.id.clone(),
-                    session_id: m.session_id.clone(),
-                    snippet: clip(&m.content, 280),
-                });
-            }
+    for (_d, id) in expand_seeds(conn, &seeds, 2, per as usize) {
+        if let Ok(m) = get(conn, &id) {
+            hits.push(RecallHit {
+                source: "memory".into(),
+                ref_id: m.id.clone(),
+                session_id: m.session_id.clone(),
+                snippet: clip(&m.content, 280),
+            });
         }
     }
     hits.truncate(limit.max(1) as usize);

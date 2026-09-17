@@ -210,7 +210,7 @@ export default function ToolActivity({
         />
       </button>
       {open && (
-        <div className="ml-2.5 mt-1 flex flex-col border-l border-border-primary/60 pl-4">
+        <div className="ml-2.5 mt-1 flex flex-col pl-4">
           {steps.map((step, i) => (
             <div key={i} className="flex flex-col gap-1 py-1">
               <span

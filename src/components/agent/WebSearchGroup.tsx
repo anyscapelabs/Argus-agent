@@ -55,7 +55,7 @@ export default function WebSearchGroup({ blocks, live = false }: Props) {
         />
       </button>
       {open && (
-        <div className="ml-3 flex flex-col gap-1 border-l border-border-primary/60 pl-4 pt-2">
+        <div className="ml-3 flex flex-col gap-1 pl-4 pt-2">
           {blocks.map((blk, idx) => {
             const tool = blk.attrs.tool ?? "";
             const body = blk.children.map((c) => c.value).join("").trim();

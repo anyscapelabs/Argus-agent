@@ -1,4 +1,5 @@
 pub mod schema;
+pub mod session_memory;
 pub mod store;
 
 use tauri::State;

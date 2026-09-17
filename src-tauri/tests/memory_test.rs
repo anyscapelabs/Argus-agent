@@ -140,3 +140,98 @@ fn recall_spans_messages_summaries_files_and_graph() {
     assert!(sources.contains(&"file".to_string()));
     let _ = mem;
 }
+
+fn project_db() -> rusqlite::Connection {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    conn.execute_batch(argus_lib::gateway::schema::MIGRATE).unwrap();
+    argus_lib::sessions::store::migrate(&conn).unwrap();
+    argus_lib::skills::store::migrate(&conn).unwrap();
+    argus_lib::memory::store::migrate(&conn).unwrap();
+    conn
+}
+
+fn project_session(conn: &rusqlite::Connection, title: &str) -> String {
+    use argus_lib::sessions::schema::NewSession;
+    argus_lib::sessions::store::create_session(
+        conn,
+        &NewSession {
+            title: title.into(),
+            model_id: Some("mock/test".into()),
+            permission: Some("never".into()),
+            folder_id: None,
+            web_search: false,
+        },
+    )
+    .unwrap()
+    .id
+}
+
+fn say(conn: &rusqlite::Connection, session: &str, role: &str, content: &str) {
+    use argus_lib::sessions::schema::NewMsg;
+    argus_lib::sessions::store::add_msg(
+        conn,
+        &NewMsg {
+            session_id: session.into(),
+            role: role.into(),
+            content: content.into(),
+            model_id: None,
+            provider_id: None,
+            tok_in: None,
+            tok_out: None,
+            tool_calls: None,
+            tool_call_id: None,
+        },
+    )
+    .unwrap();
+}
+
+fn remember(conn: &rusqlite::Connection, content: &str) {
+    store::save(
+        conn,
+        &NewMemory {
+            content: content.into(),
+            kind: Some("fact".into()),
+            importance: Some(3),
+            session_id: None,
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+fn session_start_injects_relevant_memory() {
+    let conn = project_db();
+    remember(&conn, "Brnx deploys the backend with docker compose up every Friday");
+    remember(&conn, "pancake recipe needs extra vanilla and warm milk");
+    let s = project_session(&conn, "t1");
+    say(&conn, &s, "user", "how do I deploy the backend with docker");
+
+    let p = argus_lib::prompt::project(&conn, &s).unwrap();
+    assert!(p.system.contains("## Relevant memories"), "{}", p.system);
+    let block = p.system.split("## Relevant memories").nth(1).unwrap_or("");
+    assert!(block.contains("docker compose"), "{}", block);
+    assert!(!block.contains("pancake"), "{}", block);
+}
+
+#[test]
+fn session_start_skips_recall_after_first_exchange() {
+    let conn = project_db();
+    remember(&conn, "Brnx deploys the backend with docker compose up every Friday");
+    let s = project_session(&conn, "t2");
+    say(&conn, &s, "user", "how do I deploy the backend with docker");
+    say(&conn, &s, "assistant", "run docker compose up");
+    say(&conn, &s, "user", "and then what about docker volumes");
+
+    let p = argus_lib::prompt::project(&conn, &s).unwrap();
+    assert!(!p.system.contains("## Relevant memories"), "{}", p.system);
+}
+
+#[test]
+fn session_start_with_no_memories_injects_nothing() {
+    let conn = project_db();
+    let s = project_session(&conn, "t3");
+    say(&conn, &s, "user", "how do I deploy the backend with docker");
+
+    let p = argus_lib::prompt::project(&conn, &s).unwrap();
+    assert!(!p.system.contains("## Relevant memories"), "{}", p.system);
+}

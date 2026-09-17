@@ -284,11 +284,11 @@ export default function ChatDetailPage({ sessionId }: Props) {
                   </>
                 ) : live ? (
                   <>
-                    <WorkSummary label={workLabel} live startedAt={startMs}>
-                      {priorText ? (
+                    {priorHasTools && (
+                      <WorkSummary label={workLabel} live startedAt={startMs}>
                         <AgentBubble text={priorText} hideActions />
-                      ) : null}
-                    </WorkSummary>
+                      </WorkSummary>
+                    )}
                     <AgentBubble
                       text={allText}
                       caret

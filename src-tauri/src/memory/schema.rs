@@ -18,7 +18,7 @@ DROP TRIGGER IF EXISTS memory_fts_ad;
 DROP TRIGGER IF EXISTS memory_fts_au;
 DROP TABLE IF EXISTS memory_fts;
 CREATE VIRTUAL TABLE memory_fts USING fts5(
-  content, kind
+  content, kind, tokenize='porter'
 );
 
 CREATE TRIGGER memory_fts_ai AFTER INSERT ON memories BEGIN
@@ -65,24 +65,32 @@ CREATE TABLE IF NOT EXISTS session_memory (
 CREATE INDEX IF NOT EXISTS idx_session_memory_session ON session_memory(session_id);
 CREATE INDEX IF NOT EXISTS idx_session_memory_importance ON session_memory(importance);
 
-CREATE VIRTUAL TABLE IF NOT EXISTS session_memory_fts USING fts5(
-  task, summary
+DROP TRIGGER IF EXISTS session_memory_fts_ai;
+DROP TRIGGER IF EXISTS session_memory_fts_ad;
+DROP TRIGGER IF EXISTS session_memory_fts_au;
+DROP TABLE IF EXISTS session_memory_fts;
+CREATE VIRTUAL TABLE session_memory_fts USING fts5(
+  task, summary, tokenize='porter'
 );
 
-CREATE TRIGGER IF NOT EXISTS session_memory_fts_ai AFTER INSERT ON session_memory BEGIN
+CREATE TRIGGER session_memory_fts_ai AFTER INSERT ON session_memory BEGIN
   INSERT INTO session_memory_fts(rowid, task, summary)
   VALUES (new.rowid, new.task, new.summary);
 END;
 
-CREATE TRIGGER IF NOT EXISTS session_memory_fts_ad AFTER DELETE ON session_memory BEGIN
+CREATE TRIGGER session_memory_fts_ad AFTER DELETE ON session_memory BEGIN
   DELETE FROM session_memory_fts WHERE rowid = old.rowid;
 END;
 
-CREATE TRIGGER IF NOT EXISTS session_memory_fts_au AFTER UPDATE ON session_memory BEGIN
+CREATE TRIGGER session_memory_fts_au AFTER UPDATE ON session_memory BEGIN
   DELETE FROM session_memory_fts WHERE rowid = old.rowid;
   INSERT INTO session_memory_fts(rowid, task, summary)
   VALUES (new.rowid, new.task, new.summary);
 END;
+
+INSERT INTO session_memory_fts(rowid, task, summary)
+  SELECT rowid, task, summary FROM session_memory
+  WHERE rowid NOT IN (SELECT rowid FROM session_memory_fts);
 
 CREATE TABLE IF NOT EXISTS session_memory_links (
   from_id    TEXT NOT NULL,

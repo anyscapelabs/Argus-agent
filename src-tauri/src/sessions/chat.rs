@@ -780,6 +780,16 @@ pub async fn send<R: tauri::Runtime>(
     }
 
     {
+        let tools_seen: Vec<String> = recent.iter().map(|(t, _)| t.clone()).collect();
+        let mut ep =
+            crate::memory::session_memory::session_memory_from_turn(content, &tools_seen, finished);
+        ep.session_id = session_id.into();
+        if let Ok(conn) = gw.conn.lock() {
+            let _ = crate::memory::session_memory::save_session_memory(&conn, &ep);
+        }
+    }
+
+    {
         let conn = gw.conn.lock().map_err(|err| err.to_string())?;
         store::touch_session(&conn, session_id, tok_in_sum)?;
     }

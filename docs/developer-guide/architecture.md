@@ -13,7 +13,7 @@ src-tauri/src/        Rust backend (rustfmt: 4 spaces, 100 cols)
   sessions/           Chat loop (chat.rs), sessions/folders store, browser import, ext install
   gateway/            Providers, model catalog, router with failover, keyring secrets
   prompt/             System prompt assembly, per-model context windows, compaction
-  tools/              terminal, grep, fs, web, browser/*, computer/* (atspi + x11)
+  tools/              terminal, grep, fs, web, browser/*
   skills/ library/    CRUD + file sync
   connectors/         Connector registry, shared token vault, connector_logs
   mcp/                External MCP stdio clients + service modules (google, github, slack…)

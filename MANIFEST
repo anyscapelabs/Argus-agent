@@ -26,8 +26,9 @@ all-seeing process monitor** — the first daemon that never sleeps.
 
 - **Agent chat** — persistent sessions, `ask`/`never` permission modes,
   streaming tool output, compacting summaries.
-- **Computer use** — AT-SPI accessibility-tree grounding with observation
-  tokens, screenshot coordinate grounding, window management, app launching.
+- **Computer control** — terminal-first: streaming shell with cwd and
+  configurable timeouts, recursive grep with file globs, files, processes,
+  installs, and scripts.
 - **Browser use** — snapshot-ref interaction with stale-reference recovery,
   via extension or isolated profiles.
 - **Terminal & files** — shell execution, recursive search, file I/O.

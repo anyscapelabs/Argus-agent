@@ -11,6 +11,8 @@ use tokio::sync::watch;
 use crate::gateway::schema::StreamEvent;
 
 const TERM_TIMEOUT: Duration = Duration::from_secs(120);
+const TERM_TIMEOUT_MIN: u64 = 10;
+const TERM_TIMEOUT_MAX: u64 = 1800;
 const DRAIN: Duration = Duration::from_secs(2);
 
 type Buf = Arc<StdMutex<String>>;
@@ -62,6 +64,11 @@ pub async fn run_stream(
     chan: Option<&Channel<StreamEvent>>,
 ) -> Result<(String, i64), String> {
     let cmd = args["command"].as_str().ok_or("terminal needs a command")?;
+    let timeout = args["timeout"]
+        .as_u64()
+        .unwrap_or(TERM_TIMEOUT.as_secs())
+        .clamp(TERM_TIMEOUT_MIN, TERM_TIMEOUT_MAX);
+    let timeout = Duration::from_secs(timeout);
 
     let mut c = Command::new("sh");
     c.arg("-c").arg(cmd).kill_on_drop(true);
@@ -89,7 +96,7 @@ pub async fn run_stream(
     ));
     let t2 = tokio::spawn(pump(err, idx, chan.cloned(), err_buf.clone(), eof_tx));
 
-    let res = tokio::time::timeout(TERM_TIMEOUT, child.wait()).await;
+    let res = tokio::time::timeout(timeout, child.wait()).await;
 
     match res {
         Ok(Ok(st)) => {
@@ -122,7 +129,10 @@ pub async fn run_stream(
             t1.abort();
             t2.abort();
 
-            Ok((format!("{partial}\ncommand timed out after 120s"), -1))
+            Ok((
+                format!("{partial}\ncommand timed out after {}s", timeout.as_secs()),
+                -1,
+            ))
         }
     }
 }

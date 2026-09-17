@@ -1,14 +1,6 @@
 # Troubleshooting
 > **Job:** Fix the common failures.
 
-## Computer actions do nothing
-
-You need an **X11** session: `echo $XDG_SESSION_TYPE` must print `x11`. On Wayland, `xdotool`/`wmctrl` cannot move the mouse — log into an Xorg session. Then install `xdotool imagemagick wmctrl`.
-
-## Empty accessibility tree
-
-`computer.observe` reports no elements when the AT-SPI bus is unreachable. On stock GNOME it runs by default; minimal window managers need `at-spi2-registryd` started with the session.
-
 ## Keyring errors headless
 
 Secrets live in the OS keyring ( GNOME Keyring / KWallet / macOS Keychain). Over SSH without D-Bus, set env vars instead (see [Environment](../reference/environment.md)).

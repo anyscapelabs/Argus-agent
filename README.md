@@ -13,7 +13,7 @@ A personal AI agent that lives on your machine: chat, desktop control, skills, a
 ## Features
 
 - **Agent chat** — persistent sessions with permission modes (`ask` pauses writes for approval, `never` for trusted flows), tool streaming, and compacting summaries.
-- **Computer use** — accessibility-tree grounding with snapshot tokens, screenshots with coordinate grounding, window management, and app launching on X11.
+- **Terminal-first computer control** — shell with streaming output, cwd, and configurable timeouts; recursive grep with file globs; files, processes, installs, and scripts all go through the terminal.
 - **Browser use** — snapshot-ref clicking/typing/reading with stale-reference recovery, in your everyday Chrome via extension or isolated profiles.
 - **Terminal & files** — shell execution with live output, recursive grep, file read/write.
 - **Skills & memory** — reusable saved skills plus durable fact/preference/project memory.

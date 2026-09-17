@@ -528,7 +528,6 @@ pub async fn send<R: tauri::Runtime>(
         let mut edits: Vec<(usize, usize, String)> = vec![];
         let mut append_blocks: Vec<String> = vec![];
         let mut shown_candidates: Vec<(String, &'static str, String)> = vec![];
-        let mut computer_shown: Vec<String> = vec![];
 
         for exec in pending.iter_mut() {
             let idx: usize = exec
@@ -636,8 +635,6 @@ pub async fn send<R: tauri::Runtime>(
             let body = exec.result_body().to_string();
             if is_browser {
                 shown_candidates.push((exec.args.clone(), status, body.clone()));
-            } else if exec.is_computer_tool() && status == "ok" {
-                computer_shown.push(body.clone());
             }
             let msg = exec.to_tool_result(RESULT_CLIP);
 
@@ -757,12 +754,6 @@ pub async fn send<R: tauri::Runtime>(
             };
             if let Some(gen) = tools::browser::shown_gen_in(&body) {
                 tools::browser::note_shown(&args_v, gen).await;
-            }
-        }
-
-        for body in computer_shown {
-            if let Some(gen) = tools::computer::shown_gen_in(&body) {
-                tools::computer::note_shown(gen).await;
             }
         }
 

@@ -91,7 +91,7 @@ fn openai_msgs_round_trips_native_tool_calls() {
 
 #[test]
 fn wire_names_sanitize_dots_for_provider_validation() {
-    use argus_lib::gateway::adapters::{real_name, wire_name};
+    use argus_lib::gateway::adapters::wire_name;
 
     assert_eq!(wire_name("fs.write"), "fs_write");
     assert_eq!(wire_name("computer.observe"), "computer_observe");

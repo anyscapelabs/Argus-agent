@@ -19,6 +19,12 @@ pub async fn run(args: &Value) -> Result<String, String> {
         c.arg("-i");
     }
 
+    if let Some(include) = args["include"].as_str().filter(|s| !s.trim().is_empty()) {
+        for glob in include.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+            c.arg(format!("--include={glob}"));
+        }
+    }
+
     c.arg("--").arg(pattern).arg(super::expand(path));
 
     let out = tokio::time::timeout(GREP_TIMEOUT, c.output())

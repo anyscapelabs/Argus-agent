@@ -29,7 +29,6 @@ fn section_keeps_ref_namespaces_apart() {
     let s = section(false);
 
     assert!(s.contains("only in browser.* tools"), "{s}");
-    assert!(s.contains("only in computer.act"), "{s}");
 }
 
 #[test]
@@ -38,10 +37,9 @@ fn skill_read_is_listed_and_read_only() {
 
     assert!(s.contains("skill.read"), "{s}");
     assert!(!is_mutating("skill.read"));
-    assert!(is_mutating("computer.act"));
-    assert!(is_mutating("computer.click"));
-    assert!(is_mutating("computer.launch"));
-    assert!(!is_mutating("computer.observe"));
+    assert!(is_mutating("terminal"));
+    assert!(is_mutating("browser.click"));
+    assert!(!is_mutating("browser.read"));
 }
 
 #[test]

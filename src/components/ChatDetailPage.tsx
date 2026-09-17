@@ -282,6 +282,24 @@ export default function ChatDetailPage({ sessionId }: Props) {
                       }}
                     />
                   </>
+                ) : live ? (
+                  <>
+                    <WorkSummary label={workLabel} live startedAt={startMs}>
+                      {priorText ? (
+                        <AgentBubble text={priorText} hideActions />
+                      ) : null}
+                    </WorkSummary>
+                    <AgentBubble
+                      text={allText}
+                      caret
+                      liveTerm={{
+                        term: turn?.term ?? {},
+                        termCode: turn?.termCode ?? {},
+                        approval: turn?.approval ?? null,
+                        sessionId,
+                      }}
+                    />
+                  </>
                 ) : (
                   <AgentBubble
                     text={allText}

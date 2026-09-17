@@ -96,6 +96,68 @@ fn stable_layer(conn: &Connection, web: bool) -> Result<String, String> {
     Ok(s)
 }
 
+fn recall_terms(content: &str) -> Option<String> {
+    const STOP: &[&str] = &[
+        "with", "from", "that", "this", "what", "when", "about", "then", "than", "there",
+        "their", "have", "will", "would", "could", "should", "your", "ours", "into",
+    ];
+    let terms: Vec<String> = content
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.len() >= 4)
+        .map(|t| t.to_lowercase())
+        .filter(|t| !STOP.contains(&t.as_str()))
+        .take(8)
+        .map(|t| format!("\"{}\"", t.replace('"', "")))
+        .collect();
+    if terms.is_empty() {
+        return None;
+    }
+
+    Some(terms.join(" "))
+}
+
+fn session_start_memories(conn: &Connection, session_id: &str) -> Option<String> {
+    let user_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM messages WHERE session_id = ?1 AND role = 'user' \
+             AND active = 1 AND content NOT LIKE '<tool-result%'",
+            params![session_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    if user_count != 1 {
+        return None;
+    }
+
+    let query: String = conn
+        .query_row(
+            "SELECT content FROM messages WHERE session_id = ?1 AND role = 'user' \
+             AND active = 1 AND content NOT LIKE '<tool-result%' \
+             ORDER BY seq DESC LIMIT 1",
+            params![session_id],
+            |r| r.get(0),
+        )
+        .ok()?;
+    let query = recall_terms(&query)?;
+    let hits = crate::memory::store::recall(conn, &query, 8).ok()?;
+
+    let mut out = String::from(
+        "## Relevant memories from past sessions (use memory.read on an id for full detail)\n",
+    );
+    let mut shown = 0usize;
+    for h in hits.iter().filter(|h| h.source != "message").take(4) {
+        let snippet: String = h.snippet.chars().take(160).collect();
+        out.push_str(&format!("- [{}:{}] {}\n", h.source, h.ref_id, snippet));
+        shown += 1;
+    }
+
+    if shown == 0 {
+        return None;
+    }
+
+    Some(out)
+}
+
 pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String> {
     let (model_id, compact_seq, ctx_tokens, web_search) = conn
         .query_row(
@@ -126,6 +188,11 @@ pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String
     if let Some(sum) = &summary {
         system.push_str("\n\n## Earlier in this session (compacted)\n");
         system.push_str(sum);
+    }
+
+    if let Some(notes) = session_start_memories(conn, session_id) {
+        system.push_str("\n\n");
+        system.push_str(&notes);
     }
 
     if let Some(notes) = crate::tools::notepad::prompt_include(session_id) {

@@ -4,7 +4,27 @@ use reqwest::Client;
 use super::{anthropic_content, retry_after_secs, sse_events, CallError, DeltaSink, WireResp};
 use crate::gateway::schema::{StreamDone, ToolCall, ToolSpec, WireMsg};
 
-fn payload(remote_id: &str, msgs: &[WireMsg], tools: &[ToolSpec], streaming: bool) -> serde_json::Value {
+pub fn wire_tools(tools: &[ToolSpec]) -> serde_json::Value {
+    serde_json::Value::Array(
+        tools
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "name": super::wire_name(&t.name),
+                    "description": t.description,
+                    "input_schema": t.parameters,
+                })
+            })
+            .collect(),
+    )
+}
+
+fn payload(
+    remote_id: &str,
+    msgs: &[WireMsg],
+    tools: &[ToolSpec],
+    streaming: bool,
+) -> serde_json::Value {
     let mut sys = String::new();
     let mut turns: Vec<serde_json::Value> = vec![];
     let mut pending: Vec<serde_json::Value> = vec![];
@@ -49,7 +69,7 @@ fn payload(remote_id: &str, msgs: &[WireMsg], tools: &[ToolSpec], streaming: boo
                 parts.push(serde_json::json!({
                     "type": "tool_use",
                     "id": c.id,
-                    "name": c.name,
+                    "name": super::wire_name(&c.name),
                     "input": input,
                 }));
             }
@@ -70,14 +90,7 @@ fn payload(remote_id: &str, msgs: &[WireMsg], tools: &[ToolSpec], streaming: boo
     };
 
     if !tools.is_empty() {
-        pl["tools"] = serde_json::json!(tools
-            .iter()
-            .map(|t| serde_json::json!({
-                "name": t.name,
-                "description": t.description,
-                "input_schema": t.parameters,
-            }))
-            .collect::<Vec<_>>());
+        pl["tools"] = wire_tools(tools);
     }
 
     if !sys.is_empty() {
@@ -97,9 +110,10 @@ fn payload(remote_id: &str, msgs: &[WireMsg], tools: &[ToolSpec], streaming: boo
 
         if let Some(arr) = pl["messages"][i]["content"].as_array_mut() {
             for blk in arr.iter_mut().rev() {
-                let is_text = blk.get("type").and_then(|t| t.as_str()).is_some_and(|t| {
-                    t == "text" || t == "tool_use" || t == "tool_result"
-                });
+                let is_text = blk
+                    .get("type")
+                    .and_then(|t| t.as_str())
+                    .is_some_and(|t| t == "text" || t == "tool_use" || t == "tool_result");
                 if is_text {
                     blk["cache_control"] = serde_json::json!({ "type": "ephemeral" });
                     break;
@@ -244,8 +258,12 @@ pub async fn stream(
         .filter(|(_, name, _)| !name.is_empty())
         .enumerate()
         .map(|(i, (id, name, args))| ToolCall {
-            id: if id.is_empty() { format!("call_{i}") } else { id },
-            name,
+            id: if id.is_empty() {
+                format!("call_{i}")
+            } else {
+                id
+            },
+            name: super::real_name(&name, tools),
             args: if args.trim().is_empty() {
                 "{}".into()
             } else {

@@ -72,13 +72,13 @@ fn openai_msgs_round_trips_native_tool_calls() {
             tool_call_id: Some("call_1".into()),
             ..Default::default()
         },
-  	];
+    ];
 
     let out = openai_msgs(&msgs);
 
     assert_eq!(out[0]["role"], "assistant");
     assert_eq!(out[0]["tool_calls"][0]["id"], "call_1");
-    assert_eq!(out[0]["tool_calls"][0]["function"]["name"], "web.search");
+    assert_eq!(out[0]["tool_calls"][0]["function"]["name"], "web_search");
     assert_eq!(
         out[0]["tool_calls"][0]["function"]["arguments"],
         r#"{"query":"papers"}"#
@@ -87,4 +87,87 @@ fn openai_msgs_round_trips_native_tool_calls() {
     assert_eq!(out[1]["role"], "tool");
     assert_eq!(out[1]["tool_call_id"], "call_1");
     assert!(out[1]["content"].as_str().unwrap().contains("[]"));
+}
+
+#[test]
+fn wire_names_sanitize_dots_for_provider_validation() {
+    use argus_lib::gateway::adapters::{real_name, wire_name};
+
+    assert_eq!(wire_name("fs.write"), "fs_write");
+    assert_eq!(wire_name("computer.observe"), "computer_observe");
+    assert_eq!(wire_name("terminal"), "terminal");
+    assert_eq!(wire_name("grep"), "grep");
+}
+
+#[test]
+fn real_name_round_trips_through_wire_names() {
+    use argus_lib::gateway::adapters::{real_name, wire_name};
+    use argus_lib::gateway::schema::ToolSpec;
+
+    let specs = |names: &[&str]| {
+        names
+            .iter()
+            .map(|n| ToolSpec {
+                name: n.to_string(),
+                description: String::new(),
+                parameters: serde_json::json!({}),
+            })
+            .collect::<Vec<_>>()
+    };
+    let tools = specs(&["terminal", "fs.write", "browser.click"]);
+
+    assert_eq!(real_name("terminal", &tools), "terminal");
+    assert_eq!(real_name("fs_write", &tools), "fs.write");
+    assert_eq!(real_name("browser_click", &tools), "browser.click");
+    assert_eq!(real_name("nope_tool", &tools), "nope_tool");
+    assert_eq!(wire_name(&real_name("fs_write", &tools)), "fs_write");
+}
+
+#[test]
+fn every_shipped_tool_sanitizes_to_valid_wire_name() {
+    use argus_lib::gateway::adapters::wire_name;
+
+    let valid = regex::Regex::new(r"^[A-Za-z0-9_-]+$").expect("valid test regex must compile");
+    for t in argus_lib::tools::tool_specs(true) {
+        let wired = wire_name(&t.name);
+        assert!(
+            valid.is_match(&wired),
+            "tool {} sanitizes to invalid wire name {}",
+            t.name,
+            wired
+        );
+    }
+}
+
+#[test]
+fn openai_wire_tools_carry_sanitized_names() {
+    use argus_lib::gateway::adapters::openai_compat::wire_tools;
+    use argus_lib::gateway::schema::ToolSpec;
+
+    let tools = vec![ToolSpec {
+        name: "fs.write".into(),
+        description: "d".into(),
+        parameters: serde_json::json!({"type": "object"}),
+    }];
+    let out = wire_tools(&tools);
+
+    assert_eq!(out[0]["type"], "function");
+    assert_eq!(out[0]["function"]["name"], "fs_write");
+    assert_eq!(out[0]["function"]["description"], "d");
+}
+
+#[test]
+fn anthropic_wire_tools_carry_sanitized_names() {
+    use argus_lib::gateway::adapters::anthropic::wire_tools;
+    use argus_lib::gateway::schema::ToolSpec;
+
+    let tools = vec![ToolSpec {
+        name: "memory.save".into(),
+        description: "d".into(),
+        parameters: serde_json::json!({"type": "object"}),
+    }];
+    let out = wire_tools(&tools);
+
+    assert_eq!(out[0]["name"], "memory_save");
+    assert_eq!(out[0]["input_schema"]["type"], "object");
 }

@@ -10,6 +10,24 @@ struct CallAcc {
     args: String,
 }
 
+pub fn wire_tools(tools: &[ToolSpec]) -> serde_json::Value {
+    serde_json::Value::Array(
+        tools
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "type": "function",
+                    "function": {
+                        "name": super::wire_name(&t.name),
+                        "description": t.description,
+                        "parameters": t.parameters,
+                    },
+                })
+            })
+            .collect(),
+    )
+}
+
 pub async fn stream(
     http: &Client,
     base_url: &str,
@@ -28,17 +46,7 @@ pub async fn stream(
     });
 
     if !tools.is_empty() {
-        pl["tools"] = serde_json::json!(tools
-            .iter()
-            .map(|t| serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": t.name,
-                    "description": t.description,
-                    "parameters": t.parameters,
-                },
-            }))
-            .collect::<Vec<_>>());
+        pl["tools"] = wire_tools(tools);
     }
 
     let mut req = http.post(&url).json(&pl);
@@ -165,7 +173,7 @@ pub async fn stream(
             } else {
                 c.id
             },
-            name: c.name,
+            name: super::real_name(&c.name, tools),
             args: c.args,
         })
         .collect();
@@ -186,17 +194,7 @@ pub async fn chat(
         serde_json::json!({ "model": remote_id, "messages": openai_msgs(msgs), "stream": false });
 
     if !tools.is_empty() {
-        pl["tools"] = serde_json::json!(tools
-            .iter()
-            .map(|t| serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": t.name,
-                    "description": t.description,
-                    "parameters": t.parameters,
-                },
-            }))
-            .collect::<Vec<_>>());
+        pl["tools"] = wire_tools(tools);
     }
 
     let mut req = http.post(&url).json(&pl);

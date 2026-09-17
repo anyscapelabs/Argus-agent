@@ -316,6 +316,32 @@ pub fn supersede_from(conn: &Connection, session_id: &str, seq: i64) -> Result<(
     Ok(())
 }
 
+pub fn has_unreplied_duplicate(
+    conn: &Connection,
+    session_id: &str,
+    content: &str,
+) -> Result<bool, String> {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return Ok(false);
+    }
+
+    let hit: Option<String> = conn
+        .query_row(
+            "SELECT content FROM messages WHERE session_id = ?1 AND active = 1 \
+             AND role = 'user' AND content NOT LIKE '<tool-result%' \
+             AND TRIM(content) = TRIM(?2) \
+             AND created_at > datetime('now', '-60 seconds') \
+             AND seq = (SELECT MAX(seq) FROM messages WHERE session_id = ?1)",
+            params![session_id, trimmed],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|err| err.to_string())?;
+
+    Ok(hit.is_some())
+}
+
 pub fn clean_dangling(conn: &Connection, session_id: &str) -> Result<usize, String> {
     conn.execute(
         "UPDATE messages SET active = 0 \

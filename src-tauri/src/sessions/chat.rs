@@ -367,20 +367,23 @@ pub async fn send<R: tauri::Runtime>(
 ) -> Result<(), String> {
     {
         let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-        store::add_msg(
-            &conn,
-            &NewMsg {
-                session_id: session_id.into(),
-                role: "user".into(),
-                content: content.into(),
-                model_id: None,
-                provider_id: None,
-                tok_in: None,
-                tok_out: None,
-                tool_calls: None,
-                tool_call_id: None,
-            },
-        )?;
+        let dupe = store::has_unreplied_duplicate(&conn, session_id, content).unwrap_or(false);
+        if !dupe {
+            store::add_msg(
+                &conn,
+                &NewMsg {
+                    session_id: session_id.into(),
+                    role: "user".into(),
+                    content: content.into(),
+                    model_id: None,
+                    provider_id: None,
+                    tok_in: None,
+                    tok_out: None,
+                    tool_calls: None,
+                    tool_call_id: None,
+                },
+            )?;
+        }
     }
 
     let (perm, web) = {

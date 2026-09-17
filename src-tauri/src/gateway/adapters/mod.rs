@@ -45,6 +45,22 @@ pub fn sse_events(buf: &mut String) -> Vec<String> {
 
 pub type DeltaSink<'a> = &'a mut (dyn FnMut(&str) -> Result<(), String> + Send + 'a);
 
+pub fn wire_name(name: &str) -> String {
+    name.replace('.', "_")
+}
+
+pub fn real_name(wire: &str, tools: &[ToolSpec]) -> String {
+    if tools.iter().any(|t| t.name == wire) {
+        return wire.to_string();
+    }
+
+    tools
+        .iter()
+        .find(|t| wire_name(&t.name) == wire)
+        .map(|t| t.name.clone())
+        .unwrap_or_else(|| wire.to_string())
+}
+
 const SHOT_GUARD: &str = "/screenshots/shot-";
 
 fn shot_bytes(path: &str) -> Option<Vec<u8>> {
@@ -82,7 +98,7 @@ pub fn openai_msgs(msgs: &[WireMsg]) -> Vec<serde_json::Value> {
                     "tool_calls": m.tool_calls.iter().map(|c| serde_json::json!({
                         "id": c.id,
                         "type": "function",
-                        "function": { "name": c.name, "arguments": c.args },
+                        "function": { "name": wire_name(&c.name), "arguments": c.args },
                     })).collect::<Vec<_>>(),
                 });
             }

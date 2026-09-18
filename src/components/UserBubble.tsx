@@ -26,7 +26,18 @@ export default function UserBubble({
     try {
       await navigator.clipboard.writeText(txt);
     } catch {
-      return;
+      try {
+        const area = document.createElement("textarea");
+        area.value = txt;
+        area.style.position = "fixed";
+        area.style.opacity = "0";
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand("copy");
+        document.body.removeChild(area);
+      } catch {
+        return;
+      }
     }
 
     setCopied(true);
@@ -51,7 +62,14 @@ export default function UserBubble({
         }
       >
         {timestamp !== undefined && (
-          <span className="mr-1 px-1 text-[11px] font-normal">
+          <span
+            className="mr-1 px-1 text-[11px] font-normal"
+            title={
+              typeof timestamp === "number"
+                ? new Date(timestamp).toLocaleString()
+                : undefined
+            }
+          >
             {formatRelativeTime(timestamp)}
           </span>
         )}

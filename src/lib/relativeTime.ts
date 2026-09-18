@@ -8,9 +8,7 @@ const HR_AGO = "h ago";
 const YESTERDAY = "yesterday";
 const DAYS_AGO = "days ago";
 
-export function formatRelativeTime(
-  input: Date | string | number,
-): string {
+export function formatRelativeTime(input: Date | string | number): string {
   const date = input instanceof Date ? input : new Date(input);
 
   const now = Date.now();
@@ -31,4 +29,16 @@ export function formatRelativeTime(
     month: "short",
     day: "numeric",
   });
+}
+
+export function parseDbTime(s: string | null | undefined): number | null {
+  if (!s) {
+    return null;
+  }
+
+  const t = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)
+    ? Date.parse(`${s.replace(" ", "T")}Z`)
+    : Date.parse(s);
+
+  return Number.isNaN(t) ? null : t;
 }

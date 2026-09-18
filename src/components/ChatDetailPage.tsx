@@ -4,10 +4,8 @@ import AgentBubble from "./AgentBubble";
 import ChatInput from "./ChatInput";
 import UserBubble from "./UserBubble";
 import { parse } from "../lib/agentXml";
-import WorkSummary, {
-  formatWorked,
-  parseDbTime,
-} from "./agent/WorkSummary";
+import WorkSummary, { formatWorked } from "./agent/WorkSummary";
+import { parseDbTime } from "../lib/relativeTime";
 import { useChatModels } from "../hooks/useChatModels";
 import { sessionStore, useSessions, type Turn } from "../stores/sessions";
 import type { MsgRow } from "../lib/ipc";
@@ -248,7 +246,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
               >
                 {group.usr !== null && (
                   <UserBubble
-                    timestamp={Date.now()}
+                    timestamp={parseDbTime(group.usr.created_at) ?? undefined}
                     onRetry={() => {
                       if (group.usr !== null) {
                         retryFrom(group.usr.id);

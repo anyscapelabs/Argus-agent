@@ -74,18 +74,6 @@ export default function WorkSummary({ label, live, startedAt, children }: Props)
   );
 }
 
-export function parseDbTime(s: string | null | undefined): number | null {
-  if (!s) {
-    return null;
-  }
-
-  const t = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)
-    ? Date.parse(`${s.replace(" ", "T")}Z`)
-    : Date.parse(s);
-
-  return Number.isNaN(t) ? null : t;
-}
-
 export function formatWorked(startMs: number | null, endMs: number | null): string {
   if (startMs === null || endMs === null || endMs < startMs) {
     return "Work details";

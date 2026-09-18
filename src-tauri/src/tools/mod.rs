@@ -23,7 +23,7 @@ pub struct ToolMeta {
 const TOOLS: &[ToolMeta] = &[
     ToolMeta {
         name: "terminal",
-        desc: "run a shell command; output streams live to the user, 120s default cap, optional timeout in seconds (10-1800)",
+        desc: "run a shell command via the detected shell; output streams live, default cap 120s (600s for long jobs), optional timeout in seconds (10-1800)",
         args: "{\"command\":\"...\",\"cwd\":\".\"}",
         mutating: true,
     },

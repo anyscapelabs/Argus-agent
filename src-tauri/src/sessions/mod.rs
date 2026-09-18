@@ -170,3 +170,64 @@ pub fn set_newagent_prefs(
 
     Ok(())
 }
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TermShellStatus {
+    pub binary: String,
+    pub kind: String,
+    pub version: Option<String>,
+    pub source: String,
+}
+
+fn shell_status() -> TermShellStatus {
+    let cfg = crate::tools::shell::detect::status();
+
+    let kind = match cfg.kind {
+        crate::tools::shell::ShellKind::Bash => "bash",
+        crate::tools::shell::ShellKind::Sh => "sh",
+        crate::tools::shell::ShellKind::Wsl => "wsl",
+        crate::tools::shell::ShellKind::PowerShell => "powershell",
+        crate::tools::shell::ShellKind::Cmd => "cmd",
+    };
+
+    TermShellStatus {
+        binary: cfg.binary.to_string_lossy().into_owned(),
+        kind: kind.into(),
+        version: cfg.version,
+        source: if crate::tools::shell::detect::override_active() {
+            "override".into()
+        } else {
+            "auto".into()
+        },
+    }
+}
+
+#[tauri::command]
+pub fn term_shell_status() -> TermShellStatus {
+    shell_status()
+}
+
+#[tauri::command]
+pub fn term_shell_set(gw: State<'_, Gateway>, path: String) -> Result<TermShellStatus, String> {
+    use crate::gateway::store as gw_store;
+
+    let cfg = crate::tools::shell::detect::set_override(&path)?;
+
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+    gw_store::kv_set(&conn, "terminal.shell", &cfg.binary.to_string_lossy())?;
+
+    Ok(shell_status())
+}
+
+#[tauri::command]
+pub fn term_shell_clear(gw: State<'_, Gateway>) -> Result<TermShellStatus, String> {
+    use crate::gateway::store as gw_store;
+
+    crate::tools::shell::detect::clear_override();
+
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+    gw_store::kv_set(&conn, "terminal.shell", "")?;
+
+    Ok(shell_status())
+}

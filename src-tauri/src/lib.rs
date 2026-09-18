@@ -60,6 +60,10 @@ pub fn run() {
             tools::browser::init(dir.join("browser-profiles"));
             tools::browser::extpipe::start_listener(dir.clone());
 
+            if let Some(saved) = store::kv_get(&conn, "terminal.shell").filter(|s| !s.is_empty()) {
+                let _ = tools::shell::detect::set_override(&saved);
+            }
+
             if dir.join("extension.enabled").is_file() {
                 let _ = sessions::ext_install::install_core(&dir);
             }
@@ -121,6 +125,9 @@ pub fn run() {
             sessions::chat::sess_cancel_chat,
             sessions::chat::sess_resolve_approval,
             sessions::browser_import::sess_browser_import,
+            sessions::term_shell_status,
+            sessions::term_shell_set,
+            sessions::term_shell_clear,
             sessions::ext_install::sess_ext_install,
             sessions::ext_install::sess_ext_status,
             sessions::ext_install::sess_ext_uninstall,

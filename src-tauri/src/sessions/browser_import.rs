@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::tools::browser;
+use crate::tools::fs::remove_dir_fast;
 
 pub const SKIP_DIRS: &[&str] = &[
     "Cache",
@@ -86,7 +87,7 @@ pub fn sess_browser_import(app: AppHandle, profile: String) -> Result<(), String
     browser::close_profile(&profile);
 
     if dst.exists() {
-        fs::remove_dir_all(&dst).map_err(|err| format!("clearing old profile failed: {err}"))?;
+        remove_dir_fast(&dst).map_err(|err| format!("clearing old profile failed: {err}"))?;
     }
 
     fs::create_dir_all(&dst).map_err(|err| err.to_string())?;
@@ -110,7 +111,7 @@ pub fn sess_browser_import(app: AppHandle, profile: String) -> Result<(), String
                 let _ = app.emit("browser-import-done", Ok::<String, String>(note));
             }
             Err(err) => {
-                let _ = fs::remove_dir_all(&dst);
+                let _ = remove_dir_fast(&dst);
                 let _ = app.emit(
                     "browser-import-done",
                     Err::<String, String>(format!("import failed: {err}")),

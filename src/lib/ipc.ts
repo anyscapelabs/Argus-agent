@@ -27,6 +27,9 @@ const CMD_SESS_EXT_IN = "sess_ext_install";
 const CMD_SESS_EXT_UN = "sess_ext_uninstall";
 const CMD_SESS_EXT_ST = "sess_ext_status";
 const CMD_SESS_STREAM = "sess_chat_stream";
+const CMD_TERM_STATUS = "term_shell_status";
+const CMD_TERM_SET = "term_shell_set";
+const CMD_TERM_CLEAR = "term_shell_clear";
 const CMD_GOOGLE_STATUS = "google_status";
 const CMD_GOOGLE_CONN_URL = "google_connect_url";
 const CMD_GOOGLE_DISC = "google_disconnect";
@@ -285,6 +288,25 @@ export function sessChatStream(
 
 export function sessCancelChat(sessionId: string): Promise<boolean> {
   return invoke<boolean>("sess_cancel_chat", { sessionId });
+}
+
+export type TermShellStatus = {
+  binary: string;
+  kind: string;
+  version: string | null;
+  source: string;
+};
+
+export function termShellStatus(): Promise<TermShellStatus> {
+  return invoke<TermShellStatus>(CMD_TERM_STATUS);
+}
+
+export function termShellSet(path: string): Promise<TermShellStatus> {
+  return invoke<TermShellStatus>(CMD_TERM_SET, { path });
+}
+
+export function termShellClear(): Promise<TermShellStatus> {
+  return invoke<TermShellStatus>(CMD_TERM_CLEAR);
 }
 
 export type GoogleStatus = {

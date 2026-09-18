@@ -60,7 +60,6 @@ type State = {
   msgs: Record<string, MsgRow[]>;
   turns: Record<string, Turn>;
   stopped: Record<string, boolean>;
-  notices: Record<string, string>;
 };
 
 class SessionStore {
@@ -71,7 +70,6 @@ class SessionStore {
     msgs: {},
     turns: {},
     stopped: {},
-    notices: {},
   };
 
   private listeners = new Set<() => void>();
@@ -147,17 +145,14 @@ class SessionStore {
     const msgs = { ...this.state.msgs };
     const turns = { ...this.state.turns };
     const stopped = { ...this.state.stopped };
-    const notices = { ...this.state.notices };
     delete msgs[sessionId];
     delete turns[sessionId];
     delete stopped[sessionId];
-    delete notices[sessionId];
 
     this.set({
       msgs,
       turns,
       stopped,
-      notices,
       sessions: this.state.sessions.filter((s) => s.id !== sessionId),
       activeId: this.state.activeId === sessionId ? null : this.state.activeId,
     });
@@ -344,13 +339,6 @@ class SessionStore {
         return;
       }
 
-      if (ev.type === "notice") {
-        this.set({
-          notices: { ...this.state.notices, [sessionId]: ev.msg },
-        });
-        return;
-      }
-
       if (ev.type === "err") {
         this.patchTurn(sessionId, (prev) => ({ ...prev, err: ev.msg }));
       }
@@ -359,7 +347,6 @@ class SessionStore {
     this.set({
       turns: { ...this.state.turns, [sessionId]: blankTurn() },
       stopped: { ...this.state.stopped, [sessionId]: false },
-      notices: { ...this.state.notices, [sessionId]: "" },
     });
     this.onTurnStart?.(sessionId);
 

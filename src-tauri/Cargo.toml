@@ -34,6 +34,7 @@ percent-encoding = "2"
 sha2 = "0.10"
 regex = "1"
 petgraph = "0.8"
+libc = "0.2"
 chromiumoxide = "0.9"
 tauri-plugin-notification = "2"
 

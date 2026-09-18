@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 
 use crate::tools::browser::extpipe;
+use crate::tools::fs::remove_dir_fast;
 
 const HOST_NAME: &str = "com.argus.browser";
 const HOST_DIRS: &[&str] = &[
@@ -160,7 +161,7 @@ pub fn install_core(data: &Path) -> Result<ExtInstall, String> {
     let ext_dir = data.join("extension");
 
     if ext_dir.exists() {
-        fs::remove_dir_all(&ext_dir).map_err(|err| err.to_string())?;
+        remove_dir_fast(&ext_dir).map_err(|err| err.to_string())?;
     }
 
     copy_tree(&src_dir(), &ext_dir)?;
@@ -249,7 +250,7 @@ pub fn sess_ext_uninstall(app: AppHandle) -> Result<(), String> {
 
     if let Ok(data) = app.path().app_data_dir() {
         let _ = fs::remove_file(data.join("extension.enabled"));
-        let _ = fs::remove_dir_all(data.join("extension"));
+        let _ = remove_dir_fast(&data.join("extension"));
     }
 
     Ok(())

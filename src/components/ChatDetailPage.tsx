@@ -64,7 +64,7 @@ function groupTurns(
 }
 
 export default function ChatDetailPage({ sessionId }: Props) {
-  const { sessions, msgs, turns, stopped, notices } = useSessions();
+  const { sessions, msgs, turns, stopped } = useSessions();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
   const rafRef = useRef(0);
@@ -73,7 +73,6 @@ export default function ChatDetailPage({ sessionId }: Props) {
   const turn = turns[sessionId];
   const running = turn !== undefined && turn.err === null;
   const wasStopped = stopped[sessionId] === true && !running;
-  const notice = (notices[sessionId] ?? "").trim();
 
   const { models } = useChatModels();
   const session = sessions.find((s) => s.id === sessionId);
@@ -353,17 +352,6 @@ export default function ChatDetailPage({ sessionId }: Props) {
               }
             >
               Stopped — partial work above is saved.
-            </div>
-          )}
-          {notice && !running && (
-            <div
-              className={
-                "rounded-xl border border-border-primary " +
-                "bg-bg-secondary px-3 py-2 text-center text-xs " +
-                "text-text-secondary"
-              }
-            >
-              {notice}
             </div>
           )}
         </div>

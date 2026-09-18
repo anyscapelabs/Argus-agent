@@ -55,6 +55,7 @@ dependencies = [
  "chromiumoxide",
  "futures-util",
  "keyring",
+ "libc",
  "percent-encoding",
  "petgraph",
  "regex",

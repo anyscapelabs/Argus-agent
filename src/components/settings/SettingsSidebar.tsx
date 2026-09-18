@@ -1,7 +1,7 @@
 import { IoSparklesOutline } from "react-icons/io5";
-import { LuServer } from "react-icons/lu";
+import { LuServer, LuTerminal } from "react-icons/lu";
 
-export type SettingsTab = "models" | "providers";
+export type SettingsTab = "models" | "providers" | "terminal";
 
 type SettingsSidebarProps = {
   activeTab: SettingsTab;
@@ -58,6 +58,27 @@ export default function SettingsSidebar({
             }
           />
           <span>Providers</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onTabChange("terminal")}
+          aria-current={activeTab === "terminal" ? "page" : undefined}
+          className={`flex items-center gap-2 rounded-md px-2 py-1 text-sm font-medium transition-colors ${
+            activeTab === "terminal"
+              ? "bg-bg-hover-secondary text-text-primary"
+              : "text-text-secondary hover:bg-bg-hover-secondary hover:text-text-primary"
+          }`}
+        >
+          <LuTerminal
+            size={16}
+            className={
+              activeTab === "terminal"
+                ? "text-text-primary"
+                : "text-text-secondary"
+            }
+          />
+          <span>Terminal</span>
         </button>
       </nav>
     </aside>

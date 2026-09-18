@@ -1,6 +1,6 @@
 # AGENTS.md — Argus Agent Router
 
-> Thin router. Do NOT dump full context here. Load only the `.claude/` file(s) relevant to the current task. Pattern follows Anthropic hackathon winner `affaan-m/ECC`: `AGENTS.md` routes, `.claude/` persists knowledge, agents/skills/rules load on demand.
+> Thin router. Do NOT dump full context here. Load only the `.claude/` file(s) relevant to the current task: `AGENTS.md` routes, `.claude/` persists knowledge, agents/rules load on demand.
 
 ## How to work in this repo
 

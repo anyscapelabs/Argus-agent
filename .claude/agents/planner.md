@@ -1,6 +1,6 @@
 # Agent — Planner
 
-> ECC pattern: plan complex work before writing code. Read-only role.
+> Plan complex work before writing code. Read-only role.
 
 ## When to use
 

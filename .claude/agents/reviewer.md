@@ -1,6 +1,6 @@
 # Agent — Reviewer
 
-> ECC pattern: review from fresh context after implement, before push. Read-only (no code edits except critical fix proposals as diffs).
+> Review from fresh context after implement, before push. Read-only (no code edits except critical fix proposals as diffs).
 
 ## Load
 

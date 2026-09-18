@@ -48,3 +48,12 @@ fn terminal_detach_rule_survives() {
 
     assert!(s.contains(">/dev/null 2>&1 &"), "{s}");
 }
+
+#[test]
+fn terminal_rules_cover_sudo_and_bounded_scans() {
+    let s = section(false);
+
+    assert!(s.contains("never run sudo"), "{s}");
+    assert!(s.contains("--max-depth"), "{s}");
+    assert!(s.contains("timeout 15 du"), "{s}");
+}

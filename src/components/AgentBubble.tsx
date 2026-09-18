@@ -37,6 +37,7 @@ import FileGroup from "./agent/FileGroup";
 import MemoryRefChip from "./agent/MemoryRefChip";
 import PathChip from "./agent/PathChip";
 import PlanBlock from "./agent/PlanBlock";
+import StreamingIndicator from "./agent/StreamingIndicator";
 import TableBlock from "./agent/TableBlock";
 import ThinkingBlock from "./agent/ThinkingBlock";
 import WebSearchGroup, { WEB_ACTIONS } from "./agent/WebSearchGroup";
@@ -71,7 +72,7 @@ const INLINE_CLS: Record<string, string> = {
   italic: "italic",
   underline: "underline",
   strikethrough: "line-through",
-  code: "rounded bg-bg-secondary px-1 py-0.5 font-mono text-[0.9em]",
+  code: "rounded bg-bg-secondary px-1 py-0.5 align-middle font-mono text-[0.9em]",
 };
 
 function renderInline(nodes: InlineNode[]): React.ReactNode {
@@ -660,21 +661,15 @@ export default function AgentBubble({
     } catch {}
   };
 
-  const hasBlocks = tree !== null && tree.length > 0;
-
   return (
-    <div
-      className={`group/agent flex flex-col gap-3 text-base text-text-primary ${
-        caret && hasBlocks ? "stream-caret-host" : ""
-      }`}
-    >
+    <div className="group/agent flex flex-col gap-3 text-base text-text-primary">
       {tree ? (
         renderTree(tree, !!caret, caret ? liveTerm : undefined)
       ) : (
         <div className="font-sans text-[16px] font-light">{children}</div>
       )}
 
-      {caret && !hasBlocks && <span className="stream-caret" />}
+      {caret && <StreamingIndicator />}
 
       {text !== undefined && text.length > 0 && !caret && !hideActions && (
         <div className="flex items-center gap-1 text-text-secondary">

@@ -19,7 +19,7 @@ export default function PathChip({ path }: Props) {
       onClick={open}
       title={path}
       className={
-        "inline-flex items-center gap-1 rounded text-sm font-medium " +
+        "inline-flex items-center gap-1 rounded align-middle text-sm font-medium leading-none " +
         "text-blue-400 hover:text-blue-300 hover:underline focus:outline-none"
       }
     >

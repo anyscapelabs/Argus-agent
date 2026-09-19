@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import ModelsPage from "./settings/ModelsPage";
 import ProvidersPage from "./settings/ProvidersPage";
+import ConnectorsSettingsPage from "./settings/ConnectorsSettingsPage";
 import SettingsSidebar, { type SettingsTab } from "./settings/SettingsSidebar";
 import TerminalPage from "./settings/TerminalPage";
 
@@ -149,6 +150,7 @@ export default function SettingsModal({
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
           {activeTab === "models" && <ModelsPage onNavigate={setActiveTab} />}
           {activeTab === "providers" && <ProvidersPage />}
+          {activeTab === "connectors" && <ConnectorsSettingsPage />}
           {activeTab === "terminal" && <TerminalPage />}
         </div>
       </div>

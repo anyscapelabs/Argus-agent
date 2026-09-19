@@ -42,6 +42,8 @@ const CMD_CONN_HAS_CLI = "conn_has_client";
 const CMD_CONN_REMOVE = "conn_remove_token";
 const CMD_CONN_SAVE_CLI = "conn_save_client";
 const CMD_CONN_SAVE_SEC = "conn_save_secret";
+const CMD_CONN_CLEAR_CLI = "conn_clear_client";
+const CMD_CONN_CLEAR_SEC = "conn_clear_secret";
 
 const DEF_PERM = "ask";
 
@@ -379,6 +381,14 @@ export function connSaveClient(
 
 export function connSaveSecret(service: string, secret: string): Promise<void> {
   return invoke<void>(CMD_CONN_SAVE_SEC, { service, secret });
+}
+
+export function connClearClient(service: string): Promise<void> {
+  return invoke<void>(CMD_CONN_CLEAR_CLI, { service });
+}
+
+export function connClearSecret(service: string): Promise<void> {
+  return invoke<void>(CMD_CONN_CLEAR_SEC, { service });
 }
 
 export type Skill = {

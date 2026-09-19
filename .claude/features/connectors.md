@@ -6,7 +6,8 @@ Code: `src-tauri/src/connectors/{mod.rs,store.rs,log.rs}`, `src-tauri/src/mcp/{m
 
 - `connectors/mod.rs`: `Connector{id,command,args,env}`, `store::enabled/migrate`, `log::event/api + redact(token=/key=) + KEEP cap`, `connector_logs` table.
 - `mcp/mod.rs`: `PROTOCOL_VERSION 2025-06-18`, `REGISTRY OnceLock<Mutex<HashMap>>`, `configure(), sync_from(conn)` (`lib.rs:47`), `tools(server), call(server,tool,args)` stdio spawn + auto-respawn + tail on error.
-- `vault.rs`: `SERVICE="argus-connector"` + `conn_save_token, conn_has_token, conn_remove_token, conn_save_client, conn_save_secret` (`get()` errors `<service> not connected`). Lookup: vault → env → app-data file → dev file.
+- `vault.rs`: `SERVICE="argus-connector"` + `conn_save_token, conn_has_token, conn_has_client, conn_remove_token, conn_save_client, conn_save_secret, conn_clear_client, conn_clear_secret` (`get()` errors `<service> not connected`). Lookup: vault → env → app-data file → dev file.
+- Credential overrides: Settings → Connectors tab (`ConnectorsSettingsPage.tsx`) writes per-service token/client/secret to the vault; all 14 service config paths check vault first (trello `get_client`, github `get_secret` included).
 
 ## Services (backend dir → auth)
 

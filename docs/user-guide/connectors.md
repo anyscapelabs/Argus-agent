@@ -10,6 +10,14 @@ Bring your own credentials everywhere: Argus ships no shared keys. Client IDs an
 
 Every connector event (connect, disconnect, API errors) lands in the local `connector_logs` table for inspection.
 
+## Credential overrides
+
+Settings → Connectors lists every service. Paste your own credentials there and Argus stores them in the OS keyring (`argus-connector`); they override any built-in or environment defaults. Leave a field empty to keep what is already saved, and Remove wipes all keyring entries for that service.
+
+- Token services (Linear, Slack, Notion, Figma, Discord, Telegram, Todoist, GitLab, Home Assistant): paste the token — the same one the setup steps describe below.
+- Trello: paste the API key and token together.
+- OAuth services (Google, GitHub, Outlook, Spotify): paste your own OAuth client ID (and client secret for Google/GitHub), then connect as usual — the override wins over env vars and config files.
+
 ## Google
 
 Gmail, Calendar, Drive, Docs, Sheets. Needs a Google Cloud **Desktop-type** OAuth client (loopback redirect, no secret required): enable the five APIs, copy the client id into setup. The agent lists/sends mail, manages events, reads/writes files, docs, and sheets.

@@ -36,6 +36,12 @@ const CMD_GOOGLE_DISC = "google_disconnect";
 const CMD_GITHUB_STATUS = "github_status";
 const CMD_GITHUB_CONN = "github_connect";
 const CMD_GITHUB_DISC = "github_disconnect";
+const CMD_CONN_SAVE_TOK = "conn_save_token";
+const CMD_CONN_HAS_TOK = "conn_has_token";
+const CMD_CONN_HAS_CLI = "conn_has_client";
+const CMD_CONN_REMOVE = "conn_remove_token";
+const CMD_CONN_SAVE_CLI = "conn_save_client";
+const CMD_CONN_SAVE_SEC = "conn_save_secret";
 
 const DEF_PERM = "ask";
 
@@ -346,6 +352,33 @@ export function githubConnect(): Promise<GithubDevice> {
 
 export function githubDisconnect(): Promise<void> {
   return invoke<void>(CMD_GITHUB_DISC);
+}
+
+export function connSaveToken(service: string, token: string): Promise<void> {
+  return invoke<void>(CMD_CONN_SAVE_TOK, { service, token });
+}
+
+export function connHasToken(service: string): Promise<boolean> {
+  return invoke<boolean>(CMD_CONN_HAS_TOK, { service });
+}
+
+export function connHasClient(service: string): Promise<boolean> {
+  return invoke<boolean>(CMD_CONN_HAS_CLI, { service });
+}
+
+export function connRemoveToken(service: string): Promise<void> {
+  return invoke<void>(CMD_CONN_REMOVE, { service });
+}
+
+export function connSaveClient(
+  service: string,
+  clientId: string,
+): Promise<void> {
+  return invoke<void>(CMD_CONN_SAVE_CLI, { service, clientId });
+}
+
+export function connSaveSecret(service: string, secret: string): Promise<void> {
+  return invoke<void>(CMD_CONN_SAVE_SEC, { service, secret });
 }
 
 export type Skill = {

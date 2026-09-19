@@ -65,3 +65,19 @@ fn github_config_prefers_env_over_files() {
         None => std::env::remove_var("ARGUS_GITHUB_CLIENT_ID"),
     }
 }
+
+#[test]
+fn trello_config_prefers_env_over_files() {
+    use argus_lib::mcp::trello::config::load;
+
+    let prev = std::env::var("ARGUS_TRELLO_KEY").ok();
+    std::env::set_var("ARGUS_TRELLO_KEY", "env-test-key");
+
+    let cfg = load().unwrap();
+    assert_eq!(cfg.api_key, "env-test-key");
+
+    match prev {
+        Some(v) => std::env::set_var("ARGUS_TRELLO_KEY", v),
+        None => std::env::remove_var("ARGUS_TRELLO_KEY"),
+    }
+}

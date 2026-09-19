@@ -121,6 +121,11 @@ pub fn conn_has_token(service: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
+pub fn conn_has_client(service: String) -> Result<bool, String> {
+    Ok(get_client(&service)?.is_some())
+}
+
+#[tauri::command]
 pub fn conn_remove_token(service: String) -> Result<(), String> {
     clear(&service)
 }

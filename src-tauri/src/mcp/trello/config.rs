@@ -9,6 +9,12 @@ const ENV_KEY: &str = "ARGUS_TRELLO_KEY";
 const APP_FILE: &str = "trello-settings.json";
 
 pub fn load() -> Result<TrelloCfg, String> {
+    if let Ok(Some(key)) = crate::mcp::vault::get_client("trello") {
+        if !key.trim().is_empty() {
+            return Ok(TrelloCfg { api_key: key });
+        }
+    }
+
     if let Ok(key) = std::env::var(ENV_KEY) {
         if !key.trim().is_empty() {
             return Ok(TrelloCfg { api_key: key });

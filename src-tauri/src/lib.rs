@@ -169,6 +169,7 @@ pub fn run() {
             mcp::github::github_disconnect,
             mcp::vault::conn_save_token,
             mcp::vault::conn_has_token,
+            mcp::vault::conn_has_client,
             mcp::vault::conn_remove_token,
             mcp::vault::conn_save_client,
             mcp::vault::conn_save_secret,

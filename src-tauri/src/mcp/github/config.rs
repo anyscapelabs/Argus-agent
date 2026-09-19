@@ -17,7 +17,10 @@ pub fn load() -> Result<GithubCfg, String> {
         if !id.trim().is_empty() {
             return Ok(GithubCfg {
                 client_id: id,
-                client_secret: String::new(),
+                client_secret: crate::mcp::vault::get_secret("github")
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default(),
             });
         }
     }

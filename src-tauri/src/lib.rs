@@ -173,6 +173,7 @@ pub fn run() {
             mcp::vault::conn_remove_token,
             mcp::vault::conn_save_client,
             mcp::vault::conn_save_secret,
+            mcp::vault::conn_clear_client,
             mcp::outlook::outlook_status,
             mcp::outlook::outlook_connect,
             mcp::outlook::outlook_disconnect,

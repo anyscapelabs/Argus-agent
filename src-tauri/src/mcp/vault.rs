@@ -39,6 +39,18 @@ pub fn clear(service: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn clear_client(service: &str) -> Result<(), String> {
+    match entry(&named(service, "client"))?.delete_credential() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(err) => Err(err.to_string()),
+    }?;
+
+    crate::connectors::log::event(service, "client_cleared", "", "ok");
+
+    Ok(())
+}
+
 fn named(service: &str, kind: &str) -> String {
     format!("{service}-{kind}")
 }
@@ -138,4 +150,9 @@ pub fn conn_save_client(service: String, client_id: String) -> Result<(), String
 #[tauri::command]
 pub fn conn_save_secret(service: String, secret: String) -> Result<(), String> {
     save_secret(&service, &secret)
+}
+
+#[tauri::command]
+pub fn conn_clear_client(service: String) -> Result<(), String> {
+    clear_client(&service)
 }

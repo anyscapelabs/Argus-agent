@@ -4,7 +4,9 @@ use petgraph::graph::{DiGraph, NodeIndex};
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
-use super::schema::{Memory, MemoryEdge, MemoryGraph, MemoryLink, MemoryNode, NewMemory, RecallHit};
+use super::schema::{
+    Memory, MemoryEdge, MemoryGraph, MemoryLink, MemoryNode, NewMemory, RecallHit,
+};
 
 const COLS: &str = "id, content, kind, importance, session_id, created_at, updated_at";
 
@@ -120,12 +122,21 @@ pub fn search(conn: &Connection, query: &str, limit: i64) -> Result<Vec<Memory>,
         .map_err(|err| err.to_string())
 }
 
-pub fn link(conn: &Connection, from_id: &str, to_id: &str, relation: &str) -> Result<MemoryLink, String> {
+pub fn link(
+    conn: &Connection,
+    from_id: &str,
+    to_id: &str,
+    relation: &str,
+) -> Result<MemoryLink, String> {
     if from_id.is_empty() || to_id.is_empty() || from_id == to_id {
         return Err("link needs two distinct ids".into());
     }
     let rel = relation.trim().to_string();
-    let rel = if rel.is_empty() { "related".into() } else { clip(&rel, 64) };
+    let rel = if rel.is_empty() {
+        "related".into()
+    } else {
+        clip(&rel, 64)
+    };
     conn.execute(
         "INSERT INTO memory_links (from_id, to_id, relation) VALUES (?1, ?2, ?3) ON CONFLICT(from_id, to_id) DO UPDATE SET relation = ?3",
         params![from_id, to_id, rel],
@@ -155,7 +166,12 @@ pub fn unlink(conn: &Connection, from_id: &str, to_id: &str) -> Result<(), Strin
     Ok(())
 }
 
-pub fn index_file(conn: &Connection, ref_id: &str, session_id: Option<&str>, content: &str) -> Result<(), String> {
+pub fn index_file(
+    conn: &Connection,
+    ref_id: &str,
+    session_id: Option<&str>,
+    content: &str,
+) -> Result<(), String> {
     let body = clip(content.trim(), 8000);
     if body.is_empty() {
         return Ok(());
@@ -175,7 +191,11 @@ fn search_messages(conn: &Connection, q: &str, limit: i64) -> Vec<RecallHit> {
         return out;
     };
     let Ok(rows) = stmt.query_map(params![q, limit], |r| {
-        Ok((r.get::<_, Option<String>>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?))
+        Ok((
+            r.get::<_, Option<String>>(0)?,
+            r.get::<_, i64>(1)?,
+            r.get::<_, String>(2)?,
+        ))
     }) else {
         return out;
     };
@@ -197,7 +217,11 @@ fn search_summaries(conn: &Connection, q: &str, limit: i64) -> Vec<RecallHit> {
         return out;
     };
     let Ok(rows) = stmt.query_map(params![q, limit], |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+        ))
     }) else {
         return out;
     };
@@ -219,7 +243,11 @@ fn search_files(conn: &Connection, q: &str, limit: i64) -> Vec<RecallHit> {
         return out;
     };
     let Ok(rows) = stmt.query_map(params![q, limit], |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, String>(2)?))
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, Option<String>>(1)?,
+            r.get::<_, String>(2)?,
+        ))
     }) else {
         return out;
     };
@@ -246,9 +274,7 @@ fn expand_seeds(
         Ok(s) => s,
         Err(_) => return vec![],
     };
-    let rows = match stmt.query_map([], |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-    }) {
+    let rows = match stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))) {
         Ok(r) => r,
         Err(_) => return vec![],
     };
@@ -369,7 +395,11 @@ pub fn load_graph(conn: &Connection, limit: i64) -> Result<MemoryGraph, String> 
         .map_err(|err| err.to_string())?;
     let rows = stmt
         .query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
         })
         .map_err(|err| err.to_string())?;
     let mut edges: Vec<MemoryEdge> = vec![];

@@ -120,9 +120,7 @@ enum WaitOut {
     Cancelled,
 }
 
-async fn wait_hard(
-    child: &mut tokio::process::Child,
-) -> WaitOut {
+async fn wait_hard(child: &mut tokio::process::Child) -> WaitOut {
     let cancel = async {
         if let Ok(n) = CANCEL.try_get() {
             n.notified().await;

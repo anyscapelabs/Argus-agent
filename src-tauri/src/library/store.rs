@@ -284,25 +284,20 @@ pub fn preview(
 ) -> Result<LibPreview, String> {
     let item = get(conn, dir, &id)?;
     let text = match item.ext.as_str() {
-        "txt" | "md" | "csv" => fs::read(abs_path(dir, &item.path))
-            .ok()
-            .and_then(|b| {
-                if b.len() > 200_000 {
-                    None
-                } else {
-                    Some(String::from_utf8_lossy(&b).into_owned())
-                }
-            }),
+        "txt" | "md" | "csv" => fs::read(abs_path(dir, &item.path)).ok().and_then(|b| {
+            if b.len() > 200_000 {
+                None
+            } else {
+                Some(String::from_utf8_lossy(&b).into_owned())
+            }
+        }),
         _ => None,
     };
     let (text, truncated) = match text {
         Some(t) => {
             let n = t.chars().count();
             if n > max_chars {
-                (
-                    Some(t.chars().take(max_chars).collect()),
-                    true,
-                )
+                (Some(t.chars().take(max_chars).collect()), true)
             } else {
                 (Some(t), false)
             }

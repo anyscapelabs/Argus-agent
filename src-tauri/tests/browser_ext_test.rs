@@ -109,7 +109,9 @@ async fn extension_session_survives_across_tool_calls_on_one_tab() {
     let body = browser::read(&serde_json::json!({})).await.unwrap();
     assert!(body.contains("hello from fake page"));
 
-    browser::click(&serde_json::json!({"ref": 0})).await.unwrap();
+    browser::click(&serde_json::json!({"ref": 0}))
+        .await
+        .unwrap();
 
     browser::type_text(&serde_json::json!({"ref": 0, "text": "hi"}))
         .await

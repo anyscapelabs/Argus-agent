@@ -471,7 +471,9 @@ async fn eval_real_browser_stale_task() {
     let stale_idx = results.iter().position(|m| {
         m.content.contains("tool=\"browser.click\"") && m.content.contains("stale ref")
     });
-    let stale_text = stale_idx.map(|i| results[i].content.clone()).unwrap_or_default();
+    let stale_text = stale_idx
+        .map(|i| results[i].content.clone())
+        .unwrap_or_default();
     let stale_gens = snapshot_gens(&stale_text);
     let stale_has_recovery = stale_text.contains("Choose the replacement ref")
         && stale_text.contains("Elements (snapshot");
@@ -531,7 +533,10 @@ async fn eval_real_browser_stale_task() {
             || t.starts_with("web.")
     });
 
-    let final_text = assistants.last().map(|m| m.content.clone()).unwrap_or_default();
+    let final_text = assistants
+        .last()
+        .map(|m| m.content.clone())
+        .unwrap_or_default();
     let answer_ok = final_text.contains(&status);
 
     let initial_ok = open_idx.is_some() && open_has_reveal && open_clean && open_gen.is_some();
@@ -600,5 +605,8 @@ async fn eval_real_browser_stale_task() {
 
     let _ = std::fs::remove_dir_all(&tmp);
     let _ = std::fs::remove_dir_all(&gtmp);
-    assert_eq!(verdict, "PASS", "real-model browser stale task did not pass");
+    assert_eq!(
+        verdict, "PASS",
+        "real-model browser stale task did not pass"
+    );
 }

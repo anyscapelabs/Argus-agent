@@ -121,7 +121,13 @@ fn recall_spans_messages_summaries_files_and_graph() {
         [],
     )
     .unwrap();
-    store::index_file(&conn, "f1", Some("s1"), "aktunotes kds601 big data analytics pyq pdf").unwrap();
+    store::index_file(
+        &conn,
+        "f1",
+        Some("s1"),
+        "aktunotes kds601 big data analytics pyq pdf",
+    )
+    .unwrap();
     let mem = store::save(
         &conn,
         &NewMemory {
@@ -143,7 +149,8 @@ fn recall_spans_messages_summaries_files_and_graph() {
 
 fn project_db() -> rusqlite::Connection {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
-    conn.execute_batch(argus_lib::gateway::schema::MIGRATE).unwrap();
+    conn.execute_batch(argus_lib::gateway::schema::MIGRATE)
+        .unwrap();
     argus_lib::sessions::store::migrate(&conn).unwrap();
     argus_lib::skills::store::migrate(&conn).unwrap();
     argus_lib::memory::store::migrate(&conn).unwrap();
@@ -201,7 +208,10 @@ fn remember(conn: &rusqlite::Connection, content: &str) {
 #[test]
 fn session_start_injects_relevant_memory() {
     let conn = project_db();
-    remember(&conn, "Brnx deploys the backend with docker compose up every Friday");
+    remember(
+        &conn,
+        "Brnx deploys the backend with docker compose up every Friday",
+    );
     remember(&conn, "pancake recipe needs extra vanilla and warm milk");
     let s = project_session(&conn, "t1");
     say(&conn, &s, "user", "how do I deploy the backend with docker");
@@ -216,7 +226,10 @@ fn session_start_injects_relevant_memory() {
 #[test]
 fn session_start_skips_recall_after_first_exchange() {
     let conn = project_db();
-    remember(&conn, "Brnx deploys the backend with docker compose up every Friday");
+    remember(
+        &conn,
+        "Brnx deploys the backend with docker compose up every Friday",
+    );
     let s = project_session(&conn, "t2");
     say(&conn, &s, "user", "how do I deploy the backend with docker");
     say(&conn, &s, "assistant", "run docker compose up");

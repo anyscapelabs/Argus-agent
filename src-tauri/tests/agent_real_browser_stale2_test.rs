@@ -498,8 +498,10 @@ async fn eval_real_browser_stale2_task() {
         .collect();
 
     // Structured ordering via tool="..." attributes (no substring ordering).
-    let result_tools: Vec<Option<String>> =
-        results.iter().map(|m| result_tool_name(&m.content)).collect();
+    let result_tools: Vec<Option<String>> = results
+        .iter()
+        .map(|m| result_tool_name(&m.content))
+        .collect();
     let open_pos = result_tools
         .iter()
         .position(|t| t.as_deref() == Some("browser.open"));
@@ -527,20 +529,26 @@ async fn eval_real_browser_stale2_task() {
         .unwrap_or_default();
     let stale_has_recovery = stale_text.contains("Choose the replacement ref")
         && stale_text.contains("Elements (snapshot");
-    let stale_current_gen: Option<u64> = stale_text
-        .split("is current")
-        .next()
-        .and_then(|head| {
-            head.rsplit("snapshot ").next()?.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()
-        });
+    let stale_current_gen: Option<u64> = stale_text.split("is current").next().and_then(|head| {
+        head.rsplit("snapshot ")
+            .next()?
+            .split(|c: char| !c.is_ascii_digit())
+            .next()?
+            .parse()
+            .ok()
+    });
     let recovery_gen = snapshot_gens(&stale_text).into_iter().last();
 
     // Structured native args (no substring matching for ordering/refs).
     let natives = native_calls(&msgs);
-    let native_clicks: Vec<&NativeCall> =
-        natives.iter().filter(|c| c.name == "browser.click").collect();
-    let native_opens: Vec<&NativeCall> =
-        natives.iter().filter(|c| c.name == "browser.open").collect();
+    let native_clicks: Vec<&NativeCall> = natives
+        .iter()
+        .filter(|c| c.name == "browser.click")
+        .collect();
+    let native_opens: Vec<&NativeCall> = natives
+        .iter()
+        .filter(|c| c.name == "browser.open")
+        .collect();
     let first_click = native_clicks.first().copied();
     let second_click = native_clicks.get(1).copied();
 
@@ -549,7 +557,9 @@ async fn eval_real_browser_stale2_task() {
         .copied()
         .find(|&i| results[i].content.contains(&status));
     let pre_click_clean = match stale_pos.or(success_pos) {
-        Some(bound) => results[..bound].iter().all(|m| !m.content.contains(&status)),
+        Some(bound) => results[..bound]
+            .iter()
+            .all(|m| !m.content.contains(&status)),
         None => results.iter().all(|m| !m.content.contains(&status)),
     };
 
@@ -575,11 +585,13 @@ async fn eval_real_browser_stale2_task() {
         forbidden.contains(&t.as_str()) || t.starts_with("computer.") || t.starts_with("web.")
     });
 
-    let final_text = assistants.last().map(|m| m.content.clone()).unwrap_or_default();
+    let final_text = assistants
+        .last()
+        .map(|m| m.content.clone())
+        .unwrap_or_default();
     let answer_ok = final_text.contains(&status);
 
-    let initial_ok =
-        open_pos == Some(0) && open_has_control && open_clean && open_gen.is_some();
+    let initial_ok = open_pos == Some(0) && open_has_control && open_clean && open_gen.is_some();
     let forced_ok = was_rerendered
         && stale_pos.is_some()
         && stale_current_gen.is_some_and(|g| Some(g) != open_gen)
@@ -593,32 +605,41 @@ async fn eval_real_browser_stale2_task() {
         }
         _ => false,
     };
-    let single_activation =
-        fixture_clicks == 1 && click_paths == vec!["finch-v2".to_string()];
+    let single_activation = fixture_clicks == 1 && click_paths == vec!["finch-v2".to_string()];
     let success_ok = single_activation
         && success_pos.is_some_and(|p| Some(p) > stale_pos)
         && pre_click_clean
         && answer_ok
         && was_revealed;
     let isolation_ok = !mining && !user_task.contains(&status);
-    let stale_genuinely =
-        stale_pos.is_some() && stale_has_recovery && first_click.is_some_and(|f| f.snap_opt == open_gen);
+    let stale_genuinely = stale_pos.is_some()
+        && stale_has_recovery
+        && first_click.is_some_and(|f| f.snap_opt == open_gen);
 
     eprintln!("=== REAL BROWSER-STALE2 EVAL TRACE (COMPLETE HEADER) ===");
     eprintln!("provider=baseten remote={remote} model={WANT_MODEL}");
-    eprintln!("total_elapsed={elapsed:?} turns={} results={} attempts={attempts:?}",
-        assistants.len(), results.len());
+    eprintln!(
+        "total_elapsed={elapsed:?} turns={} results={} attempts={attempts:?}",
+        assistants.len(),
+        results.len()
+    );
     eprintln!("panel_url={panel_url}");
     eprintln!("status_run={status_run:?}");
-    eprintln!("event_kinds={kinds:?} stream_events={} last_event_t={:?}",
-        events.len(), event_times.last());
+    eprintln!(
+        "event_kinds={kinds:?} stream_events={} last_event_t={:?}",
+        events.len(),
+        event_times.last()
+    );
     eprintln!("fixture_methods={methods:?}");
     eprintln!("fixture_clicks={fixture_clicks} click_paths={click_paths:?} snapshots={fixture_snapshots} rerendered={was_rerendered} revealed={was_revealed}");
     eprintln!("fixture_events={fixture_events:?}");
     eprintln!("result_tools={result_tools:?}");
     for (i, m) in assistants.iter().enumerate() {
-        eprintln!("--- assistant[{i}] native={:?}\n{}",
-            m.tool_calls.as_deref().unwrap_or("none"), short(&m.content));
+        eprintln!(
+            "--- assistant[{i}] native={:?}\n{}",
+            m.tool_calls.as_deref().unwrap_or("none"),
+            short(&m.content)
+        );
     }
     for (i, m) in results.iter().enumerate() {
         eprintln!("--- tool-result[{i}] ---\n{}", short(&m.content));
@@ -654,5 +675,8 @@ async fn eval_real_browser_stale2_task() {
 
     let _ = std::fs::remove_dir_all(&tmp);
     let _ = std::fs::remove_dir_all(&gtmp);
-    assert_eq!(verdict, "PASS", "real-model browser stale2 task did not pass");
+    assert_eq!(
+        verdict, "PASS",
+        "real-model browser stale2 task did not pass"
+    );
 }

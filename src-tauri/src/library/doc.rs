@@ -2,12 +2,7 @@ use super::store;
 use crate::gateway::Gateway;
 
 pub fn kind_of(name: &str) -> Option<&'static str> {
-    let ext = name
-        .rsplit('.')
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_lowercase();
+    let ext = name.rsplit('.').next().unwrap_or("").trim().to_lowercase();
     match ext.as_str() {
         "docx" => Some("docx"),
         "pdf" => Some("pdf"),
@@ -81,7 +76,8 @@ impl ZipWriter {
         self.buf.extend_from_slice(&crc.to_le_bytes());
         self.buf.extend_from_slice(&size.to_le_bytes());
         self.buf.extend_from_slice(&size.to_le_bytes());
-        self.buf.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes());
+        self.buf
+            .extend_from_slice(&(name_bytes.len() as u16).to_le_bytes());
         self.buf.extend_from_slice(&0u16.to_le_bytes());
         self.buf.extend_from_slice(name_bytes);
         self.buf.extend_from_slice(data);
@@ -108,7 +104,8 @@ impl ZipWriter {
             self.buf.extend_from_slice(&e.crc.to_le_bytes());
             self.buf.extend_from_slice(&e.size.to_le_bytes());
             self.buf.extend_from_slice(&e.size.to_le_bytes());
-            self.buf.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes());
+            self.buf
+                .extend_from_slice(&(name_bytes.len() as u16).to_le_bytes());
             self.buf.extend_from_slice(&0u16.to_le_bytes());
             self.buf.extend_from_slice(&0u16.to_le_bytes());
             self.buf.extend_from_slice(&0u16.to_le_bytes());
@@ -163,7 +160,7 @@ fn esc_pdf(s: &str) -> String {
             '\\' => out.push_str("\\\\"),
             '(' => out.push_str("\\("),
             ')' => out.push_str("\\)"),
-            _ if c.is_control() => {},
+            _ if c.is_control() => {}
             _ => out.push(c),
         }
     }
@@ -178,14 +175,21 @@ fn pdf_bytes(title: &str, body: &str) -> Vec<u8> {
     }
     text_lines.extend(wrap_lines(body, 88));
     let per_page: usize = 44;
-    let pages: Vec<Vec<String>> = text_lines
-        .chunks(per_page)
-        .map(|c| c.to_vec())
-        .collect();
+    let pages: Vec<Vec<String>> = text_lines.chunks(per_page).map(|c| c.to_vec()).collect();
     let npages = pages.len().max(1);
     let mut objects: Vec<Vec<u8>> = vec![];
     objects.push(b"<< /Type /Catalog /Pages 2 0 R >>".to_vec());
-    objects.push(format!("<< /Type /Pages /Kids [{}] /Count {} >>", (0..npages).map(|i| format!("{} 0 R", 4 + i * 2)).collect::<Vec<_>>().join(" "), npages).into_bytes());
+    objects.push(
+        format!(
+            "<< /Type /Pages /Kids [{}] /Count {} >>",
+            (0..npages)
+                .map(|i| format!("{} 0 R", 4 + i * 2))
+                .collect::<Vec<_>>()
+                .join(" "),
+            npages
+        )
+        .into_bytes(),
+    );
     objects.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_vec());
     objects.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>".to_vec());
     for (i, lines) in pages.iter().enumerate() {
@@ -321,7 +325,16 @@ fn docx_bytes(title: &str, body: &str) -> Vec<u8> {
     z.finish()
 }
 
-fn pptx_shape(id: u32, x: i64, y: i64, w: i64, h: i64, texts: &[String], size: u32, bold: bool) -> String {
+fn pptx_shape(
+    id: u32,
+    x: i64,
+    y: i64,
+    w: i64,
+    h: i64,
+    texts: &[String],
+    size: u32,
+    bold: bool,
+) -> String {
     let ps = texts
         .iter()
         .map(|t| {
@@ -358,8 +371,19 @@ fn pptx_bytes(title: &str, slides: &[(String, Vec<String>)]) -> Vec<u8> {
     }
     z.file("[Content_Types].xml", format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"{}\"><Default Extension=\"rels\" ContentType=\"{}\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/ppt/presentation.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml\"/><Override PartName=\"/ppt/slideMasters/slideMaster1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml\"/><Override PartName=\"/ppt/slideLayouts/slideLayout1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml\"/><Override PartName=\"/ppt/theme/theme1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.theme+xml\"/>{}</Types>", "http://schemas.openxmlformats.org/package/2006/content-types", "application/vnd.openxmlformats-package.relationships+xml", overrides).as_bytes());
     z.file("_rels/.rels", format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"{}\"><Relationship Id=\"rId1\" Type=\"{}\" Target=\"ppt/presentation.xml\"/></Relationships>", "http://schemas.openxmlformats.org/package/2006/relationships", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument").as_bytes());
-    let sld_ids: String = (1..=n).map(|i| format!("<p:sldId id=\"{}\" r:id=\"rId{}\" />", 255 + i, i)).collect::<Vec<_>>().join("");
-    let pres_rels: String = (1..=n).map(|i| format!("<Relationship Id=\"rId{}\" Type=\"{}\" Target=\"slides/slide{}.xml\"/>", i, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide", i)).collect::<Vec<_>>().join("");
+    let sld_ids: String = (1..=n)
+        .map(|i| format!("<p:sldId id=\"{}\" r:id=\"rId{}\" />", 255 + i, i))
+        .collect::<Vec<_>>()
+        .join("");
+    let pres_rels: String = (1..=n)
+        .map(|i| {
+            format!(
+                "<Relationship Id=\"rId{}\" Type=\"{}\" Target=\"slides/slide{}.xml\"/>",
+                i, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide", i
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
     z.file("ppt/presentation.xml", format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><p:presentation xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><p:sldMasterIdLst><p:sldMasterId r:id=\"rIdMaster\"/></p:sldMasterIdLst><p:sldIdLst>{}</p:sldIdLst><p:sldSzCx cx=\"9144000\" cy=\"5143500\"/></p:presentation>", sld_ids).as_bytes());
     z.file("ppt/_rels/presentation.xml.rels", format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rIdMaster\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster\" Target=\"slideMasters/slideMaster1.xml\"/>{}</Relationships>", pres_rels).as_bytes());
     z.file("ppt/slideMasters/slideMaster1.xml", b"<?xml version=\"1.0\" encoding=\"UTF-8\"?><p:sldMaster xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\"><p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val=\"1A1A1A\"/></a:solidFill></p:bgPr></p:bg><p:spTree><p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"0\" cy=\"0\"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld><p:txStyles><p:titleStyle><a:lvl1pPr><a:defRPr sz=\"3200\"/></a:lvl1pPr></p:titleStyle></p:txStyles></p:sldMaster>");
@@ -403,7 +427,7 @@ fn parse_rows(v: &serde_json::Value) -> Vec<Vec<String>> {
                 );
             }
             serde_json::Value::String(s) => out.push(vec![s.clone()]),
-            _ => {},
+            _ => {}
         }
     }
     out
@@ -529,7 +553,10 @@ pub fn build(kind: &str, title: &str, args: &serde_json::Value) -> Result<BuiltD
                 if content.trim().is_empty() && title.trim().is_empty() {
                     return Err("doc slides are empty".into());
                 }
-                vec![(title.to_string(), content.lines().map(|l| l.to_string()).collect())]
+                vec![(
+                    title.to_string(),
+                    content.lines().map(|l| l.to_string()).collect(),
+                )]
             } else {
                 slides
             };
@@ -571,6 +598,13 @@ pub fn create(
     }
     let built = build(&kind, &title, args)?;
     let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-    let item = store::create_bytes(&conn, &gw.library_dir, &name, &built.ext, &built.bytes, session_id)?;
+    let item = store::create_bytes(
+        &conn,
+        &gw.library_dir,
+        &name,
+        &built.ext,
+        &built.bytes,
+        session_id,
+    )?;
     Ok((item, built.pages))
 }

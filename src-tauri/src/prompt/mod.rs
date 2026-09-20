@@ -98,8 +98,8 @@ fn stable_layer(conn: &Connection, web: bool) -> Result<String, String> {
 
 fn recall_terms(content: &str) -> Option<String> {
     const STOP: &[&str] = &[
-        "with", "from", "that", "this", "what", "when", "about", "then", "than", "there",
-        "their", "have", "will", "would", "could", "should", "your", "ours", "into",
+        "with", "from", "that", "this", "what", "when", "about", "then", "than", "there", "their",
+        "have", "will", "would", "could", "should", "your", "ours", "into",
     ];
     let terms: Vec<String> = content
         .split(|c: char| !c.is_alphanumeric())

@@ -55,7 +55,12 @@ pub fn memory_link(
     relation: Option<String>,
 ) -> Result<MemoryLink, String> {
     let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-    store::link(&conn, &from_id, &to_id, &relation.unwrap_or_else(|| "related".into()))
+    store::link(
+        &conn,
+        &from_id,
+        &to_id,
+        &relation.unwrap_or_else(|| "related".into()),
+    )
 }
 
 #[tauri::command]
@@ -92,7 +97,11 @@ pub fn rollup_prompt(mems: &[Memory]) -> String {
     s
 }
 
-pub fn apply_rollup(conn: &Connection, candidate_ids: &[String], summary: &str) -> Result<Memory, String> {
+pub fn apply_rollup(
+    conn: &Connection,
+    candidate_ids: &[String],
+    summary: &str,
+) -> Result<Memory, String> {
     let summary = summary.trim().to_string();
     if summary.is_empty() {
         return Err("rollup needs a summary".into());
@@ -123,10 +132,7 @@ pub fn apply_rollup(conn: &Connection, candidate_ids: &[String], summary: &str) 
     Ok(condensed)
 }
 
-pub async fn rollup_with_model(
-    gw: &Gateway,
-    candidate_ids: Vec<String>,
-) -> Result<Memory, String> {
+pub async fn rollup_with_model(gw: &Gateway, candidate_ids: Vec<String>) -> Result<Memory, String> {
     let model = {
         let conn = gw.conn.lock().map_err(|err| err.to_string())?;
         crate::prompt::compressor::utility_model(&conn)?

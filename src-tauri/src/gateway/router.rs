@@ -408,8 +408,7 @@ pub async fn stream_run(
                             && !sys.content.contains("## Tools")
                             && !sys.content.contains("<action tool=")
                         {
-                            sys.content
-                                .push_str(&crate::tools::protocol_section());
+                            sys.content.push_str(&crate::tools::protocol_section());
                         }
                     }
                     req_json = serde_json::to_string(&req).ok();

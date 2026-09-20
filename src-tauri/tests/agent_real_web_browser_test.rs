@@ -36,9 +36,7 @@ fn short(s: &str) -> String {
     s.chars().take(1500).collect()
 }
 
-async fn read_http_request(
-    sock: &mut tokio::net::TcpStream,
-) -> Option<(String, Vec<u8>)> {
+async fn read_http_request(sock: &mut tokio::net::TcpStream) -> Option<(String, Vec<u8>)> {
     let mut buf = vec![0u8; 65536];
     let mut data = vec![];
     loop {
@@ -106,7 +104,9 @@ fn first_u64(text: &str, key: &str) -> Option<u64> {
 
 fn snapshot_gens(text: &str) -> Vec<u64> {
     let re = regex::Regex::new(r"\(snapshot (\d+)\)").unwrap();
-    re.captures_iter(text).filter_map(|c| c.get(1)?.as_str().parse().ok()).collect()
+    re.captures_iter(text)
+        .filter_map(|c| c.get(1)?.as_str().parse().ok())
+        .collect()
 }
 
 fn first_url_on_line(text: &str, needle: &str) -> Option<String> {
@@ -132,7 +132,10 @@ async fn eval_real_web_browser_task() {
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
-    let panel_path = format!("/panel-{}", &uuid::Uuid::new_v4().as_simple().to_string()[..8]);
+    let panel_path = format!(
+        "/panel-{}",
+        &uuid::Uuid::new_v4().as_simple().to_string()[..8]
+    );
     let panel_url = format!("{base}{panel_path}");
     let web_hits: Arc<StdMutex<Vec<String>>> = Arc::new(StdMutex::new(vec![]));
     tokio::spawn({
@@ -155,7 +158,11 @@ async fn eval_real_web_browser_task() {
                     let path = line.split_whitespace().nth(1).unwrap_or("/").to_string();
                     web_hits.lock().unwrap().push(path.clone());
                     let (st, ct, body) = if path.starts_with("/jina") {
-                        ("500 Internal Server Error", "text/plain", "jina down".to_string())
+                        (
+                            "500 Internal Server Error",
+                            "text/plain",
+                            "jina down".to_string(),
+                        )
                     } else if path.starts_with("/search") {
                         (
                             "200 OK",
@@ -186,7 +193,10 @@ async fn eval_real_web_browser_task() {
     std::env::set_var("ARGUS_SEARXNG_POOL", format!("{base}/search"));
     std::env::set_var("ARGUS_JINA_URL", format!("{base}/jina"));
 
-    let tmp = std::env::temp_dir().join(format!("argus-eval-rwb-{}", uuid::Uuid::new_v4().as_simple()));
+    let tmp = std::env::temp_dir().join(format!(
+        "argus-eval-rwb-{}",
+        uuid::Uuid::new_v4().as_simple()
+    ));
     let data_dir = tmp.join("com.anyscapelabs.argus");
     std::fs::create_dir_all(&data_dir).unwrap();
     std::fs::write(data_dir.join("extension.enabled"), b"on").unwrap();
@@ -215,7 +225,11 @@ async fn eval_real_web_browser_task() {
                     continue;
                 }
                 let id = req.get("id").and_then(|i| i.as_u64()).unwrap_or(0);
-                let method = req.get("method").and_then(|m| m.as_str()).unwrap_or("").to_string();
+                let method = req
+                    .get("method")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let data = req.get("data").cloned().unwrap_or(serde_json::Value::Null);
                 elog.methods.lock().unwrap().push(method.clone());
                 let revealed = *elog.revealed.lock().unwrap();
@@ -301,13 +315,17 @@ async fn eval_real_web_browser_task() {
         )
         .expect("production model must be enabled");
 
-    let gtmp = std::env::temp_dir().join(format!("argus-eval-rwbw-{}", uuid::Uuid::new_v4().as_simple()));
+    let gtmp = std::env::temp_dir().join(format!(
+        "argus-eval-rwbw-{}",
+        uuid::Uuid::new_v4().as_simple()
+    ));
     std::fs::create_dir_all(&gtmp).unwrap();
     for d in ["skills", "library", "logos"] {
         std::fs::create_dir_all(gtmp.join(d)).unwrap();
     }
     let conn = rusqlite::Connection::open_in_memory().unwrap();
-    conn.execute_batch(argus_lib::gateway::schema::MIGRATE).unwrap();
+    conn.execute_batch(argus_lib::gateway::schema::MIGRATE)
+        .unwrap();
     argus_lib::sessions::store::migrate(&conn).unwrap();
     argus_lib::skills::store::migrate(&conn).unwrap();
     argus_lib::library::store::migrate(&conn).unwrap();
@@ -391,7 +409,9 @@ async fn eval_real_web_browser_task() {
     let events = events.lock().unwrap().clone();
     let attempts: Vec<i64> = {
         let conn = gw.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT attempt FROM request_log ORDER BY id").unwrap();
+        let mut stmt = conn
+            .prepare("SELECT attempt FROM request_log ORDER BY id")
+            .unwrap();
         stmt.query_map([], |r| r.get::<_, i64>(0))
             .unwrap()
             .collect::<Result<Vec<_>, _>>()
@@ -436,11 +456,12 @@ async fn eval_real_web_browser_task() {
     let url_ok = search_url.as_deref() == Some(panel_url.as_str());
 
     let open_msg = results.iter().find(|m| m.content.contains("browser.open"));
-    let open_url = open_msg
-        .and_then(|m| first_url_on_line(&m.content, "127.0.0.1"));
+    let open_url = open_msg.and_then(|m| first_url_on_line(&m.content, "127.0.0.1"));
     let open_ok = open_url.as_deref() == Some(panel_url.as_str());
     let open_gen = open_msg.and_then(|m| snapshot_gens(&m.content).into_iter().next());
-    let pre_absence = open_msg.map(|m| !m.content.contains(&status)).unwrap_or(false);
+    let pre_absence = open_msg
+        .map(|m| !m.content.contains(&status))
+        .unwrap_or(false);
 
     let click_text: String = assistants
         .iter()
@@ -464,7 +485,9 @@ async fn eval_real_web_browser_task() {
         _ => false,
     };
     let click_msg = results.iter().find(|m| m.content.contains("browser.click"));
-    let changed_ok = click_msg.map(|m| m.content.contains(&status)).unwrap_or(false);
+    let changed_ok = click_msg
+        .map(|m| m.content.contains(&status))
+        .unwrap_or(false);
 
     let tools_used: Vec<String> = results
         .iter()
@@ -479,19 +502,34 @@ async fn eval_real_web_browser_task() {
     let mining = tools_used.iter().any(|t| {
         matches!(
             t.as_str(),
-            "terminal" | "bash.run" | "grep" | "fs.write" | "skill.read"
-                | "skill.search" | "skill.create" | "memory.save" | "memory.search"
-                | "memory.read" | "doc.create"
+            "terminal"
+                | "bash.run"
+                | "grep"
+                | "fs.write"
+                | "skill.read"
+                | "skill.search"
+                | "skill.create"
+                | "memory.save"
+                | "memory.search"
+                | "memory.read"
+                | "doc.create"
         ) || t.starts_with("computer.")
     });
 
-    let final_text = assistants.last().map(|m| m.content.clone()).unwrap_or_default();
+    let final_text = assistants
+        .last()
+        .map(|m| m.content.clone())
+        .unwrap_or_default();
     let answer_ok = final_text.contains(&status);
 
     eprintln!("=== REAL WEB-BROWSER EVAL TRACE ===");
     eprintln!("provider=baseten remote={remote} elapsed={elapsed:?}");
     eprintln!("status: {status_run:?}");
-    eprintln!("turns: {} results: {} attempts: {attempts:?}", assistants.len(), results.len());
+    eprintln!(
+        "turns: {} results: {} attempts: {attempts:?}",
+        assistants.len(),
+        results.len()
+    );
     eprintln!("event kinds: {kinds:?}");
     eprintln!("web hits: {web_hits:?}");
     eprintln!("browser methods: {methods:?} clicks={clicks}");

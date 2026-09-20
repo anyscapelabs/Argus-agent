@@ -124,10 +124,15 @@ fn num_in_body(body: &str, key: &str) -> Option<u64> {
 fn click_attempts(msgs: &[argus_lib::sessions::schema::Msg]) -> Vec<ClickAttempt> {
     let mut out = vec![];
     let action_re =
-        regex::Regex::new(r#"(?s)<action\b[^>]*tool="browser\.click"[^>]*>(.*?)</action>"#).unwrap();
+        regex::Regex::new(r#"(?s)<action\b[^>]*tool="browser\.click"[^>]*>(.*?)</action>"#)
+            .unwrap();
     let bact_re =
         regex::Regex::new(r#"(?s)<browser-action\b([^>]*)>(.*?)</browser-action>"#).unwrap();
-    for (turn, m) in msgs.iter().enumerate().filter(|(_, m)| m.role == "assistant") {
+    for (turn, m) in msgs
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.role == "assistant")
+    {
         if let Some(raw) = m.tool_calls.as_deref() {
             let calls: Vec<argus_lib::gateway::schema::ToolCall> =
                 serde_json::from_str(raw).unwrap_or_default();
@@ -506,8 +511,10 @@ async fn eval_real_browser_snap_task() {
         .collect();
 
     // Structured ordering via tool="..." result attributes.
-    let result_tools: Vec<Option<String>> =
-        results.iter().map(|m| result_tool_name(&m.content)).collect();
+    let result_tools: Vec<Option<String>> = results
+        .iter()
+        .map(|m| result_tool_name(&m.content))
+        .collect();
     let open_pos = result_tools
         .iter()
         .position(|t| t.as_deref() == Some("browser.open"));
@@ -528,8 +535,8 @@ async fn eval_real_browser_snap_task() {
 
     let first_click_pos = click_positions.first().copied();
     let second_click_pos = click_positions.get(1).copied();
-    let second_gen = first_click_pos
-        .and_then(|i| snapshot_gens(&results[i].content).into_iter().next());
+    let second_gen =
+        first_click_pos.and_then(|i| snapshot_gens(&results[i].content).into_iter().next());
     let second_has_control = first_click_pos
         .map(|i| results[i].content.contains(SECOND_LABEL))
         .unwrap_or(false);
@@ -542,9 +549,7 @@ async fn eval_real_browser_snap_task() {
         .iter()
         .any(|a| a.source == "action-tag" || a.source == "browser-action");
 
-    let no_stale = results
-        .iter()
-        .all(|m| !m.content.contains("stale ref"));
+    let no_stale = results.iter().all(|m| !m.content.contains("stale ref"));
     let success_pos = click_positions
         .iter()
         .copied()
@@ -573,7 +578,10 @@ async fn eval_real_browser_snap_task() {
         forbidden.contains(&t.as_str()) || t.starts_with("computer.") || t.starts_with("web.")
     });
 
-    let final_text = assistants.last().map(|m| m.content.clone()).unwrap_or_default();
+    let final_text = assistants
+        .last()
+        .map(|m| m.content.clone())
+        .unwrap_or_default();
     let answer_ok = final_text.contains(&status);
 
     let open_first_ok = open_pos == Some(0) && open_has_first && open_clean;
@@ -623,16 +631,24 @@ async fn eval_real_browser_snap_task() {
     eprintln!("click_attempts={attempts_parsed:?}");
     eprintln!("first_click_pos={first_click_pos:?} second_generation={second_gen:?} second_control={second_has_control}");
     eprintln!("second_click_pos={second_click_pos:?} success_pos={success_pos:?}");
-    eprintln!("click_1_ref={:?} click_1_snapshot={:?} click_1_ok={click1_ok}",
+    eprintln!(
+        "click_1_ref={:?} click_1_snapshot={:?} click_1_ok={click1_ok}",
         first_attempt.as_ref().and_then(|a| a.ref_opt),
-        first_attempt.as_ref().and_then(|a| a.snap_opt));
-    eprintln!("click_2_ref={:?} click_2_snapshot={:?} click_2_ok={click2_ok}",
+        first_attempt.as_ref().and_then(|a| a.snap_opt)
+    );
+    eprintln!(
+        "click_2_ref={:?} click_2_snapshot={:?} click_2_ok={click2_ok}",
         second_attempt.as_ref().and_then(|a| a.ref_opt),
-        second_attempt.as_ref().and_then(|a| a.snap_opt));
-    eprintln!("click_1_snapshot == initial_generation: {}",
-        matches!((first_attempt.as_ref().and_then(|a| a.snap_opt), open_gen), (Some(a), Some(n)) if a == n));
-    eprintln!("click_2_snapshot == second_generation: {}",
-        matches!((second_attempt.as_ref().and_then(|a| a.snap_opt), second_gen), (Some(a), Some(n)) if a == n));
+        second_attempt.as_ref().and_then(|a| a.snap_opt)
+    );
+    eprintln!(
+        "click_1_snapshot == initial_generation: {}",
+        matches!((first_attempt.as_ref().and_then(|a| a.snap_opt), open_gen), (Some(a), Some(n)) if a == n)
+    );
+    eprintln!(
+        "click_2_snapshot == second_generation: {}",
+        matches!((second_attempt.as_ref().and_then(|a| a.snap_opt), second_gen), (Some(a), Some(n)) if a == n)
+    );
     eprintln!("used_native={used_native} used_xml={used_xml} no_stale={no_stale} one_per_control={one_per_control}");
     eprintln!("pre_second_clean={pre_second_clean} status_exclusive={status_exclusive} mining={mining} answer_ok={answer_ok}");
     eprintln!("open_first_ok={open_first_ok} first_action_ok={first_action_ok} both_snapshots_ok={both_snapshots_ok} isolation_ok={isolation_ok} loop_ok={loop_ok}");
@@ -655,5 +671,8 @@ async fn eval_real_browser_snap_task() {
 
     let _ = std::fs::remove_dir_all(&tmp);
     let _ = std::fs::remove_dir_all(&gtmp);
-    assert_eq!(verdict, "PASS", "real-model browser snapshot task did not pass");
+    assert_eq!(
+        verdict, "PASS",
+        "real-model browser snapshot task did not pass"
+    );
 }

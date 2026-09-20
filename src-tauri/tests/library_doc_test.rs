@@ -53,7 +53,10 @@ fn builds_zip_office_formats() {
     )
     .unwrap();
     assert_eq!(&xlsx.bytes[0..4], b"PK\x03\x04");
-    assert!(xlsx.bytes.windows(24).any(|w| w == b"xl/worksheets/sheet1.xml"));
+    assert!(xlsx
+        .bytes
+        .windows(24)
+        .any(|w| w == b"xl/worksheets/sheet1.xml"));
 
     let pptx = doc::build(
         "pptx",
@@ -63,7 +66,10 @@ fn builds_zip_office_formats() {
     .unwrap();
     assert_eq!(&pptx.bytes[0..4], b"PK\x03\x04");
     assert!(pptx.pages == 1);
-    assert!(pptx.bytes.windows(21).any(|w| w == b"ppt/slides/slide1.xml"));
+    assert!(pptx
+        .bytes
+        .windows(21)
+        .any(|w| w == b"ppt/slides/slide1.xml"));
 }
 
 #[test]
@@ -76,7 +82,8 @@ fn library_create_bytes_roundtrip() {
          CREATE TABLE summaries (id TEXT PRIMARY KEY, session_id TEXT, covers_to INTEGER, content TEXT);",
     )
     .unwrap();
-    conn.execute_batch(argus_lib::library::schema::MIGRATE).unwrap();
+    conn.execute_batch(argus_lib::library::schema::MIGRATE)
+        .unwrap();
     argus_lib::memory::store::migrate(&conn).unwrap();
     let item = argus_lib::library::store::create_bytes(
         &conn,
@@ -103,7 +110,8 @@ fn library_download_copies_to_downloads_with_dedupe() {
          CREATE TABLE summaries (id TEXT PRIMARY KEY, session_id TEXT, covers_to INTEGER, content TEXT);",
     )
     .unwrap();
-    conn.execute_batch(argus_lib::library::schema::MIGRATE).unwrap();
+    conn.execute_batch(argus_lib::library::schema::MIGRATE)
+        .unwrap();
     argus_lib::memory::store::migrate(&conn).unwrap();
     let item = argus_lib::library::store::create_bytes(&conn, &dir, "Notes", "txt", b"hello", None)
         .unwrap();
@@ -128,10 +136,11 @@ fn library_preview_returns_text_for_text_and_none_for_office() {
          CREATE TABLE summaries (id TEXT PRIMARY KEY, session_id TEXT, covers_to INTEGER, content TEXT);",
     )
     .unwrap();
-    conn.execute_batch(argus_lib::library::schema::MIGRATE).unwrap();
-    argus_lib::memory::store::migrate(&conn).unwrap();
-    let txt = argus_lib::library::store::create_bytes(&conn, &dir, "Doc", "md", b"# hi", None)
+    conn.execute_batch(argus_lib::library::schema::MIGRATE)
         .unwrap();
+    argus_lib::memory::store::migrate(&conn).unwrap();
+    let txt =
+        argus_lib::library::store::create_bytes(&conn, &dir, "Doc", "md", b"# hi", None).unwrap();
     let pv = argus_lib::library::store::preview(&conn, &dir, &txt.id, 12000).unwrap();
     assert_eq!(pv.text.as_deref(), Some("# hi"));
     assert!(!pv.truncated);

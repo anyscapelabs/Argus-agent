@@ -1,4 +1,5 @@
 pub mod browser;
+pub mod connector;
 pub mod fs;
 pub mod grep;
 pub mod notepad;
@@ -681,6 +682,7 @@ pub async fn exec(
         .chain(WEB_TOOLS.iter())
         .chain(browser::META.iter())
         .chain(notepad::META.iter())
+        .chain(connector::META.iter())
         .find(|t| t.name == name)
         .ok_or_else(|| format!("unknown tool {name}"))?;
 
@@ -849,6 +851,7 @@ pub async fn exec(
         "notepad.append" => notepad::append(&args),
         "notepad.replace" => notepad::replace(&args),
         "notepad.clear" => notepad::clear(&args),
+        _ if connector::META.iter().any(|t| t.name == name) => connector::exec(name, &args).await,
         _ => Err("unknown tool".into()),
     }
 }
@@ -859,6 +862,7 @@ pub fn is_mutating(name: &str) -> bool {
         .chain(WEB_TOOLS.iter())
         .chain(browser::META.iter())
         .chain(notepad::META.iter())
+        .chain(connector::META.iter())
         .find(|t| t.name == name)
         .map(|t| t.mutating)
         .unwrap_or(false)
@@ -882,6 +886,7 @@ pub fn tool_specs(web: bool) -> Vec<crate::gateway::schema::ToolSpec> {
         .chain(WEB_TOOLS.iter().filter(|_| web))
         .chain(browser::META.iter())
         .chain(notepad::META.iter())
+        .chain(connector::META.iter())
     {
         let Ok(ex) = serde_json::from_str::<serde_json::Value>(t.args) else {
             continue;
@@ -951,6 +956,10 @@ Available tools:\n",
     );
 
     for t in TOOLS {
+        s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));
+    }
+
+    for t in connector::META {
         s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));
     }
 

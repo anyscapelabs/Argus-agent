@@ -17,6 +17,8 @@ use gateway::{store, Gateway};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let _ = dotenvy::dotenv();
+
     if std::env::args().any(|a| a == "--native-host") {
         let socket = sessions::ext_install::data_dir().join("native.sock");
         let Ok(rt) = tokio::runtime::Builder::new_multi_thread()

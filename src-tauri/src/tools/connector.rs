@@ -275,22 +275,22 @@ pub const META: &[ToolMeta] = &[
     },
 ];
 
-fn s<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
+pub(super) fn s<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
     args.get(key)
         .and_then(|v| v.as_str())
         .filter(|v| !v.trim().is_empty())
         .ok_or(format!("missing {key}"))
 }
 
-fn opt<'a>(args: &'a Value, key: &str) -> &'a str {
+pub(super) fn opt<'a>(args: &'a Value, key: &str) -> &'a str {
     args.get(key).and_then(|v| v.as_str()).unwrap_or("")
 }
 
-fn num(args: &Value, key: &str, def: u64) -> u64 {
+pub(super) fn num(args: &Value, key: &str, def: u64) -> u64 {
     args.get(key).and_then(|v| v.as_u64()).unwrap_or(def)
 }
 
-fn out(v: Result<Value, String>) -> Result<String, String> {
+pub(super) fn out(v: Result<Value, String>) -> Result<String, String> {
     v.map(|v| v.to_string())
 }
 

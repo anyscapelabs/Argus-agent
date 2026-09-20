@@ -10,6 +10,28 @@ Bring your own credentials everywhere: Argus ships no shared keys. Client IDs an
 
 Every connector event (connect, disconnect, API errors) lands in the local `connector_logs` table for inspection.
 
+## What the agent can do
+
+Once a connector is connected, the agent calls it like any other tool — ask in chat and it fetches data or acts. Read tools run freely; write tools (send, create, comment, close, delete, merge, smart-home `turn`) pause for approval in `ask` permission mode, and every call is logged with token/key values redacted.
+
+- **Linear**: issues, teams, create issue, comment
+- **Slack**: channels, history, threads, send, users
+- **Notion**: search, query databases, read pages/blocks, create page, append text
+- **Figma**: file meta, comments, post comment
+- **Discord**: servers, channels, history, send
+- **Telegram**: bot info, updates, send
+- **Todoist**: tasks, create, close, delete
+- **GitLab**: projects, issues, merge requests, pipelines, create issue
+- **Home Assistant**: entity states, config, call services
+- **Trello**: boards, lists, cards, create card, comment
+- **Gmail**: search, read, send
+- **Google Calendar**: events, create, delete
+- **Google Drive**: search, read/export, metadata, create, delete
+- **Google Docs / Sheets**: read, create, append, update ranges
+- **GitHub**: repos, branches, issues, PRs (create/merge), Actions runs, re-run failed jobs
+- **Outlook**: mail, send, calendar events
+- **Spotify**: now playing, play/pause/skip
+
 ## Credential overrides
 
 Settings → Connectors lists every service. Paste your own credentials there and Argus stores them in the OS keyring (`argus-connector`); they override any built-in or environment defaults. Leave a field empty to keep what is already saved, and Remove wipes all keyring entries for that service.

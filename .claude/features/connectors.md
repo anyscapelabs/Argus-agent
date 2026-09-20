@@ -9,6 +9,7 @@ Code: `src-tauri/src/connectors/{mod.rs,store.rs,log.rs}`, `src-tauri/src/mcp/{m
 - `vault.rs`: `SERVICE="argus-connector"` + `conn_save_token, conn_has_token, conn_has_client, conn_remove_token, conn_save_client, conn_save_secret, conn_clear_client, conn_clear_secret` (`get()` errors `<service> not connected`). Lookup: vault → env → app-data file → dev file.
 - Credential overrides: Settings → Connectors tab (`ConnectorsSettingsPage.tsx`) writes per-service token/client/secret to the vault; all 14 service config paths check vault first (trello `get_client`, github `get_secret` included).
 - Test env: `dotenvy` loads `src-tauri/.env` at startup (`lib.rs:run`), gitignored; template `src-tauri/.env.example` holds all `ARGUS_*` connector vars. Precedence: keyring → env/.env → app-data file → dev file.
+- Agent wiring: `tools/connector.rs` (10 token services, 45 tools) + `tools/conn_oauth.rs` (google/github/outlook/spotify, 39 tools) expose every native service fn as `<svc>.<action>` tools. Both METAs join the `tools/mod.rs` chains (exec/is_mutating/tool_specs/protocol_section) so writes inherit the `ask` gate. Dispatch tests: `tests/connector_tools_test.rs`. External stdio MCP servers still unwired (`mcp::tools/call` have no agent caller).
 
 ## Services (backend dir → auth)
 

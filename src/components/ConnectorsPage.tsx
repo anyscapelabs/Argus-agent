@@ -1,18 +1,11 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { LuGlobe, LuLoaderCircle } from "react-icons/lu";
-import {
-  LuCalendar,
-  LuDatabase,
-  LuGithub,
-  LuHardDrive,
-  LuMail,
-  LuMessageSquare,
-  LuSearch,
-} from "react-icons/lu";
+import { LuGlobe, LuLoaderCircle, LuSearch } from "react-icons/lu";
 
 import {
+  connHasClient,
+  connHasToken,
   githubConnect,
   githubDisconnect,
   githubStatus,
@@ -24,40 +17,26 @@ import {
   sessExtStatus,
   sessExtUninstall,
 } from "../lib/ipc";
-import ConnectorCard, { type Connector } from "./ConnectorCard";
+import { CONNECTOR_SERVICES, type ConnectorService } from "../lib/connectorCreds";
+import ConnectorIcon from "./ConnectorIcon";
+import ConnectorConnectModal from "./ConnectorConnectModal";
 
-const CONNECTORS: Connector[] = [
-  {
-    id: "gmail",
-    name: "Gmail",
-    description: "Connect your Gmail inbox",
-    icon: <LuMail />,
-  },
-  {
-    id: "calendar",
-    name: "Google Calendar",
-    description: "Manage events & meetings",
-    icon: <LuCalendar />,
-  },
-  {
-    id: "drive",
-    name: "Google Drive",
-    description: "Access docs & files",
-    icon: <LuHardDrive />,
-  },
-  {
-    id: "slack",
-    name: "Slack",
-    description: "Collaborate with your team",
-    icon: <LuMessageSquare />,
-  },
-  {
-    id: "notion",
-    name: "Notion",
-    description: "Sync notes & databases",
-    icon: <LuDatabase />,
-  },
+const GRID_IDS = [
+  "linear",
+  "slack",
+  "notion",
+  "figma",
+  "discord",
+  "telegram",
+  "todoist",
+  "gitlab",
+  "ha",
+  "trello",
 ];
+
+const GRID: ConnectorService[] = CONNECTOR_SERVICES.filter((s) =>
+  GRID_IDS.includes(s.id),
+);
 
 type ExtState = "off" | "busy" | "granted" | "connected";
 type ImportState = "idle" | "busy" | "ok" | "err";
@@ -66,6 +45,98 @@ type GoogleState = "off" | "busy" | "waiting" | "connected";
 const ON_KEY = "argus.ext.enabled";
 const GOOGLE_POLL_MS = 2_000;
 const GOOGLE_WAIT_MS = 5 * 60_000;
+
+function ConnectorGrid() {
+  const [connected, setConnected] = useState<Record<string, boolean>>({});
+  const [active, setActive] = useState<ConnectorService | null>(null);
+
+  const refresh = async () => {
+    const entries = await Promise.all(
+      GRID.map(async (s) => {
+        const tok = await connHasToken(s.id).catch(() => false);
+        const cli = await connHasClient(s.id).catch(() => false);
+
+        return [s.id, tok || cli] as const;
+      }),
+    );
+
+    setConnected(Object.fromEntries(entries));
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  return (
+    <>
+      <div className="mt-2 grid grid-cols-2 gap-4">
+        {GRID.map((svc) => {
+          const on = connected[svc.id] ?? false;
+
+          return (
+            <div
+              key={svc.id}
+              className="flex items-center gap-3 rounded-xl bg-transparent px-2 py-1 transition-colors hover:bg-bg-hover-primary"
+            >
+              <div
+                className={
+                  "flex h-11 w-11 shrink-0 items-center justify-center " +
+                  "rounded-lg border border-border-primary bg-bg-primary"
+                }
+              >
+                <ConnectorIcon id={svc.id} size={20} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <h3 className="truncate text-sm font-medium text-text-primary">
+                    {svc.name}
+                  </h3>
+                  {on && (
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />
+                  )}
+                </div>
+                <p className="truncate text-xs text-text-secondary">
+                  {svc.tagline}
+                </p>
+              </div>
+              {on ? (
+                <span
+                  className={
+                    "shrink-0 rounded-full bg-green-600/15 px-3 py-1 text-xs " +
+                    "font-medium text-green-500"
+                  }
+                >
+                  Connected
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setActive(svc)}
+                  className={
+                    "shrink-0 rounded-full border border-border-primary " +
+                    "bg-bg-hover-secondary px-3 py-1 text-xs font-medium " +
+                    "text-text-primary transition-colors " +
+                    "hover:bg-bg-hover-primary cursor-pointer"
+                  }
+                >
+                  Connect
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <ConnectorConnectModal
+        open={active !== null}
+        service={active}
+        onClose={() => setActive(null)}
+        onSaved={() => {
+          void refresh();
+        }}
+      />
+    </>
+  );
+}
 
 function BrowserCard() {
   const [extState, setExtState] = useState<ExtState>(() =>
@@ -210,8 +281,7 @@ function BrowserCard() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="truncate text-sm font-medium text-text-primary">
-              Chrome — real browser
-            </h3>
+              Chrome — real browser            </h3>
             {extState === "connected" && (
               <span className="h-2 w-2 shrink-0 rounded-full bg-green-500" />
             )}
@@ -377,7 +447,7 @@ function GoogleCard() {
             "text-text-primary"
           }
         >
-          <LuMail />
+          <ConnectorIcon id="google" size={22} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -531,7 +601,7 @@ function GithubCard() {
             "text-text-primary"
           }
         >
-          <LuGithub />
+          <ConnectorIcon id="github" size={22} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -631,10 +701,8 @@ export default function ConnectorsPage() {
       <div className="mt-2">
         <GithubCard />
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-4">
-        {CONNECTORS.map((connector) => (
-          <ConnectorCard key={connector.id} connector={connector} />
-        ))}
+      <div className="mt-2">
+        <ConnectorGrid />
       </div>
     </div>
   );

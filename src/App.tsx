@@ -28,7 +28,6 @@ export type View =
   | "projects"
   | "connectors";
 
-const SKILL_TEMPLATE = `@createskill `;
 
 function App() {
   const { sessions, activeId, turns } = useSessions();
@@ -84,12 +83,6 @@ function App() {
   const toggleSidebar = () => setSidebarOpen((open) => !open);
 
   const goToNewAgent = () => {
-    sessionStore.select(null);
-    setView("new-agent");
-  };
-
-  const newSkillChat = () => {
-    setPendingPrompt(SKILL_TEMPLATE);
     sessionStore.select(null);
     setView("new-agent");
   };
@@ -210,7 +203,7 @@ function App() {
                 />
               ))}
             {view === "memory" && <MemoryPage />}
-            {view === "skills" && <SkillsPage onAddSkill={newSkillChat} />}
+            {view === "skills" && <SkillsPage />}
             {view === "library" && <LibraryPage />}
             {view === "projects" && <ProjectsPage />}
             {view === "connectors" && <ConnectorsPage />}

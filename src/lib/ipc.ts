@@ -473,6 +473,25 @@ export function skillDelete(name: string): Promise<void> {
   return invoke<void>("skill_delete", { name });
 }
 
+export type NewSkill = {
+  name: string;
+  description: string;
+  body: string;
+  source?: string;
+  origin?: string;
+};
+
+export function skillCreate(skill: NewSkill): Promise<Skill> {
+  return invoke<Skill>("skill_create", { skill });
+}
+
+export function skillUpdate(
+  name: string,
+  upd: { description?: string; body?: string },
+): Promise<Skill> {
+  return invoke<Skill>("skill_update", { name, upd });
+}
+
 export type Memory = {
   id: string;
   content: string;

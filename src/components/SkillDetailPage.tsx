@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { LuArrowLeft, LuChevronDown, LuWand } from "react-icons/lu";
+import { FiMoreVertical } from "react-icons/fi";
+import { LuArrowLeft, LuPencil, LuWand } from "react-icons/lu";
 
 import {
   skillDelete,
@@ -12,12 +13,14 @@ import Dropdown from "./Dropdown";
 type Props = {
   skill: Skill;
   onBack: () => void;
+  onEdit: (skill: Skill) => void;
   onDeleted: (name: string) => void;
 };
 
 export default function SkillDetailPage({
   skill,
   onBack,
+  onEdit,
   onDeleted,
 }: Props) {
   const [body, setBody] = useState<string | null>(null);
@@ -90,25 +93,27 @@ export default function SkillDetailPage({
         <Dropdown
           align="right"
           side="bottom"
-          trigger={({ open, toggle }) => (
+          trigger={({ toggle }) => (
             <button
               type="button"
               onClick={toggle}
               aria-label="Skill actions"
               className={
-                "flex h-8 items-center rounded-md border " +
-                "border-border-primary bg-bg-hover-secondary px-2 " +
+                "flex h-8 w-8 items-center justify-center rounded-md " +
+                "border border-border-primary bg-bg-hover-secondary " +
                 "text-text-secondary hover:text-text-primary " +
                 "focus:outline-none cursor-pointer"
               }
             >
-              <LuChevronDown
-                size={13}
-                className={`transition-transform ${open ? "rotate-180" : ""}`}
-              />
+              <FiMoreVertical size={15} />
             </button>
           )}
           items={[
+            {
+              label: "Edit skill",
+              Icon: LuPencil,
+              onClick: () => onEdit(skill),
+            },
             {
               label: "Delete skill",
               danger: true,

@@ -1,22 +1,20 @@
 import { useEffect, useState } from "react";
-import { FiChevronDown } from "react-icons/fi";
-import { LuBrain, LuSearch } from "react-icons/lu";
+import { LuBrain, LuPlus, LuSearch } from "react-icons/lu";
 
 import type { Skill } from "../lib/ipc";
 import { skillDelete, skillList, skillSearch } from "../lib/ipc";
 import { toast } from "../stores/toast";
 import SkillCard from "./SkillCard";
 import SkillDetailPage from "./SkillDetailPage";
+import SkillEditorPage from "./SkillEditorPage";
 
-type SkillsPageProps = {
-  onAddSkill?: () => void;
-};
-
-export default function SkillsPage({ onAddSkill }: SkillsPageProps) {
+export default function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [query, setQuery] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [sel, setSel] = useState<Skill | null>(null);
+  const [editing, setEditing] = useState<Skill | null>(null);
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -64,12 +62,43 @@ export default function SkillsPage({ onAddSkill }: SkillsPageProps) {
     setSkills((prev) => prev.filter((s) => s.name !== name));
   };
 
+  if (creating) {
+    return (
+      <div className="mx-auto w-full max-w-2xl py-4">
+        <SkillEditorPage
+          skill={null}
+          onBack={() => setCreating(false)}
+          onSaved={(s) => {
+            setCreating(false);
+            setSkills((prev) => [s, ...prev.filter((x) => x.name !== s.name)]);
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (editing) {
+    return (
+      <div className="mx-auto w-full max-w-2xl py-4">
+        <SkillEditorPage
+          skill={editing}
+          onBack={() => setEditing(null)}
+          onSaved={(s) => {
+            setEditing(null);
+            setSkills((prev) => prev.map((x) => (x.name === s.name ? s : x)));
+          }}
+        />
+      </div>
+    );
+  }
+
   if (sel) {
     return (
       <div className="mx-auto w-full max-w-2xl py-4">
         <SkillDetailPage
           skill={sel}
           onBack={() => setSel(null)}
+          onEdit={setEditing}
           onDeleted={(name) => {
             void remove(name);
             setSel(null);
@@ -85,16 +114,16 @@ export default function SkillsPage({ onAddSkill }: SkillsPageProps) {
         <h1 className="text-2xl font-medium text-text-primary">Skills</h1>
         <button
           type="button"
-          onClick={onAddSkill ?? (() => {})}
+          onClick={() => setCreating(true)}
           className={
-            "inline-flex items-center justify-center gap-1 rounded-lg " +
+            "inline-flex items-center justify-center gap-1 rounded-md " +
             "bg-accent px-2 py-1 text-xs font-medium text-bg-primary " +
             "transition-opacity hover:opacity-90 cursor-pointer"
           }
           aria-label="Add skill"
         >
+          <LuPlus size={14} />
           Add
-          <FiChevronDown size={16} />
         </button>
       </div>
       <p className="mb-5 text-sm font-medium text-text-secondary">

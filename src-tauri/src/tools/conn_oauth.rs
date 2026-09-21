@@ -18,7 +18,7 @@ pub const META: &[ToolMeta] = &[
     },
     ToolMeta {
         name: "gmail.send",
-        desc: "send an email from the connected Gmail account",
+        desc: "send an email from the connected Gmail account; in ask mode it renders as an editable draft card — put email drafts here, never in reply prose",
         args: "{\"to\":\"a@b.com\",\"subject\":\"...\",\"body\":\"...\"}",
         mutating: true,
     },
@@ -210,7 +210,7 @@ pub const META: &[ToolMeta] = &[
     },
     ToolMeta {
         name: "outlook.send",
-        desc: "send an Outlook email",
+        desc: "send an Outlook email; in ask mode it renders as an editable draft card — put email drafts here, never in reply prose",
         args: "{\"to\":\"a@b.com\",\"subject\":\"...\",\"body\":\"...\"}",
         mutating: true,
     },

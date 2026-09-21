@@ -1017,6 +1017,21 @@ the one manual step it describes. Never open a url that carries a \
 credential — the tool will refuse it anyway.\n",
     );
 
+    s.push_str("Email rules:\n");
+    for t in conn_oauth::META
+        .iter()
+        .filter(|t| t.name == "gmail.send" || t.name == "outlook.send")
+    {
+        s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));
+    }
+    s.push_str(
+        "When the user asks you to draft, write, compose or send an email, always put the \
+message in a gmail.send or outlook.send action — never write the draft as prose in your \
+reply and never end by asking whether to send it. In ask mode the action renders as an \
+editable draft card the user reviews, edits and sends or discards, so the action IS the \
+draft. Iterate on wording only when the user rejects or edits and asks for changes.\n",
+    );
+
     s.push_str("Notepad tools:\n");
     for t in notepad::META {
         s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));

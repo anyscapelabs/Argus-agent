@@ -6,7 +6,7 @@ Code: `src-tauri/src/sessions/{chat.rs,mod.rs,store.rs,schema.rs,browser_import.
 
 - Project prompt → stream reply → parse `<action>` → approval gate → `tools::exec` → `<tool-result>` back in. Loop-guard trips on 3rd identical repeat.
 - Screenshots by path attach as images (last 2 msgs). Overflow → `prompt::compressor` summarization with utility model.
-- `ask_approval()` + `sess_chat_stream(sessionId,content,on_event:Channel<StreamEvent>)`, `sess_cancel_chat`, `sess_resolve_approval` (oneshot `HashMap<String,Sender<bool>>` in `Gateway.approvals`).
+- `ask_approval()` + `sess_chat_stream(sessionId,content,on_event:Channel<StreamEvent>)`, `sess_cancel_chat`, `sess_resolve_approval(id, allow, args?)` (oneshot `HashMap<String,Sender<ApprovalReply>>` in `Gateway.approvals`; `allow` + optional edited args JSON, validated by `gateway::approval_reply`, applied to `exec.args` before run — browser tools excluded).
 
 ## Schema / commands (`sessions/schema.rs`, `mod.rs`)
 
@@ -18,6 +18,7 @@ Code: `src-tauri/src/sessions/{chat.rs,mod.rs,store.rs,schema.rs,browser_import.
 - `Channel<StreamEvent>`: `delta|reset|step|term|term_end|approval|notice|err`. Optimistic `pending-` user msg, auto-title 60 chars, retry via `sessSupersedeFrom`, `stop()` via `sessCancelChat`.
 - `Turn{text,term:Record<idx,chunk>,termCode,approval,err}` mutated incrementally; `step` clears turn + reloads; `done` clears + reloads; `err` preserves retryable turn. Background turns fire `notifyDone` only when not watching (`App.tsx:45-70`).
 - Rendering: `AgentBubble` parses `lib/agentXml.ts` tags; `ApprovalBlock` Run/Deny; `SessionList` + `listen("sessions-changed")` in `App.tsx:75`.
+- Email drafts: `gmail.send`/`outlook.send` pending approvals render as interactive `EmailDraftCard` (editable To/Subject/Body) inside `ToolActivity` via `actionStep` email branch; Send → `resolveApproval(id, true, editedArgs)`, Discard → deny. History `<email-draft>` blocks render read-only.
 
 ## Rules for agents
 

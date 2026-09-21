@@ -10,128 +10,13 @@ import {
   connSaveSecret,
   connSaveToken,
 } from "../../lib/ipc";
+import {
+  CONNECTOR_SERVICES,
+  type ConnectorService,
+  type FieldKind,
+} from "../../lib/connectorCreds";
 
-type FieldKind = "token" | "client" | "secret";
-
-type FieldDef = {
-  kind: FieldKind;
-  label: string;
-  placeholder: string;
-};
-
-type ServiceDef = {
-  id: string;
-  name: string;
-  fields: FieldDef[];
-};
-
-const SERVICES: ServiceDef[] = [
-  {
-    id: "linear",
-    name: "Linear",
-    fields: [
-      { kind: "token", label: "API key", placeholder: "lin_api_…" },
-    ],
-  },
-  {
-    id: "slack",
-    name: "Slack",
-    fields: [
-      { kind: "token", label: "Bot token", placeholder: "xoxb-…" },
-    ],
-  },
-  {
-    id: "notion",
-    name: "Notion",
-    fields: [
-      { kind: "token", label: "Integration token", placeholder: "ntn_…" },
-    ],
-  },
-  {
-    id: "figma",
-    name: "Figma",
-    fields: [
-      { kind: "token", label: "Personal access token", placeholder: "figd_…" },
-    ],
-  },
-  {
-    id: "discord",
-    name: "Discord",
-    fields: [
-      { kind: "token", label: "Bot token", placeholder: "MTIz…" },
-    ],
-  },
-  {
-    id: "telegram",
-    name: "Telegram",
-    fields: [
-      { kind: "token", label: "Bot token", placeholder: "123456:ABC-…" },
-    ],
-  },
-  {
-    id: "todoist",
-    name: "Todoist",
-    fields: [
-      { kind: "token", label: "API token", placeholder: "…" },
-    ],
-  },
-  {
-    id: "gitlab",
-    name: "GitLab",
-    fields: [
-      { kind: "token", label: "Personal access token", placeholder: "glpat-…" },
-    ],
-  },
-  {
-    id: "ha",
-    name: "Home Assistant",
-    fields: [
-      { kind: "token", label: "Long-lived access token", placeholder: "…" },
-    ],
-  },
-  {
-    id: "trello",
-    name: "Trello",
-    fields: [
-      { kind: "client", label: "API key", placeholder: "…" },
-      { kind: "token", label: "Token", placeholder: "…" },
-    ],
-  },
-  {
-    id: "google",
-    name: "Google",
-    fields: [
-      {
-        kind: "client",
-        label: "OAuth client ID",
-        placeholder: "…apps.googleusercontent.com",
-      },
-      { kind: "secret", label: "OAuth client secret", placeholder: "GOCSPX-…" },
-    ],
-  },
-  {
-    id: "github",
-    name: "GitHub",
-    fields: [
-      { kind: "client", label: "OAuth app client ID", placeholder: "…" },
-      { kind: "secret", label: "Client secret", placeholder: "…" },
-    ],
-  },
-  {
-    id: "outlook",
-    name: "Outlook",
-    fields: [
-      { kind: "client", label: "Application (client) ID", placeholder: "…" },
-    ],
-  },
-  {
-    id: "spotify",
-    name: "Spotify",
-    fields: [
-      { kind: "client", label: "Client ID", placeholder: "…" },
-    ],
-  },
-];
+const SERVICES = CONNECTOR_SERVICES;
 
 const EMPTY_VALS: Record<FieldKind, string> = {
   token: "",
@@ -148,7 +33,7 @@ async function refreshSaved(id: string) {
   return { token: tok, client: cli };
 }
 
-function ServiceRow({ svc }: { svc: ServiceDef }) {
+function ServiceRow({ svc }: { svc: ConnectorService }) {
   const [vals, setVals] = useState<Record<FieldKind, string>>(EMPTY_VALS);
   const [saved, setSaved] = useState({ token: false, client: false });
   const [busy, setBusy] = useState(false);

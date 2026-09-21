@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { LuGlobe, LuLoaderCircle, LuSearch } from "react-icons/lu";
+import { LuLoaderCircle, LuSearch } from "react-icons/lu";
 
 import {
   connHasClient,
@@ -87,14 +87,9 @@ function ConnectorGrid() {
                 <ConnectorIcon id={svc.id} size={20} />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <h3 className="truncate text-sm font-medium text-text-primary">
-                    {svc.name}
-                  </h3>
-                  {on && (
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />
-                  )}
-                </div>
+                <h3 className="truncate text-sm font-medium text-text-primary">
+                  {svc.name}
+                </h3>
                 <p className="truncate text-xs text-text-secondary">
                   {svc.tagline}
                 </p>
@@ -259,12 +254,12 @@ function BrowserCard() {
 
   const statusLine =
     extState === "connected"
-      ? "Connected — the agent can use your real Chrome."
+      ? "Connected — the agent can act in your Chrome."
       : extState === "granted"
         ? note
         : extState === "busy"
           ? "Saving permission…"
-          : "Permission for the agent to act inside your real Chrome. Chrome only opens when it needs to.";
+          : "Let the agent act inside your Chrome. Chrome only opens when it needs to.";
 
   return (
     <div className="rounded-xl bg-transparent px-2 py-1 transition-colors hover:bg-bg-hover-primary">
@@ -276,12 +271,13 @@ function BrowserCard() {
             "text-text-primary"
           }
         >
-          <LuGlobe />
+          <ConnectorIcon id="chrome" size={24} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="truncate text-sm font-medium text-text-primary">
-              Chrome — real browser            </h3>
+              Google Chrome
+            </h3>
             {extState === "connected" && (
               <span className="h-2 w-2 shrink-0 rounded-full bg-green-500" />
             )}
@@ -296,7 +292,7 @@ function BrowserCard() {
             `${extOn ? "bg-green-600" : "bg-bg-hover-primary border border-border-primary"}`
           }
           aria-pressed={extOn}
-          aria-label="Allow the agent to use real Chrome"
+          aria-label="Allow the agent to use Google Chrome"
         >
           <span
             className={

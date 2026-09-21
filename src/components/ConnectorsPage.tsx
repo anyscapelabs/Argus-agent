@@ -103,8 +103,8 @@ function ConnectorGrid() {
                     setDetail(svc);
                   }}
                   className={
-                    "shrink-0 rounded-full bg-green-600/15 px-3 py-1 text-xs " +
-                    "font-medium text-green-500 cursor-pointer"
+                    "shrink-0 rounded-full bg-green-600 px-3 py-1 text-xs " +
+                    "font-medium text-white cursor-pointer"
                   }
                 >
                   Connected

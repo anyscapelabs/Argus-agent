@@ -444,7 +444,14 @@ function renderBlk(blk: BlockNode, key: string): React.ReactNode {
     case "document":
       return <DocumentCard key={key} block={blk} />;
     case "email-draft":
-      return <EmailDraftCard key={key} block={blk} />;
+      return (
+        <EmailDraftCard
+          key={key}
+          to={blk.attrs.to ?? ""}
+          subject={blk.attrs.subject ?? ""}
+          body={blk.children.map((c) => c.value).join("").trim()}
+        />
+      );
     case "memory-ref":
       return <MemoryRefChip key={key} block={blk} />;
     case "table":

@@ -375,7 +375,7 @@ class SessionStore {
     }
   }
 
-  async resolveApproval(sessionId: string, allow: boolean) {
+  async resolveApproval(sessionId: string, allow: boolean, args?: string) {
     const t = this.state.turns[sessionId];
     if (t === undefined || t.approval === null) return;
 
@@ -383,7 +383,7 @@ class SessionStore {
     this.patchTurn(sessionId, (prev) => ({ ...prev, approval: null }));
 
     try {
-      await sessResolveApproval(id, allow);
+      await sessResolveApproval(id, allow, args);
     } catch {}
   }
 

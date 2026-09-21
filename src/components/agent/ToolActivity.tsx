@@ -5,6 +5,7 @@ import { SiGooglechrome } from "react-icons/si";
 import { sessionStore, type PendingApproval } from "../../stores/sessions";
 
 import type { BlockNode } from "../../lib/agentXml";
+import EmailDraftCard from "./EmailDraftCard";
 
 function argsOf(blk: BlockNode): Record<string, unknown> {
   try {
@@ -88,6 +89,20 @@ export function actionStep(
 ): ToolStep {
   const tool = blk.attrs.tool ?? "";
   const args = argsOf(blk);
+
+  if (tool === "gmail.send" || tool === "outlook.send") {
+    const to = strArg(args, "to");
+
+    return {
+      group: "tool",
+      tool,
+      args,
+      label: live ? `Drafting email to ${to}` : `Email to ${to}`,
+      approvalIdx: idx,
+      live,
+    };
+  }
+
   if (tool.startsWith("browser.")) {
     return {
       group: "browser",
@@ -131,6 +146,8 @@ export type ToolStep = {
   code?: number;
   approvalIdx?: number;
   live?: boolean;
+  tool?: string;
+  args?: Record<string, unknown>;
 };
 
 type Props = {
@@ -180,6 +197,9 @@ export default function ToolActivity({
       sessionStore.resolveApproval(sessionId, allow);
     }
   };
+
+  const isEmailStep = (step: ToolStep) =>
+    step.tool === "gmail.send" || step.tool === "outlook.send";
 
   return (
     <div className="my-2 font-sans">
@@ -231,7 +251,24 @@ export default function ToolActivity({
                   {step.output}
                 </pre>
               )}
-              {i === approvalStep && approval && (
+              {i === approvalStep && approval && isEmailStep(step) && (
+                <EmailDraftCard
+                  to={strArg(step.args ?? {}, "to")}
+                  subject={strArg(step.args ?? {}, "subject")}
+                  body={strArg(step.args ?? {}, "body")}
+                  onSend={(d) => {
+                    if (sessionId === undefined) return;
+
+                    sessionStore.resolveApproval(
+                      sessionId,
+                      true,
+                      JSON.stringify({ ...(step.args ?? {}), ...d }),
+                    );
+                  }}
+                  onDiscard={() => decide(false)}
+                />
+              )}
+              {i === approvalStep && approval && !isEmailStep(step) && (
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-text-secondary">
                     Allow this action?

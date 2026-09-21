@@ -261,8 +261,9 @@ export function sessCleanDangling(sessionId: string): Promise<number> {
 export function sessResolveApproval(
   approvalId: string,
   allow: boolean,
+  args?: string,
 ): Promise<void> {
-  return invoke<void>(CMD_SESS_APPR, { approvalId, allow });
+  return invoke<void>(CMD_SESS_APPR, { approvalId, allow, args: args ?? null });
 }
 
 export function sessBrowserImport(profile: string): Promise<void> {

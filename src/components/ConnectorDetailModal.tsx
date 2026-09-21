@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { LuChevronDown, LuX } from "react-icons/lu";
 
+import Dropdown from "./Dropdown";
+
 import {
   connClearClient,
   connClearSecret,
@@ -46,7 +48,6 @@ export default function ConnectorDetailModal({
   const flow = useOAuthFlow(oauth ?? NOOP);
   const [saved, setSaved] = useState({ token: false, client: false });
   const [tools, setTools] = useState<CatalogTool[]>([]);
-  const [menu, setMenu] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const alive = useRef(true);
@@ -55,7 +56,6 @@ export default function ConnectorDetailModal({
     if (!open || !svc) return;
 
     alive.current = true;
-    setMenu(false);
     setErr(null);
     setSaved({ token: false, client: false });
 
@@ -119,7 +119,7 @@ export default function ConnectorDetailModal({
       aria-label={`${svc.name} details`}
     >
       <div
-        className="relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-border-primary bg-bg-secondary shadow-4xl"
+        className="relative flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border-primary bg-bg-secondary shadow-4xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4 px-7 pt-6">
@@ -142,7 +142,7 @@ export default function ConnectorDetailModal({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <div className="relative flex">
+            <div className="flex">
               <button
                 type="button"
                 onClick={mainAction}
@@ -159,21 +159,54 @@ export default function ConnectorDetailModal({
               >
                 {busy ? "Working…" : mainLabel}
               </button>
-              <button
-                type="button"
-                onClick={() => setMenu((v) => !v)}
-                aria-label="More actions"
-                className={
-                  "rounded-r-full px-2 py-1.5 focus:outline-none " +
-                  `${
-                    connected
-                      ? "bg-green-600 text-white"
-                      : "bg-accent text-bg-primary"
-                  } cursor-pointer`
-                }
-              >
-                <LuChevronDown size={13} />
-              </button>
+              <Dropdown
+                align="right"
+                side="bottom"
+                trigger={({ open, toggle }) => (
+                  <button
+                    type="button"
+                    onClick={toggle}
+                    aria-label="More actions"
+                    className={
+                      "rounded-r-full px-2 py-1.5 focus:outline-none " +
+                      `${
+                        connected
+                          ? "bg-green-600 text-white"
+                          : "bg-accent text-bg-primary"
+                      } cursor-pointer`
+                    }
+                  >
+                    <LuChevronDown
+                      size={13}
+                      className={`transition-transform ${open ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                )}
+                items={[
+                  ...(isOauth
+                    ? [
+                        {
+                          label: "Use my own OAuth app",
+                          onClick: () => onOwnApp(svc),
+                        },
+                      ]
+                    : []),
+                  ...(connected
+                    ? [
+                        {
+                          label: isOauth
+                            ? "Disconnect & remove keys"
+                            : "Disable & remove keys",
+                          danger: true,
+                          disabled: busy,
+                          onClick: () => {
+                            void disable();
+                          },
+                        },
+                      ]
+                    : []),
+                ]}
+              />
             </div>
             <button
               type="button"
@@ -185,46 +218,6 @@ export default function ConnectorDetailModal({
             </button>
           </div>
         </div>
-
-        {menu && (
-          <>
-            <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
-            <div
-              className={
-                "absolute right-0 top-9 z-30 w-56 overflow-hidden rounded-lg " +
-                "border border-border-primary bg-bg-primary py-1 shadow-4xl"
-              }
-            >
-              {isOauth && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenu(false);
-                    onOwnApp(svc);
-                  }}
-                  className="block w-full px-3 py-1.5 text-left text-xs text-text-primary hover:bg-bg-hover-primary cursor-pointer"
-                >
-                  Use my own OAuth app
-                </button>
-              )}
-              {connected && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenu(false);
-                    void disable();
-                  }}
-                  disabled={busy}
-                  className="block w-full px-3 py-1.5 text-left text-xs text-red-400 hover:bg-bg-hover-primary cursor-pointer disabled:opacity-50"
-                >
-                  {isOauth
-                    ? "Disconnect & remove keys"
-                    : "Disable & remove keys"}
-                </button>
-              )}
-            </div>
-          </>
-        )}
 
         <div className="min-h-0 flex-1 overflow-y-auto px-7 pb-7 pt-4">
           <div className="flex gap-8">

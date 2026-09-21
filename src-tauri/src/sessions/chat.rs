@@ -201,8 +201,8 @@ async fn ask_approval(
     id: &str,
     idx: u32,
     cmd: &str,
-) -> bool {
-    let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
+) -> crate::gateway::ApprovalReply {
+    let (tx, rx) = tokio::sync::oneshot::channel::<crate::gateway::ApprovalReply>();
 
     if let Ok(mut map) = gw.approvals.lock() {
         map.insert(id.into(), tx);
@@ -214,16 +214,19 @@ async fn ask_approval(
         command: cmd.into(),
     });
 
-    let allow = matches!(
-        tokio::time::timeout(Duration::from_secs(TERM_TIMEOUT), rx).await,
-        Ok(Ok(true))
-    );
+    let reply = match tokio::time::timeout(Duration::from_secs(TERM_TIMEOUT), rx).await {
+        Ok(Ok(r)) => r,
+        _ => crate::gateway::ApprovalReply {
+            allow: false,
+            args: None,
+        },
+    };
 
     if let Ok(mut map) = gw.approvals.lock() {
         map.remove(id);
     }
 
-    allow
+    reply
 }
 
 fn esc_attr(s: &str) -> String {
@@ -582,8 +585,15 @@ pub async fn send<R: tauri::Runtime>(
                         cmd.clone()
                     };
 
-                    allow = ask_approval(gw, &chan, &approval_id(), idx as u32, &what).await;
+                    let reply = ask_approval(gw, &chan, &approval_id(), idx as u32, &what).await;
+                    allow = reply.allow;
                     denied = !allow;
+
+                    if allow && !exec.is_browser_tool() {
+                        if let Some(edited) = reply.args {
+                            exec.args = edited;
+                        }
+                    }
 
                     if denied && is_term {
                         let _ = chan.send(StreamEvent::TermEnd {
@@ -890,7 +900,9 @@ pub fn sess_resolve_approval(
     gw: State<'_, Gateway>,
     approval_id: String,
     allow: bool,
+    args: Option<String>,
 ) -> Result<(), String> {
+    let reply = crate::gateway::approval_reply(allow, args)?;
     let tx = gw
         .approvals
         .lock()
@@ -899,7 +911,7 @@ pub fn sess_resolve_approval(
 
     match tx {
         Some(tx) => {
-            let _ = tx.send(allow);
+            let _ = tx.send(reply);
             Ok(())
         }
         None => Err("unknown approval".into()),

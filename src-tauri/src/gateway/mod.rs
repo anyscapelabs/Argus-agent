@@ -15,14 +15,32 @@ use tokio::sync::oneshot;
 
 use schema::{Avail, ChatModel, ChatReq, ChatResp, ModelEntry, Provider, ProviderModel, SyncStats};
 
+#[derive(Debug)]
+pub struct ApprovalReply {
+    pub allow: bool,
+    pub args: Option<String>,
+}
+
 pub struct Gateway {
     pub conn: Mutex<Connection>,
     pub http: Client,
     pub skills_dir: PathBuf,
     pub library_dir: PathBuf,
     pub logos_dir: PathBuf,
-    pub approvals: Mutex<HashMap<String, oneshot::Sender<bool>>>,
+    pub approvals: Mutex<HashMap<String, oneshot::Sender<ApprovalReply>>>,
     pub tasks: Mutex<HashMap<String, std::sync::Arc<tokio::sync::Notify>>>,
+}
+
+pub fn approval_reply(allow: bool, args: Option<String>) -> Result<ApprovalReply, String> {
+    if let Some(a) = &args {
+        let v: serde_json::Value =
+            serde_json::from_str(a.trim()).map_err(|_| "edited args are not valid JSON")?;
+        if !v.is_object() {
+            return Err("edited args must be a JSON object".into());
+        }
+    }
+
+    Ok(ApprovalReply { allow, args })
 }
 
 #[tauri::command]

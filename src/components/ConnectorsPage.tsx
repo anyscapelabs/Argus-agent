@@ -15,7 +15,7 @@ import { CONNECTOR_SERVICES, type ConnectorService } from "../lib/connectorCreds
 import ConnectorIcon from "./ConnectorIcon";
 import ConnectorConnectModal from "./ConnectorConnectModal";
 import ConnectorOAuthCard, { OAUTH_SERVICES } from "./ConnectorOAuthCard";
-import ConnectorDetailModal from "./ConnectorDetailModal";
+import ConnectorDetailPage from "./ConnectorDetailPage";
 
 const GRID_IDS = [
   "linear",
@@ -39,11 +39,13 @@ type ImportState = "idle" | "busy" | "ok" | "err";
 
 const ON_KEY = "argus.ext.enabled";
 
-function ConnectorGrid() {
+type GridProps = {
+  onOpen: (svc: ConnectorService) => void;
+  onConnectKeys: (svc: ConnectorService) => void;
+};
+
+function ConnectorGrid({ onOpen, onConnectKeys }: GridProps) {
   const [connected, setConnected] = useState<Record<string, boolean>>({});
-  const [active, setActive] = useState<ConnectorService | null>(null);
-  const [ownApp, setOwnApp] = useState<ConnectorService | null>(null);
-  const [detail, setDetail] = useState<ConnectorService | null>(null);
 
   const refresh = async () => {
     const entries = await Promise.all(
@@ -62,101 +64,78 @@ function ConnectorGrid() {
     void refresh();
   }, []);
 
-  const openDetail = (id: string) => {
-    const svc = CONNECTOR_SERVICES.find((s) => s.id === id);
-
-    if (svc) setDetail(svc);
-  };
-
   return (
-    <>
-      <div className="mt-2 grid grid-cols-2 gap-4">
-        {GRID.map((svc) => {
-          const on = connected[svc.id] ?? false;
+    <div className="mt-2 grid grid-cols-2 gap-4">
+      {GRID.map((svc) => {
+        const on = connected[svc.id] ?? false;
 
-          return (
+        return (
+          <div
+            key={svc.id}
+            onClick={() => onOpen(svc)}
+            className="flex cursor-pointer items-center gap-3 rounded-xl bg-transparent px-2 py-1 transition-colors hover:bg-bg-hover-primary"
+          >
             <div
-              key={svc.id}
-              onClick={() => setDetail(svc)}
-              className="flex cursor-pointer items-center gap-3 rounded-xl bg-transparent px-2 py-1 transition-colors hover:bg-bg-hover-primary"
+              className={
+                "flex h-11 w-11 shrink-0 items-center justify-center " +
+                "rounded-lg border border-border-primary bg-bg-primary"
+              }
             >
-              <div
+              <ConnectorIcon id={svc.id} size={20} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3 className="truncate text-sm font-medium text-text-primary">
+                {svc.name}
+              </h3>
+              <p className="truncate text-xs text-text-secondary">
+                {svc.tagline}
+              </p>
+            </div>
+            {on ? (
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpen(svc);
+                }}
                 className={
-                  "flex h-11 w-11 shrink-0 items-center justify-center " +
-                  "rounded-lg border border-border-primary bg-bg-primary"
+                  "shrink-0 rounded-full bg-green-600 px-3 py-1 text-xs " +
+                  "font-medium text-white cursor-pointer"
                 }
               >
-                <ConnectorIcon id={svc.id} size={20} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <h3 className="truncate text-sm font-medium text-text-primary">
-                  {svc.name}
-                </h3>
-                <p className="truncate text-xs text-text-secondary">
-                  {svc.tagline}
-                </p>
-              </div>
-              {on ? (
-                <span
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDetail(svc);
-                  }}
-                  className={
-                    "shrink-0 rounded-full bg-green-600 px-3 py-1 text-xs " +
-                    "font-medium text-white cursor-pointer"
-                  }
-                >
-                  Connected
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActive(svc);
-                  }}
-                  className={
-                    "shrink-0 rounded-full border border-border-primary " +
-                    "bg-bg-hover-secondary px-3 py-1 text-xs font-medium " +
-                    "text-text-primary transition-colors " +
-                    "hover:bg-bg-hover-primary cursor-pointer"
-                  }
-                >
-                  Connect
-                </button>
-              )}
-            </div>
-          );
-        })}
-        {OAUTH_SERVICES.map((svc) => (
-          <ConnectorOAuthCard key={svc.id} svc={svc} onOpen={openDetail} />
-        ))}
-      </div>
-      <ConnectorConnectModal
-        open={active !== null}
-        service={active}
-        onClose={() => setActive(null)}
-        onSaved={() => {
-          void refresh();
-        }}
-      />
-      <ConnectorConnectModal
-        open={ownApp !== null}
-        service={ownApp}
-        mode="ownApp"
-        onClose={() => setOwnApp(null)}
-        onSaved={() => {}}
-      />
-      <ConnectorDetailModal
-        open={detail !== null}
-        svc={detail}
-        onClose={() => setDetail(null)}
-        onConnectKeys={(s) => setActive(s)}
-        onOwnApp={(s) => setOwnApp(s)}
-        onDisabled={() => void refresh()}
-      />
-    </>
+                Connected
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onConnectKeys(svc);
+                }}
+                className={
+                  "shrink-0 rounded-full border border-border-primary " +
+                  "bg-bg-hover-secondary px-3 py-1 text-xs font-medium " +
+                  "text-text-primary transition-colors " +
+                  "hover:bg-bg-hover-primary cursor-pointer"
+                }
+              >
+                Connect
+              </button>
+            )}
+          </div>
+        );
+      })}
+      {OAUTH_SERVICES.map((svc) => (
+        <ConnectorOAuthCard
+          key={svc.id}
+          svc={svc}
+          onOpen={(id) => {
+            const s = CONNECTOR_SERVICES.find((x) => x.id === id);
+
+            if (s) onOpen(s);
+          }}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -373,6 +352,37 @@ function BrowserCard() {
 }
 
 export default function ConnectorsPage() {
+  const [active, setActive] = useState<ConnectorService | null>(null);
+  const [ownApp, setOwnApp] = useState<ConnectorService | null>(null);
+  const [detail, setDetail] = useState<ConnectorService | null>(null);
+
+  if (detail) {
+    return (
+      <div className="mx-auto w-full max-w-2xl py-4">
+        <ConnectorDetailPage
+          svc={detail}
+          onBack={() => setDetail(null)}
+          onConnectKeys={setActive}
+          onOwnApp={setOwnApp}
+          onDisabled={() => {}}
+        />
+        <ConnectorConnectModal
+          open={active !== null}
+          service={active}
+          onClose={() => setActive(null)}
+          onSaved={() => {}}
+        />
+        <ConnectorConnectModal
+          open={ownApp !== null}
+          service={ownApp}
+          mode="ownApp"
+          onClose={() => setOwnApp(null)}
+          onSaved={() => {}}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto w-full max-w-2xl py-4">
       <h1 className="mb-1 text-2xl font-medium text-text-primary">
@@ -401,8 +411,21 @@ export default function ConnectorsPage() {
         >
           Connectors
         </h2>
-        <ConnectorGrid />
+        <ConnectorGrid onOpen={setDetail} onConnectKeys={setActive} />
       </div>
+      <ConnectorConnectModal
+        open={active !== null}
+        service={active}
+        onClose={() => setActive(null)}
+        onSaved={() => {}}
+      />
+      <ConnectorConnectModal
+        open={ownApp !== null}
+        service={ownApp}
+        mode="ownApp"
+        onClose={() => setOwnApp(null)}
+        onSaved={() => {}}
+      />
     </div>
   );
 }

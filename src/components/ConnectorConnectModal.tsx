@@ -8,6 +8,7 @@ import type { ConnectorService } from "../lib/connectorCreds";
 type Props = {
   open: boolean;
   service: ConnectorService | null;
+  mode?: "connect" | "ownApp";
   onClose: () => void;
   onSaved: (service: ConnectorService) => void;
 };
@@ -17,6 +18,7 @@ const EMPTY: Record<string, string> = { token: "", client: "", secret: "" };
 export default function ConnectorConnectModal({
   open,
   service,
+  mode = "connect",
   onClose,
   onSaved,
 }: Props) {
@@ -94,12 +96,16 @@ export default function ConnectorConnectModal({
         <div className="mt-1 flex items-center gap-2.5">
           <ConnectorIcon id={service.id} size={22} />
           <h3 className="text-sm font-medium text-text-primary">
-            Connect {service.name}
+            {mode === "ownApp"
+              ? `Own OAuth app — ${service.name}`
+              : `Connect ${service.name}`}
           </h3>
         </div>
 
         <p className="mt-3 text-sm leading-relaxed text-text-secondary">
-          {`Paste your ${service.name} credentials — they are stored in the OS keyring and never leave this machine.`}
+          {mode === "ownApp"
+            ? `Optional — paste your own ${service.name} OAuth client ID and secret to override the built-in app. Stored in the OS keyring.`
+            : `Paste your ${service.name} credentials — they are stored in the OS keyring and never leave this machine.`}
         </p>
 
         <div className="mt-4 flex flex-col gap-3">

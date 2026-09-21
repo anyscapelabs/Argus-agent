@@ -1,17 +1,11 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { LuLoaderCircle, LuSearch } from "react-icons/lu";
+import { LuLoaderCircle } from "react-icons/lu";
 
 import {
   connHasClient,
   connHasToken,
-  githubConnect,
-  githubDisconnect,
-  githubStatus,
-  googleConnectUrl,
-  googleDisconnect,
-  googleStatus,
   sessBrowserImport,
   sessExtInstall,
   sessExtStatus,
@@ -20,6 +14,7 @@ import {
 import { CONNECTOR_SERVICES, type ConnectorService } from "../lib/connectorCreds";
 import ConnectorIcon from "./ConnectorIcon";
 import ConnectorConnectModal from "./ConnectorConnectModal";
+import ConnectorOAuthCard, { OAUTH_SERVICES } from "./ConnectorOAuthCard";
 
 const GRID_IDS = [
   "linear",
@@ -40,15 +35,13 @@ const GRID: ConnectorService[] = CONNECTOR_SERVICES.filter((s) =>
 
 type ExtState = "off" | "busy" | "granted" | "connected";
 type ImportState = "idle" | "busy" | "ok" | "err";
-type GoogleState = "off" | "busy" | "waiting" | "connected";
 
 const ON_KEY = "argus.ext.enabled";
-const GOOGLE_POLL_MS = 2_000;
-const GOOGLE_WAIT_MS = 5 * 60_000;
 
 function ConnectorGrid() {
   const [connected, setConnected] = useState<Record<string, boolean>>({});
   const [active, setActive] = useState<ConnectorService | null>(null);
+  const [ownApp, setOwnApp] = useState<ConnectorService | null>(null);
 
   const refresh = async () => {
     const entries = await Promise.all(
@@ -66,6 +59,12 @@ function ConnectorGrid() {
   useEffect(() => {
     void refresh();
   }, []);
+
+  const openOwnApp = (id: string) => {
+    const svc = CONNECTOR_SERVICES.find((s) => s.id === id);
+
+    if (svc) setOwnApp(svc);
+  };
 
   return (
     <>
@@ -120,6 +119,9 @@ function ConnectorGrid() {
             </div>
           );
         })}
+        {OAUTH_SERVICES.map((svc) => (
+          <ConnectorOAuthCard key={svc.id} svc={svc} onOwnApp={(s) => openOwnApp(s.id)} />
+        ))}
       </div>
       <ConnectorConnectModal
         open={active !== null}
@@ -128,6 +130,13 @@ function ConnectorGrid() {
         onSaved={() => {
           void refresh();
         }}
+      />
+      <ConnectorConnectModal
+        open={ownApp !== null}
+        service={ownApp}
+        mode="ownApp"
+        onClose={() => setOwnApp(null)}
+        onSaved={() => {}}
       />
     </>
   );
@@ -345,324 +354,6 @@ function BrowserCard() {
   );
 }
 
-function GoogleCard() {
-  const [state, setState] = useState<GoogleState>("off");
-  const [email, setEmail] = useState("");
-  const [note, setNote] = useState("");
-
-  useEffect(() => {
-    let alive = true;
-
-    googleStatus()
-      .then((s) => {
-        if (!alive) return;
-
-        if (s.connected) {
-          setState("connected");
-          setEmail(s.email ?? "");
-          setNote("");
-        }
-      })
-      .catch(() => {});
-
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (state !== "waiting") return;
-
-    const started = Date.now();
-    const poll = setInterval(async () => {
-      if (Date.now() - started > GOOGLE_WAIT_MS) {
-        clearInterval(poll);
-        setState("off");
-        setNote("Timed out waiting for Google — click Connect to retry.");
-        return;
-      }
-
-      try {
-        const s = await googleStatus();
-
-        if (s.connected) {
-          clearInterval(poll);
-          setState("connected");
-          setEmail(s.email ?? "");
-          setNote("");
-        }
-      } catch {}
-    }, GOOGLE_POLL_MS);
-
-    return () => clearInterval(poll);
-  }, [state]);
-
-  const connect = async () => {
-    setState("busy");
-    setNote("");
-
-    try {
-      const { url } = await googleConnectUrl();
-      await openUrl(url);
-      setState("waiting");
-      setNote("Approve in your browser, then come back here.");
-    } catch (err) {
-      setState("off");
-      setNote(String(err));
-    }
-  };
-
-  const disconnect = async () => {
-    setState("busy");
-
-    try {
-      await googleDisconnect();
-    } catch {}
-
-    setState("off");
-    setEmail("");
-    setNote("");
-  };
-
-  const on = state === "connected";
-  const line = on
-    ? email || "Connected — Gmail, Calendar, Drive, Docs and Sheets."
-    : state === "waiting"
-      ? note
-      : state === "busy"
-        ? "Opening Google…"
-        : (note || "Gmail, Calendar, Drive, Docs and Sheets via Google.");
-
-  return (
-    <div className="rounded-xl bg-transparent px-2 py-1 transition-colors hover:bg-bg-hover-primary">
-      <div className="flex items-center gap-4">
-        <div
-          className={
-            "flex h-12 w-12 shrink-0 items-center justify-center rounded-lg " +
-            "border border-border-primary bg-bg-primary text-xl " +
-            "text-text-primary"
-          }
-        >
-          <ConnectorIcon id="google" size={22} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="truncate text-sm font-medium text-text-primary">
-              Google
-            </h3>
-            {on && (
-              <span className="h-2 w-2 shrink-0 rounded-full bg-green-500" />
-            )}
-          </div>
-          <p className="truncate text-xs text-text-secondary">{line}</p>
-        </div>
-        {state === "waiting" ? (
-          <button
-            type="button"
-            onClick={() => {
-              setState("off");
-              setNote("");
-            }}
-            className={
-              "shrink-0 rounded-full border border-border-primary px-3 py-1 " +
-              "text-xs text-text-secondary hover:text-text-primary cursor-pointer"
-            }
-          >
-            Cancel
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={on ? disconnect : connect}
-            disabled={state === "busy"}
-            className={
-              "relative h-6 w-11 shrink-0 rounded-full transition-colors cursor-pointer disabled:opacity-60 " +
-              `${on ? "bg-green-600" : "bg-bg-hover-primary border border-border-primary"}`
-            }
-            aria-pressed={on}
-            aria-label="Connect Google"
-          >
-            <span
-              className={
-                "absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all " +
-                `${on ? "left-[22px]" : "left-0.5"}`
-              }
-            />
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function GithubCard() {
-  const [state, setState] = useState<GoogleState>("off");
-  const [login, setLogin] = useState("");
-  const [note, setNote] = useState("");
-  const [code, setCode] = useState("");
-  const [url, setUrl] = useState("");
-
-  useEffect(() => {
-    let alive = true;
-
-    githubStatus()
-      .then((s) => {
-        if (!alive) return;
-
-        if (s.connected) {
-          setState("connected");
-          setLogin(s.login ?? "");
-        }
-      })
-      .catch(() => {});
-
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (state !== "waiting") return;
-
-    const started = Date.now();
-    const poll = setInterval(async () => {
-      if (Date.now() - started > GOOGLE_WAIT_MS) {
-        clearInterval(poll);
-        setState("off");
-        setCode("");
-        setNote("Timed out waiting for GitHub — click Connect to retry.");
-        return;
-      }
-
-      try {
-        const s = await githubStatus();
-
-        if (s.connected) {
-          clearInterval(poll);
-          setState("connected");
-          setLogin(s.login ?? "");
-          setCode("");
-          setNote("");
-        }
-      } catch {}
-    }, GOOGLE_POLL_MS);
-
-    return () => clearInterval(poll);
-  }, [state]);
-
-  const connect = async () => {
-    setState("busy");
-    setNote("");
-
-    try {
-      const d = await githubConnect();
-      setCode(d.userCode);
-      setUrl(d.verificationUri);
-      setState("waiting");
-    } catch (err) {
-      setState("off");
-      setNote(String(err));
-    }
-  };
-
-  const disconnect = async () => {
-    setState("busy");
-
-    try {
-      await githubDisconnect();
-    } catch {}
-
-    setState("off");
-    setLogin("");
-    setCode("");
-    setNote("");
-  };
-
-  const on = state === "connected";
-  const line = on
-    ? login || "Connected — repos, issues, PRs and Actions."
-    : state === "waiting"
-      ? "Enter the code at GitHub, then come back here."
-      : state === "busy"
-        ? "Contacting GitHub…"
-        : (note || "Repos, issues, PRs and Actions via GitHub.");
-
-  return (
-    <div className="rounded-xl bg-transparent px-2 py-1 transition-colors hover:bg-bg-hover-primary">
-      <div className="flex items-center gap-4">
-        <div
-          className={
-            "flex h-12 w-12 shrink-0 items-center justify-center rounded-lg " +
-            "border border-border-primary bg-bg-primary text-xl " +
-            "text-text-primary"
-          }
-        >
-          <ConnectorIcon id="github" size={22} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="truncate text-sm font-medium text-text-primary">
-              GitHub
-            </h3>
-            {on && (
-              <span className="h-2 w-2 shrink-0 rounded-full bg-green-500" />
-            )}
-          </div>
-          <p className="truncate text-xs text-text-secondary">{line}</p>
-          {state === "waiting" && (
-            <button
-              type="button"
-              onClick={() => openUrl(url).catch(() => {})}
-              className={
-                "mt-1.5 flex items-center gap-2 rounded-lg border " +
-                "border-border-primary bg-bg-secondary px-3 py-1.5 font-mono " +
-                "text-sm tracking-widest text-text-primary hover:bg-bg-hover-primary"
-              }
-            >
-              {code}
-            </button>
-          )}
-        </div>
-        {state === "waiting" ? (
-          <button
-            type="button"
-            onClick={() => {
-              setState("off");
-              setCode("");
-              setNote("");
-            }}
-            className={
-              "shrink-0 rounded-full border border-border-primary px-3 py-1 " +
-              "text-xs text-text-secondary hover:text-text-primary cursor-pointer"
-            }
-          >
-            Cancel
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={on ? disconnect : connect}
-            disabled={state === "busy"}
-            className={
-              "relative h-6 w-11 shrink-0 rounded-full transition-colors cursor-pointer disabled:opacity-60 " +
-              `${on ? "bg-green-600" : "bg-bg-hover-primary border border-border-primary"}`
-            }
-            aria-pressed={on}
-            aria-label="Connect GitHub"
-          >
-            <span
-              className={
-                "absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all " +
-                `${on ? "left-[22px]" : "left-0.5"}`
-              }
-            />
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export default function ConnectorsPage() {
   return (
     <div className="mx-auto w-full max-w-2xl py-4">
@@ -672,32 +363,26 @@ export default function ConnectorsPage() {
       <p className="mb-5 text-sm font-medium text-text-secondary">
         Connect Argus to your favourite tools.
       </p>
-      <div
-        className={
-          "flex h-10 w-full items-center rounded-full border " +
-          "border-border-primary bg-bg-secondary px-4"
-        }
-      >
-        <LuSearch size={18} className="shrink-0 text-text-secondary" />
-        <input
-          type="text"
-          placeholder="Search connectors..."
-          className={
-            "ml-2 flex-1 bg-transparent text-sm text-text-primary " +
-            "outline-none placeholder:text-text-secondary"
-          }
-        />
-      </div>
       <div className="mt-6">
+        <h2
+          className={
+            "mb-1 px-2 text-xs font-medium uppercase tracking-wide " +
+            "text-text-secondary"
+          }
+        >
+          Browser
+        </h2>
         <BrowserCard />
       </div>
-      <div className="mt-2">
-        <GoogleCard />
-      </div>
-      <div className="mt-2">
-        <GithubCard />
-      </div>
-      <div className="mt-2">
+      <div className="mt-5">
+        <h2
+          className={
+            "mb-1 px-2 text-xs font-medium uppercase tracking-wide " +
+            "text-text-secondary"
+          }
+        >
+          Connectors
+        </h2>
         <ConnectorGrid />
       </div>
     </div>

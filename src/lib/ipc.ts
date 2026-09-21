@@ -36,6 +36,12 @@ const CMD_GOOGLE_DISC = "google_disconnect";
 const CMD_GITHUB_STATUS = "github_status";
 const CMD_GITHUB_CONN = "github_connect";
 const CMD_GITHUB_DISC = "github_disconnect";
+const CMD_OUTLOOK_STATUS = "outlook_status";
+const CMD_OUTLOOK_CONN = "outlook_connect";
+const CMD_OUTLOOK_DISC = "outlook_disconnect";
+const CMD_SPOT_STATUS = "spotify_status";
+const CMD_SPOT_URL = "spotify_connect_url";
+const CMD_SPOT_DISC = "spotify_disconnect";
 const CMD_CONN_SAVE_TOK = "conn_save_token";
 const CMD_CONN_HAS_TOK = "conn_has_token";
 const CMD_CONN_HAS_CLI = "conn_has_client";
@@ -355,6 +361,43 @@ export function githubConnect(): Promise<GithubDevice> {
 
 export function githubDisconnect(): Promise<void> {
   return invoke<void>(CMD_GITHUB_DISC);
+}
+
+export type OutlookStatus = {
+  connected: boolean;
+};
+
+export type OutlookDevice = {
+  verificationUri: string;
+  userCode: string;
+};
+
+export function outlookStatus(): Promise<OutlookStatus> {
+  return invoke<OutlookStatus>(CMD_OUTLOOK_STATUS);
+}
+
+export function outlookConnect(): Promise<OutlookDevice> {
+  return invoke<OutlookDevice>(CMD_OUTLOOK_CONN);
+}
+
+export function outlookDisconnect(): Promise<void> {
+  return invoke<void>(CMD_OUTLOOK_DISC);
+}
+
+export type SpotifyStatus = {
+  connected: boolean;
+};
+
+export function spotifyStatus(): Promise<SpotifyStatus> {
+  return invoke<SpotifyStatus>(CMD_SPOT_STATUS);
+}
+
+export function spotifyConnectUrl(): Promise<{ url: string }> {
+  return invoke<{ url: string }>(CMD_SPOT_URL);
+}
+
+export function spotifyDisconnect(): Promise<void> {
+  return invoke<void>(CMD_SPOT_DISC);
 }
 
 export function connSaveToken(service: string, token: string): Promise<void> {

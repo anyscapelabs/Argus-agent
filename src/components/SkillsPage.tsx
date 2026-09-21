@@ -6,6 +6,7 @@ import type { Skill } from "../lib/ipc";
 import { skillDelete, skillList, skillSearch } from "../lib/ipc";
 import { toast } from "../stores/toast";
 import SkillCard from "./SkillCard";
+import SkillDetailPage from "./SkillDetailPage";
 
 type SkillsPageProps = {
   onAddSkill?: () => void;
@@ -15,6 +16,7 @@ export default function SkillsPage({ onAddSkill }: SkillsPageProps) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [query, setQuery] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [sel, setSel] = useState<Skill | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -61,6 +63,21 @@ export default function SkillsPage({ onAddSkill }: SkillsPageProps) {
 
     setSkills((prev) => prev.filter((s) => s.name !== name));
   };
+
+  if (sel) {
+    return (
+      <div className="mx-auto w-full max-w-2xl py-4">
+        <SkillDetailPage
+          skill={sel}
+          onBack={() => setSel(null)}
+          onDeleted={(name) => {
+            void remove(name);
+            setSel(null);
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto w-full max-w-2xl py-4">
@@ -121,7 +138,7 @@ export default function SkillsPage({ onAddSkill }: SkillsPageProps) {
       )}
       <div className="mt-6 grid grid-cols-2 gap-4">
         {skills.map((skill) => (
-          <SkillCard key={skill.name} skill={skill} onDelete={remove} />
+          <SkillCard key={skill.name} skill={skill} onOpen={setSel} />
         ))}
       </div>
     </div>

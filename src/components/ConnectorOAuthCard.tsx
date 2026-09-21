@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import {
@@ -15,21 +14,10 @@ import {
   spotifyDisconnect,
   spotifyStatus,
 } from "../lib/ipc";
+import { useOAuthFlow, type OAuthSvc } from "../lib/oauthFlow";
 import ConnectorIcon from "./ConnectorIcon";
 
-type Flow = "loopback" | "device";
-
-type Svc = {
-  id: string;
-  name: string;
-  tagline: string;
-  flow: Flow;
-  status: () => Promise<{ connected: boolean; email?: string | null; login?: string | null }>;
-  begin: () => Promise<{ url?: string; verificationUri?: string; userCode?: string }>;
-  disconnect: () => Promise<void>;
-};
-
-const SERVICES: Svc[] = [
+const SERVICES: OAuthSvc[] = [
   {
     id: "google",
     name: "Google",
@@ -68,106 +56,24 @@ const SERVICES: Svc[] = [
   },
 ];
 
-const POLL_MS = 2_000;
-const WAIT_MS = 5 * 60_000;
+export const OAUTH_SERVICES = SERVICES;
+
+export function oauthSvcById(id: string): OAuthSvc | undefined {
+  return SERVICES.find((s) => s.id === id);
+}
 
 type Props = {
-  svc: Svc;
-  onOwnApp: (svc: Svc) => void;
+  svc: OAuthSvc;
+  onOpen: (id: string) => void;
 };
 
-export default function ConnectorOAuthCard({ svc, onOwnApp }: Props) {
-  const [state, setState] = useState<"off" | "busy" | "waiting" | "connected">("off");
-  const [who, setWho] = useState("");
-  const [code, setCode] = useState("");
-  const [verifyUrl, setVerifyUrl] = useState("");
-  const [note, setNote] = useState("");
-  const alive = useRef(true);
-
-  useEffect(() => {
-    alive.current = true;
-
-    svc
-      .status()
-      .then((s) => {
-        if (!alive.current) return;
-
-        if (s.connected) {
-          setState("connected");
-          setWho(String(s.email ?? s.login ?? ""));
-        }
-      })
-      .catch(() => {});
-
-    return () => {
-      alive.current = false;
-    };
-  }, [svc]);
-
-  useEffect(() => {
-    if (state !== "waiting") return;
-
-    const started = Date.now();
-    const poll = setInterval(async () => {
-      if (Date.now() - started > WAIT_MS) {
-        clearInterval(poll);
-        setState("off");
-        setCode("");
-        setNote("Timed out — click Connect to retry.");
-        return;
-      }
-
-      try {
-        const s = await svc.status();
-
-        if (s.connected) {
-          clearInterval(poll);
-          setState("connected");
-          setWho(String(s.email ?? s.login ?? ""));
-          setCode("");
-          setNote("");
-        }
-      } catch {}
-    }, POLL_MS);
-
-    return () => clearInterval(poll);
-  }, [state, svc]);
-
-  const connect = async () => {
-    setState("busy");
-    setNote("");
-
-    try {
-      const d = await svc.begin();
-
-      if (d.url) {
-        await openUrl(d.url);
-        setNote("Approve in your browser, then come back here.");
-      }
-
-      if (d.verificationUri && d.userCode) {
-        setCode(d.userCode);
-        setVerifyUrl(d.verificationUri);
-        setNote("Enter the code at the link, then come back here.");
-      }
-
-      setState("waiting");
-    } catch (err) {
-      setState("off");
-      setNote(String(err));
-    }
-  };
-
-  const cancel = () => {
-    setState("off");
-    setCode("");
-    setVerifyUrl("");
-    setNote("");
-  };
+export default function ConnectorOAuthCard({ svc, onOpen }: Props) {
+  const flow = useOAuthFlow(svc);
+  const { state, code, verifyUrl, note } = flow;
 
   const line =
     state === "connected"
-      ? who || "Connected"
+      ? svc.tagline
       : state === "waiting"
         ? note
         : state === "busy"
@@ -175,7 +81,10 @@ export default function ConnectorOAuthCard({ svc, onOwnApp }: Props) {
           : note || svc.tagline;
 
   return (
-    <div className="flex flex-col rounded-xl bg-transparent px-2 py-1 transition-colors hover:bg-bg-hover-primary">
+    <div
+      onClick={() => onOpen(svc.id)}
+      className="flex cursor-pointer flex-col rounded-xl bg-transparent px-2 py-1 transition-colors hover:bg-bg-hover-primary"
+    >
       <div className="flex items-center gap-3">
         <div
           className={
@@ -193,9 +102,13 @@ export default function ConnectorOAuthCard({ svc, onOwnApp }: Props) {
         </div>
         {state === "connected" ? (
           <span
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpen(svc.id);
+            }}
             className={
               "shrink-0 rounded-full bg-green-600/15 px-3 py-1 text-xs " +
-              "font-medium text-green-500"
+              "font-medium text-green-500 cursor-pointer"
             }
           >
             Connected
@@ -203,7 +116,10 @@ export default function ConnectorOAuthCard({ svc, onOwnApp }: Props) {
         ) : state === "waiting" ? (
           <button
             type="button"
-            onClick={cancel}
+            onClick={(e) => {
+              e.stopPropagation();
+              flow.cancel();
+            }}
             className="shrink-0 rounded-full border border-border-primary px-3 py-1 text-xs text-text-secondary hover:text-text-primary cursor-pointer"
           >
             Cancel
@@ -211,7 +127,10 @@ export default function ConnectorOAuthCard({ svc, onOwnApp }: Props) {
         ) : (
           <button
             type="button"
-            onClick={connect}
+            onClick={(e) => {
+              e.stopPropagation();
+              void flow.connect();
+            }}
             disabled={state === "busy"}
             className={
               "shrink-0 rounded-full border border-border-primary " +
@@ -228,7 +147,10 @@ export default function ConnectorOAuthCard({ svc, onOwnApp }: Props) {
         <div className="ml-14 mt-1">
           <button
             type="button"
-            onClick={() => openUrl(verifyUrl).catch(() => {})}
+            onClick={(e) => {
+              e.stopPropagation();
+              openUrl(verifyUrl).catch(() => {});
+            }}
             className={
               "rounded-lg border border-border-primary bg-bg-secondary " +
               "px-2.5 py-1 font-mono text-sm tracking-widest " +
@@ -239,17 +161,6 @@ export default function ConnectorOAuthCard({ svc, onOwnApp }: Props) {
           </button>
         </div>
       )}
-      <div className="ml-14 mt-0.5">
-        <button
-          type="button"
-          onClick={() => onOwnApp(svc)}
-          className="text-[11px] text-text-secondary/70 hover:text-text-primary cursor-pointer"
-        >
-          Use my own OAuth app
-        </button>
-      </div>
     </div>
   );
 }
-
-export const OAUTH_SERVICES = SERVICES;

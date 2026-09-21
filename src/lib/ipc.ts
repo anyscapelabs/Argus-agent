@@ -50,6 +50,7 @@ const CMD_CONN_SAVE_CLI = "conn_save_client";
 const CMD_CONN_SAVE_SEC = "conn_save_secret";
 const CMD_CONN_CLEAR_CLI = "conn_clear_client";
 const CMD_CONN_CLEAR_SEC = "conn_clear_secret";
+const CMD_CONN_CATALOG = "connector_catalog";
 
 const DEF_PERM = "ask";
 
@@ -433,6 +434,16 @@ export function connClearClient(service: string): Promise<void> {
 
 export function connClearSecret(service: string): Promise<void> {
   return invoke<void>(CMD_CONN_CLEAR_SEC, { service });
+}
+
+export type CatalogTool = {
+  name: string;
+  desc: string;
+  mutating: boolean;
+};
+
+export function connectorTools(): Promise<CatalogTool[]> {
+  return invoke<CatalogTool[]>(CMD_CONN_CATALOG);
 }
 
 export type Skill = {

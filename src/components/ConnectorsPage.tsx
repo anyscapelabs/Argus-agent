@@ -15,6 +15,7 @@ import { CONNECTOR_SERVICES, type ConnectorService } from "../lib/connectorCreds
 import ConnectorIcon from "./ConnectorIcon";
 import ConnectorConnectModal from "./ConnectorConnectModal";
 import ConnectorOAuthCard, { OAUTH_SERVICES } from "./ConnectorOAuthCard";
+import ConnectorDetailModal from "./ConnectorDetailModal";
 
 const GRID_IDS = [
   "linear",
@@ -42,6 +43,7 @@ function ConnectorGrid() {
   const [connected, setConnected] = useState<Record<string, boolean>>({});
   const [active, setActive] = useState<ConnectorService | null>(null);
   const [ownApp, setOwnApp] = useState<ConnectorService | null>(null);
+  const [detail, setDetail] = useState<ConnectorService | null>(null);
 
   const refresh = async () => {
     const entries = await Promise.all(
@@ -60,10 +62,10 @@ function ConnectorGrid() {
     void refresh();
   }, []);
 
-  const openOwnApp = (id: string) => {
+  const openDetail = (id: string) => {
     const svc = CONNECTOR_SERVICES.find((s) => s.id === id);
 
-    if (svc) setOwnApp(svc);
+    if (svc) setDetail(svc);
   };
 
   return (
@@ -75,7 +77,8 @@ function ConnectorGrid() {
           return (
             <div
               key={svc.id}
-              className="flex items-center gap-3 rounded-xl bg-transparent px-2 py-1 transition-colors hover:bg-bg-hover-primary"
+              onClick={() => setDetail(svc)}
+              className="flex cursor-pointer items-center gap-3 rounded-xl bg-transparent px-2 py-1 transition-colors hover:bg-bg-hover-primary"
             >
               <div
                 className={
@@ -95,9 +98,13 @@ function ConnectorGrid() {
               </div>
               {on ? (
                 <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDetail(svc);
+                  }}
                   className={
                     "shrink-0 rounded-full bg-green-600/15 px-3 py-1 text-xs " +
-                    "font-medium text-green-500"
+                    "font-medium text-green-500 cursor-pointer"
                   }
                 >
                   Connected
@@ -105,7 +112,10 @@ function ConnectorGrid() {
               ) : (
                 <button
                   type="button"
-                  onClick={() => setActive(svc)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActive(svc);
+                  }}
                   className={
                     "shrink-0 rounded-full border border-border-primary " +
                     "bg-bg-hover-secondary px-3 py-1 text-xs font-medium " +
@@ -120,7 +130,7 @@ function ConnectorGrid() {
           );
         })}
         {OAUTH_SERVICES.map((svc) => (
-          <ConnectorOAuthCard key={svc.id} svc={svc} onOwnApp={(s) => openOwnApp(s.id)} />
+          <ConnectorOAuthCard key={svc.id} svc={svc} onOpen={openDetail} />
         ))}
       </div>
       <ConnectorConnectModal
@@ -137,6 +147,14 @@ function ConnectorGrid() {
         mode="ownApp"
         onClose={() => setOwnApp(null)}
         onSaved={() => {}}
+      />
+      <ConnectorDetailModal
+        open={detail !== null}
+        svc={detail}
+        onClose={() => setDetail(null)}
+        onConnectKeys={(s) => setActive(s)}
+        onOwnApp={(s) => setOwnApp(s)}
+        onDisabled={() => void refresh()}
       />
     </>
   );

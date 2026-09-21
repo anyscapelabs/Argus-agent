@@ -9,7 +9,7 @@ async fn gql(query: &str, vars: &serde_json::Value) -> Result<serde_json::Value,
 
         let v: serde_json::Value = reqwest::Client::new()
             .post(BASE)
-            .bearer_auth(tok)
+            .header("Authorization", tok)
             .json(&serde_json::json!({"query": query, "variables": vars}))
             .send()
             .await

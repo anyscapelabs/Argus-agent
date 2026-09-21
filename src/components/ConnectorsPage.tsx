@@ -98,7 +98,7 @@ function ConnectorGrid({ onOpen, onConnectKeys }: GridProps) {
                   onOpen(svc);
                 }}
                 className={
-                  "shrink-0 rounded-full bg-green-600 px-3 py-1 text-xs " +
+                  "shrink-0 rounded-md bg-green-600 px-3 py-1 text-xs " +
                   "font-medium text-white cursor-pointer"
                 }
               >
@@ -112,7 +112,7 @@ function ConnectorGrid({ onOpen, onConnectKeys }: GridProps) {
                   onConnectKeys(svc);
                 }}
                 className={
-                  "shrink-0 rounded-full border border-border-primary " +
+                  "shrink-0 rounded-md border border-border-primary " +
                   "bg-bg-hover-secondary px-3 py-1 text-xs font-medium " +
                   "text-text-primary transition-colors " +
                   "hover:bg-bg-hover-primary cursor-pointer"
@@ -314,7 +314,7 @@ function BrowserCard() {
             type="button"
             onClick={runSetup}
             className={
-              "flex items-center gap-1.5 rounded-full border " +
+              "flex items-center gap-1.5 rounded-md border " +
               "border-border-primary px-2.5 py-1 text-xs text-text-secondary " +
               "hover:text-text-primary cursor-pointer"
             }
@@ -330,7 +330,7 @@ function BrowserCard() {
             onClick={runImport}
             disabled={impState === "busy"}
             className={
-              "flex items-center gap-1.5 rounded-full border " +
+              "flex items-center gap-1.5 rounded-md border " +
               "border-border-primary px-2.5 py-1 text-xs text-text-secondary " +
               "hover:text-text-primary cursor-pointer disabled:opacity-60"
             }

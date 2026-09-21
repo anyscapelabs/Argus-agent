@@ -144,7 +144,7 @@ export default function ConnectorDetailPage({
               onClick={mainAction}
               disabled={connected || busy}
               className={
-                "rounded-l-full px-3.5 py-1.5 text-xs font-medium " +
+                "rounded-l-md px-3.5 py-1.5 text-xs font-medium " +
                 "transition-colors focus:outline-none " +
                 `${
                   connected
@@ -164,7 +164,7 @@ export default function ConnectorDetailPage({
                   onClick={toggle}
                   aria-label="More actions"
                   className={
-                    "rounded-r-full px-2 py-1.5 focus:outline-none " +
+                    "rounded-r-md px-2 py-1.5 focus:outline-none " +
                     `${
                       connected
                         ? "bg-green-600 text-white"

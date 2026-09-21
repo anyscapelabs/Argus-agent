@@ -107,7 +107,7 @@ export default function ConnectorOAuthCard({ svc, onOpen }: Props) {
               onOpen(svc.id);
             }}
             className={
-              "shrink-0 rounded-full bg-green-600 px-3 py-1 text-xs " +
+              "shrink-0 rounded-md bg-green-600 px-3 py-1 text-xs " +
               "font-medium text-white cursor-pointer"
             }
           >
@@ -120,7 +120,7 @@ export default function ConnectorOAuthCard({ svc, onOpen }: Props) {
               e.stopPropagation();
               flow.cancel();
             }}
-            className="shrink-0 rounded-full border border-border-primary px-3 py-1 text-xs text-text-secondary hover:text-text-primary cursor-pointer"
+            className="shrink-0 rounded-md border border-border-primary px-3 py-1 text-xs text-text-secondary hover:text-text-primary cursor-pointer"
           >
             Cancel
           </button>
@@ -133,7 +133,7 @@ export default function ConnectorOAuthCard({ svc, onOpen }: Props) {
             }}
             disabled={state === "busy"}
             className={
-              "shrink-0 rounded-full border border-border-primary " +
+              "shrink-0 rounded-md border border-border-primary " +
               "bg-bg-hover-secondary px-3 py-1 text-xs font-medium " +
               "text-text-primary transition-colors " +
               "hover:bg-bg-hover-primary cursor-pointer disabled:opacity-60"

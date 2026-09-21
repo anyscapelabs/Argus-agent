@@ -132,7 +132,7 @@ export default function MemoryPage() {
       </p>
       <div
         className={
-          "flex h-10 w-full items-center rounded-full border " +
+          "flex h-10 w-full items-center rounded-lg border " +
           "border-border-primary bg-bg-secondary px-4"
         }
       >

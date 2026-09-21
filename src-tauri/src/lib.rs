@@ -177,6 +177,7 @@ pub fn run() {
             mcp::vault::conn_save_secret,
             mcp::vault::conn_clear_client,
             mcp::vault::conn_clear_secret,
+            tools::connector_catalog,
             mcp::outlook::outlook_status,
             mcp::outlook::outlook_connect,
             mcp::outlook::outlook_disconnect,

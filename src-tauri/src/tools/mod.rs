@@ -859,6 +859,27 @@ pub async fn exec(
     }
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogTool {
+    pub name: String,
+    pub desc: String,
+    pub mutating: bool,
+}
+
+#[tauri::command]
+pub fn connector_catalog() -> Vec<CatalogTool> {
+    connector::META
+        .iter()
+        .chain(conn_oauth::META.iter())
+        .map(|t| CatalogTool {
+            name: t.name.into(),
+            desc: t.desc.into(),
+            mutating: t.mutating,
+        })
+        .collect()
+}
+
 pub fn is_mutating(name: &str) -> bool {
     TOOLS
         .iter()

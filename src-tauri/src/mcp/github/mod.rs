@@ -60,8 +60,7 @@ async fn authed(
     let label = format!("{method} {url}");
     let out = async {
         let tok = tokens::token().await?.ok_or("github not connected")?;
-        let cli = reqwest::Client::new();
-        let mut req = cli
+        let mut req = crate::mcp::http_client()
             .request(method, url)
             .bearer_auth(tok)
             .header("Accept", "application/vnd.github+json")
@@ -71,7 +70,9 @@ async fn authed(
             req = req.json(b);
         }
 
-        req.send().await.map_err(|err| err.to_string())
+        let resp = req.send().await.map_err(|err| err.to_string())?;
+        resp.error_for_status_ref().map_err(|err| err.to_string())?;
+        Ok(resp)
     }
     .await;
     crate::connectors::log::api("github", &label, &out);

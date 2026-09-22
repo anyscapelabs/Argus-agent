@@ -25,6 +25,13 @@ use crate::connectors::{store, Connector};
 
 pub const PROTOCOL_VERSION: &str = "2025-06-18";
 
+pub fn http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .user_agent("argus-agent")
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new())
+}
+
 #[derive(Clone, Debug)]
 pub struct ToolInfo {
     pub name: String,

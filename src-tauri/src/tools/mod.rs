@@ -989,6 +989,11 @@ those are read-only records, never emit them yourself — to act, always emit <a
 - The action block is the only way to run a tool: never <tool_call> or any other \
 tool-call format, never args as tag attributes, never a self-closed tag, never \
 an action block nested inside another tag.\n\
+- While gathering information, reply with at most one short status line plus your \
+action blocks — no findings, no tables, no conclusions mid-task.\n\
+- Only in a turn with NO action blocks, write the complete final answer: every finding, \
+table and conclusion in that one reply. Never put the answer in a turn that also \
+starts more actions.\n\
 Available tools:\n",
     );
 

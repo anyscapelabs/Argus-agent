@@ -5,6 +5,12 @@ import ChatInput from "./ChatInput";
 import UserBubble from "./UserBubble";
 import { parse } from "../lib/agentXml";
 import WorkSummary, { formatWorked } from "./agent/WorkSummary";
+import ToolActivity, {
+  actionStep,
+  browserDoneStep,
+  terminalStep,
+  type ToolStep,
+} from "./agent/ToolActivity";
 import { parseDbTime } from "../lib/relativeTime";
 import { useChatModels } from "../hooks/useChatModels";
 import { sessionStore, useSessions, type Turn } from "../stores/sessions";
@@ -210,11 +216,42 @@ export default function ChatDetailPage({ sessionId }: Props) {
         >
           {groups.map((group, gi) => {
             const assistants = group.agent.filter((a) => a.role === "assistant");
-            const prior = assistants
-              .slice(0, -1)
-              .filter((a) => a.content.trim().length > 0);
-            const last = assistants[assistants.length - 1];
             const live = running && gi === groups.length - 1;
+            const msgTools = (content: string): boolean => {
+              try {
+                return parse(content).some(
+                  (b) =>
+                    b.tag === "action" ||
+                    b.tag === "terminal" ||
+                    b.tag === "browser-action" ||
+                    b.tag === "document",
+                );
+              } catch {
+                return false;
+              }
+            };
+
+            let last: MsgRow | undefined;
+            let prior: MsgRow[];
+
+            if (live) {
+              last = assistants[assistants.length - 1];
+              prior = assistants
+                .slice(0, -1)
+                .filter((a) => a.content.trim().length > 0);
+            } else {
+              last =
+                assistants.find((a) => a.kind === "final") ??
+                assistants.filter(
+                  (a) =>
+                    a.content.trim().length > 0 && !msgTools(a.content),
+                ).slice(-1)[0] ??
+                assistants[assistants.length - 1];
+              prior = assistants.filter(
+                (a) => a !== last && a.content.trim().length > 0,
+              );
+            }
+
             const priorText = prior.map((a) => a.content).join("\n\n");
             let priorHasTools = false;
             try {
@@ -227,7 +264,34 @@ export default function ChatDetailPage({ sessionId }: Props) {
             } catch {
               priorHasTools = false;
             }
-            const showSummary = !live && priorHasTools;
+
+            const workSteps: ToolStep[] = [];
+            let stepIdx = 0;
+
+            for (const m of prior) {
+              try {
+                for (const b of parse(m.content)) {
+                  if (b.tag === "action") {
+                    workSteps.push(actionStep(b, stepIdx++, false));
+                  } else if (b.tag === "terminal") {
+                    workSteps.push({ ...terminalStep(b), output: undefined });
+                  } else if (b.tag === "browser-action") {
+                    workSteps.push(browserDoneStep(b));
+                  } else if (b.tag === "document") {
+                    const title =
+                      b.attrs.title ?? b.attrs.name ?? b.attrs.id ?? "document";
+                    workSteps.push({
+                      group: "tool",
+                      label: `Created document ${title}`,
+                    });
+                  }
+                }
+              } catch {
+                continue;
+              }
+            }
+
+            const showSummary = !live && workSteps.length > 0;
             const allText = assistants.map((a) => a.content).join("\n\n");
 
             const startMs =
@@ -258,7 +322,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
                 {showSummary ? (
                   <>
                     <WorkSummary label={workLabel}>
-                      <AgentBubble text={priorText} hideActions />
+                      <ToolActivity steps={workSteps} live={false} />
                     </WorkSummary>
                     <AgentBubble
                       text={last?.content}

@@ -11,7 +11,9 @@ Code: `src-tauri/src/tools/{mod.rs,notepad.rs,recover.rs,shell/mod.rs,fs/mod.rs,
 ## Impls
 
 - `shell/mod.rs:61 run_stream(chan)` — live `term|term_end` chunks, hard cap by category (`default_timeout_for`), whole-group kill on timeout/cancel, `CANCEL` task-local scoped in `sess_chat_stream`.
-- `shell::needs_elevation` fail-fast: leading `sudo|su|doas` returns an honest error immediately (never hangs for a password prompt). `gdrive.search` builds `name contains 'x' and trashed = false` server-side (`drive_query`, apostrophe-escaped). Trello config surfaces empty/unparseable `trello-settings.json` as an explicit error instead of silent fallthrough.
+- `shell::needs_elevation` fail-fast: leading `sudo|su|doas` in user mode redirects to `privilege:"admin"` instead (never hangs for a password prompt). `privilege:"admin"` runs the same shell via `pkexec` — OS dialog handles auth, password never touches Argus, env sanitized by polkit; still passes the mutating ask gate first. Terminal tool takes `label` (UI title) + `privilege` (user|admin); prompt rule: least privilege, never write sudo, never ask for a password.
+- Terminal activity UI (`ToolActivity` terminal steps): status icon (shimmer/✓/✗/denied), `label` title, Show-details toggle with command + full output + `exit N · duration`; `duration_ms` attr on `<terminal>` records via `ToolExecution.elapsed_ms`.
+- `gdrive.search` builds `name contains 'x' and trashed = false` server-side (`drive_query`, apostrophe-escaped). Trello config surfaces empty/unparseable `trello-settings.json` as an explicit error instead of silent fallthrough.
 - `shell/detect.rs` — `ShellConfig{binary,kind,version}`, once-cached `detect()` (macOS brew→PATH→system, Linux PATH→fixed, Windows Git Bash→WSL→pwsh→cmd), `term_shell_status/set/clear` commands, `terminal.shell` kv override applied at startup, Settings → Terminal page.
 - `fs/mod.rs:5 write()` + `remove_dir_fast()` (used by `browser_import`, `ext_install`), `grep/mod.rs:8 run()`.
 - `notepad.rs` — `current_session, read, append, replace, clear, prompt_include`, `SESSION_ID` thread-local used in `chat.rs:861`.

@@ -62,6 +62,7 @@ type Props = {
   hideActions?: boolean;
   hideToolActivity?: boolean;
   showThinking?: boolean;
+  attachments?: BlockNode[];
 };
 
 const HEADING_CLS: Record<string, string> = {
@@ -668,6 +669,7 @@ export default function AgentBubble({
   hideActions,
   hideToolActivity,
   showThinking,
+  attachments,
 }: Props) {
   const tree: XmlTree | null = useMemo(
     () => (text !== undefined ? parse(text) : null),
@@ -753,6 +755,10 @@ export default function AgentBubble({
       )}
 
       {caret && showThinking !== false && <StreamingIndicator />}
+
+      {attachments?.map((b, i) => (
+        <Fragment key={`att-${i}`}>{renderBlk(b, `att-${i}`)}</Fragment>
+      ))}
 
       {text !== undefined && text.length > 0 && !caret && !hideActions && (
         <div className="flex items-center gap-1 text-text-secondary">

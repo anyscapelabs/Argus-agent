@@ -5,7 +5,6 @@ import ChatInput from "./ChatInput";
 import UserBubble from "./UserBubble";
 import { parse, type BlockNode } from "../lib/agentXml";
 import WorkSummary, { formatWorked } from "./agent/WorkSummary";
-import DocumentCard from "./agent/DocumentCard";
 import ToolActivity, {
   actionStep,
   browserDoneStep,
@@ -331,6 +330,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
                     <AgentBubble
                       text={last?.content}
                       hideToolActivity
+                      attachments={docBlocks}
                       vote={voteOf(last?.id ?? "")}
                       onVote={(v) => {
                         if (last === undefined) {
@@ -359,9 +359,6 @@ export default function ChatDetailPage({ sessionId }: Props) {
                         retryFrom(group.usr.id);
                       }}
                     />
-                    {docBlocks.map((b, di) => (
-                      <DocumentCard key={`doc-${di}`} block={b} />
-                    ))}
                   </>
                 ) : live ? (
                   <>

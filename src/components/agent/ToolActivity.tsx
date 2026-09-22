@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FiChevronDown, FiTerminal, FiTool } from "react-icons/fi";
+import { FiCheck, FiChevronDown, FiTerminal, FiTool, FiX } from "react-icons/fi";
 import { SiGooglechrome } from "react-icons/si";
 
 import { sessionStore, type PendingApproval } from "../../stores/sessions";
@@ -113,7 +113,16 @@ export function actionStep(
   }
   if (tool === "terminal" || tool === "bash.run") {
     const command = strArg(args, "command") || "shell";
-    return { group: "terminal", label: `$ ${command}`, output, code, approvalIdx: idx, live };
+    const labelArg = strArg(args, "label");
+    return {
+      group: "terminal",
+      label: labelArg || `$ ${command}`,
+      detail: labelArg ? `$ ${command}` : undefined,
+      output,
+      code,
+      approvalIdx: idx,
+      live,
+    };
   }
   const hint = hintOf(args);
   return {
@@ -127,11 +136,19 @@ export function actionStep(
 export function terminalStep(blk: BlockNode): ToolStep {
   const command = blk.attrs.command ?? "shell";
   const output = blk.children.map((c) => c.value).join("");
+  const ms = Number(blk.attrs.duration_ms ?? "");
   return {
     group: "terminal",
     label: `$ ${command}`,
+    durationMs: Number.isFinite(ms) && ms > 0 ? ms : undefined,
     output: output.length > 0 ? output : undefined,
   };
+}
+
+export function fmtDuration(ms: number): string {
+  if (ms >= 60_000) return `${(ms / 60_000).toFixed(1)}m`;
+  if (ms >= 1_000) return `${(ms / 1_000).toFixed(1)}s`;
+  return `${Math.round(ms)}ms`;
 }
 
 export function browserDoneStep(blk: BlockNode): ToolStep {
@@ -144,6 +161,7 @@ export type ToolStep = {
   detail?: string;
   output?: string;
   code?: number;
+  durationMs?: number;
   approvalIdx?: number;
   live?: boolean;
   tool?: string;
@@ -175,6 +193,110 @@ function headerIcon(steps: ToolStep[]) {
   if (groups.size === 1 && groups.has("terminal"))
     return <FiTerminal size={11} />;
   return <FiTool size={11} />;
+}
+
+function TerminalActivity({
+  step,
+  approval,
+  onAllow,
+  onDeny,
+}: {
+  step: ToolStep;
+  approval: boolean;
+  onAllow: () => void;
+  onDeny: () => void;
+}) {
+  const [show, setShow] = useState(false);
+  const denied = step.code === -2;
+  const failed =
+    step.code !== undefined && step.code !== 0 && !denied && !step.live;
+  const done = !step.live && step.code !== undefined && step.code === 0;
+  const hasDetails =
+    (step.output !== undefined && step.output.length > 0) ||
+    step.code !== undefined ||
+    step.durationMs !== undefined;
+
+  return (
+    <div className="flex flex-col gap-1 rounded-md border border-border-primary bg-bg-primary px-3 py-2">
+      <div className="flex items-center gap-2">
+        {step.live ? (
+          <span className="shimmer-text text-xs">◌</span>
+        ) : done ? (
+          <FiCheck size={13} className="shrink-0 text-green-500" />
+        ) : failed || denied ? (
+          <FiX
+            size={13}
+            className={`shrink-0 ${failed ? "text-red-400" : "text-text-secondary"}`}
+          />
+        ) : (
+          <FiTerminal size={13} className="shrink-0 text-text-secondary" />
+        )}
+        <span
+          className={
+            "min-w-0 flex-1 truncate text-sm " +
+            `${step.live ? "shimmer-text" : "text-text-primary"}`
+          }
+        >
+          {denied ? "Denied" : step.label}
+        </span>
+        {hasDetails && !approval && (
+          <button
+            type="button"
+            onClick={() => setShow((v) => !v)}
+            className="shrink-0 text-xs text-text-secondary hover:text-text-primary cursor-pointer"
+          >
+            {show ? "Hide details ↑" : "Show details →"}
+          </button>
+        )}
+      </div>
+      {step.detail && (
+        <span className="truncate font-mono text-xs text-text-secondary/70">
+          {step.detail}
+        </span>
+      )}
+      {approval && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-text-secondary">
+            Allow this action?
+          </span>
+          <button
+            type="button"
+            onClick={onAllow}
+            className="rounded-md bg-white px-3 py-1 text-xs font-medium text-bg-primary hover:opacity-90 cursor-pointer"
+          >
+            Run
+          </button>
+          <button
+            type="button"
+            onClick={onDeny}
+            className="rounded-md border border-border-primary px-3 py-1 text-xs text-text-secondary hover:text-text-primary cursor-pointer"
+          >
+            Deny
+          </button>
+        </div>
+      )}
+      {show && (
+        <div className="flex flex-col gap-1.5 pt-1">
+          {step.output !== undefined && step.output.length > 0 && (
+            <pre className="max-h-[180px] overflow-y-auto whitespace-pre-wrap font-mono text-sm leading-6 text-text-primary">
+              {step.output}
+            </pre>
+          )}
+          {(step.code !== undefined || step.durationMs !== undefined) && (
+            <span className="font-mono text-xs text-text-secondary">
+              {step.code !== undefined ? `exit ${step.code}` : ""}
+              {step.code !== undefined && step.durationMs !== undefined
+                ? " · "
+                : ""}
+              {step.durationMs !== undefined
+                ? fmtDuration(step.durationMs)
+                : ""}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function ToolActivity({
@@ -232,7 +354,16 @@ export default function ToolActivity({
       {open && (
         <div className="ml-2.5 mt-1 flex flex-col pl-4">
           {steps.map((step, i) => (
-            <div key={i} className="flex flex-col gap-1 py-1">
+            step.group === "terminal" ? (
+              <TerminalActivity
+                key={i}
+                step={step}
+                approval={i === approvalStep && approval !== null}
+                onAllow={() => decide(true)}
+                onDeny={() => decide(false)}
+              />
+            ) : (
+              <div key={i} className="flex flex-col gap-1 py-1">
               <span
                 className={
                   "min-w-0 max-w-[440px] truncate text-sm " +
@@ -247,17 +378,9 @@ export default function ToolActivity({
                 </span>
               )}
               {step.output !== undefined && step.output.length > 0 && (
-                step.group === "terminal" ? (
-                  <div className="rounded-md border border-border-primary bg-bg-primary px-3 py-2">
-                    <pre className="max-h-[180px] overflow-y-auto whitespace-pre-wrap font-mono text-sm leading-6 text-text-primary">
-                      {step.output}
-                    </pre>
-                  </div>
-                ) : (
-                  <pre className="max-h-[160px] overflow-y-auto whitespace-pre-wrap font-mono text-xs leading-5 text-text-secondary">
-                    {step.output}
-                  </pre>
-                )
+                <pre className="max-h-[160px] overflow-y-auto whitespace-pre-wrap font-mono text-xs leading-5 text-text-secondary">
+                  {step.output}
+                </pre>
               )}
               {i === approvalStep && approval && isEmailStep(step) && (
                 <EmailDraftCard
@@ -298,7 +421,8 @@ export default function ToolActivity({
                 </div>
               )}
             </div>
-          ))}
+          )
+        ))}
         </div>
       )}
     </div>

@@ -153,6 +153,7 @@ pub struct ToolExecution {
     pub start: Option<usize>,
     pub end: Option<usize>,
     pub tool_call_id: Option<String>,
+    pub elapsed_ms: u128,
 }
 
 impl ToolExecution {
@@ -174,6 +175,7 @@ impl ToolExecution {
             start,
             end,
             tool_call_id,
+            elapsed_ms: 0,
         }
     }
 

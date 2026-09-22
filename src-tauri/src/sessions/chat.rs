@@ -281,12 +281,12 @@ fn esc_attr(s: &str) -> String {
         .replace('<', "&lt;")
 }
 
-fn terminal_block(idx: usize, cmd: &str, code: i64, out: &str) -> String {
+fn terminal_block(idx: usize, cmd: &str, code: i64, out: &str, ms: u128) -> String {
     let status = if code == 0 { "ok" } else { "error" };
     let body = out.replace('&', "&amp;").replace('<', "&lt;");
 
     format!(
-        "<terminal id=\"a{idx}\" command=\"{}\" status=\"{status}\">{}</terminal>",
+        "<terminal id=\"a{idx}\" command=\"{}\" status=\"{status}\" duration_ms=\"{ms}\">{}</terminal>",
         esc_attr(cmd),
         body.trim()
     )
@@ -674,6 +674,7 @@ pub async fn send<R: tauri::Runtime>(
                     exec.cancel("action denied by user".to_string());
                     code = DENIED_CODE;
                 } else {
+                    let t0 = std::time::Instant::now();
                     let outcome = tools::recover::exec_with_recovery(
                         gw,
                         &exec.tool,
@@ -684,6 +685,7 @@ pub async fn send<R: tauri::Runtime>(
                         Some((&chan, idx as u32)),
                     )
                     .await;
+                    exec.elapsed_ms = t0.elapsed().as_millis();
                     match outcome.result {
                         Ok(t) => {
                             code = exit_of(&t);
@@ -758,7 +760,7 @@ pub async fn send<R: tauri::Runtime>(
                         .unwrap_or_else(|| body.clone())
                 };
 
-                let blk = terminal_block(idx, &cmd, code, &out);
+                let blk = terminal_block(idx, &cmd, code, &out, exec.elapsed_ms);
                 match (exec.start, exec.end) {
                     (Some(s), Some(e)) => edits.push((s, e, blk)),
                     _ => append_blocks.push(blk),

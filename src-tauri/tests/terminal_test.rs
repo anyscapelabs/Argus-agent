@@ -123,3 +123,19 @@ fn shell_override_roundtrips() {
 
     assert!(detect::set_override("/no/such/shell-xyz").is_err());
 }
+
+#[tokio::test]
+async fn sudo_commands_fail_fast_without_hanging() {
+    use argus_lib::tools::shell::{needs_elevation, run_stream};
+
+    assert!(needs_elevation("sudo apt install x"));
+    assert!(needs_elevation("  su -c whoami"));
+    assert!(needs_elevation("doas reboot"));
+    assert!(!needs_elevation("echo hello"));
+    assert!(!needs_elevation("echo sudo apt"));
+
+    let err = run_stream(&serde_json::json!({"command": "sudo whoami"}), 0, None)
+        .await
+        .unwrap_err();
+    assert!(err.contains("elevated privileges"));
+}

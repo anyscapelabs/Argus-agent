@@ -20,6 +20,13 @@ const TERM_TIMEOUT_DEF: u64 = 120;
 const TERM_TIMEOUT_LONG: u64 = 600;
 const DRAIN: Duration = Duration::from_secs(2);
 
+pub fn needs_elevation(cmd: &str) -> bool {
+    matches!(
+        cmd.trim_start().split_whitespace().next().unwrap_or(""),
+        "sudo" | "su" | "doas"
+    )
+}
+
 tokio::task_local! {
     pub static CANCEL: Arc<tokio::sync::Notify>;
 }
@@ -179,6 +186,16 @@ pub async fn run_stream(
     chan: Option<&Channel<StreamEvent>>,
 ) -> Result<(String, i64), String> {
     let cmd = args["command"].as_str().ok_or("terminal needs a command")?;
+
+    if needs_elevation(cmd) {
+        return Err(
+            "this command needs elevated privileges (sudo/su/doas), which Argus \
+            cannot grant itself — run it yourself in a terminal, or describe what it \
+            should do and the agent will suggest the exact command"
+                .into(),
+        );
+    }
+
     let hard = args["timeout"]
         .as_u64()
         .map(|t| t.clamp(TERM_TIMEOUT_MIN, TERM_TIMEOUT_MAX))

@@ -14,10 +14,15 @@ fn file_url(file_id: &str) -> Result<Url, String> {
     Ok(url)
 }
 
+pub fn drive_query(fragment: &str) -> String {
+    let escaped = fragment.replace('\\', "\\\\").replace('\'', "\\'");
+    format!("name contains '{escaped}' and trashed = false")
+}
+
 pub async fn list_files(query: &str, max: u64) -> Result<serde_json::Value, String> {
     let mut url = Url::parse(BASE).map_err(|err| err.to_string())?;
     url.query_pairs_mut()
-        .append_pair("q", query)
+        .append_pair("q", &drive_query(query))
         .append_pair("pageSize", &max.clamp(1, 50).to_string())
         .append_pair("fields", "files(id,name,mimeType,modifiedTime,size)");
     let v = authed_get(url.as_str()).await?;

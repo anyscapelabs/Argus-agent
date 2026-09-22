@@ -23,9 +23,16 @@ pub fn load() -> Result<TrelloCfg, String> {
 
     let app_path = crate::sessions::ext_install::data_dir().join(APP_FILE);
     if let Ok(raw) = std::fs::read_to_string(&app_path) {
-        if let Ok(cfg) = serde_json::from_str::<TrelloCfg>(&raw) {
-            if !cfg.api_key.trim().is_empty() {
-                return Ok(cfg);
+        match serde_json::from_str::<TrelloCfg>(&raw) {
+            Ok(cfg) if !cfg.api_key.trim().is_empty() => return Ok(cfg),
+            Ok(_) => {
+                return Err(format!("{}: api_key is empty", app_path.display()));
+            }
+            Err(err) => {
+                return Err(format!(
+                    "{}: couldn't parse — expected {{\"api_key\": \"...\"}}, got: {err}",
+                    app_path.display()
+                ));
             }
         }
     }

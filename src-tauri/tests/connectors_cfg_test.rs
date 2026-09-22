@@ -81,3 +81,17 @@ fn trello_config_prefers_env_over_files() {
         None => std::env::remove_var("ARGUS_TRELLO_KEY"),
     }
 }
+
+#[test]
+fn drive_query_builds_name_contains_with_escape() {
+    use argus_lib::mcp::google::drive::drive_query;
+
+    assert_eq!(
+        drive_query("budget"),
+        "name contains 'budget' and trashed = false"
+    );
+    assert_eq!(
+        drive_query("John's notes"),
+        "name contains 'John\\'s notes' and trashed = false"
+    );
+}

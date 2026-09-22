@@ -1,4 +1,5 @@
 import type { BlockNode } from "../../lib/agentXml";
+import { renderInlineText } from "./inline";
 
 type Props = { block: BlockNode };
 
@@ -41,7 +42,7 @@ export default function TableBlock({ block }: Props) {
                   key={idx}
                   className="px-3 py-2 text-left font-medium text-text-primary"
                 >
-                  {cell.txt}
+                  {renderInlineText(cell.txt)}
                 </th>
               ))}
             </tr>
@@ -55,7 +56,7 @@ export default function TableBlock({ block }: Props) {
                   key={cIdx}
                   className="px-3 py-2 text-left font-light text-text-secondary"
                 >
-                  {cell.txt}
+                  {renderInlineText(cell.txt)}
                 </td>
               ))}
             </tr>

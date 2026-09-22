@@ -217,7 +217,7 @@ function TerminalActivity({
     step.durationMs !== undefined;
 
   return (
-    <div className="flex flex-col gap-1 rounded-md border border-border-primary bg-bg-primary px-3 py-2">
+    <div className="flex flex-col gap-1 px-3 py-2">
       <div className="flex items-center gap-2">
         {step.live ? (
           <span className="shimmer-text text-xs">◌</span>
@@ -277,11 +277,6 @@ function TerminalActivity({
       )}
       {show && (
         <div className="flex flex-col gap-1.5 pt-1">
-          {step.output !== undefined && step.output.length > 0 && (
-            <pre className="max-h-[180px] overflow-y-auto whitespace-pre-wrap font-mono text-sm leading-6 text-text-primary">
-              {step.output}
-            </pre>
-          )}
           {(step.code !== undefined || step.durationMs !== undefined) && (
             <span className="font-mono text-xs text-text-secondary">
               {step.code !== undefined ? `exit ${step.code}` : ""}
@@ -292,6 +287,11 @@ function TerminalActivity({
                 ? fmtDuration(step.durationMs)
                 : ""}
             </span>
+          )}
+          {step.output !== undefined && step.output.length > 0 && (
+            <pre className="max-h-[180px] overflow-y-auto whitespace-pre-wrap font-mono text-sm leading-6 text-text-primary">
+              {step.output}
+            </pre>
           )}
         </div>
       )}
@@ -352,18 +352,19 @@ export default function ToolActivity({
         />
       </button>
       {open && (
-        <div className="ml-2.5 mt-1 flex flex-col pl-4">
-          {steps.map((step, i) => (
-            step.group === "terminal" ? (
-              <TerminalActivity
-                key={i}
-                step={step}
-                approval={i === approvalStep && approval !== null}
-                onAllow={() => decide(true)}
-                onDeny={() => decide(false)}
-              />
-            ) : (
-              <div key={i} className="flex flex-col gap-1 py-1">
+        <div className="mt-1.5 overflow-hidden rounded-lg border border-border-primary">
+          <div className="flex flex-col divide-y divide-border-primary">
+            {steps.map((step, i) =>
+              step.group === "terminal" ? (
+                <TerminalActivity
+                  key={i}
+                  step={step}
+                  approval={i === approvalStep && approval !== null}
+                  onAllow={() => decide(true)}
+                  onDeny={() => decide(false)}
+                />
+              ) : (
+                <div key={i} className="flex flex-col gap-1 px-3 py-2">
               <span
                 className={
                   "min-w-0 max-w-[440px] truncate text-sm " +
@@ -422,8 +423,9 @@ export default function ToolActivity({
               )}
             </div>
           )
-        ))}
+        )}
         </div>
+      </div>
       )}
     </div>
   );

@@ -214,3 +214,27 @@ fn meta_lists_four_non_mutating_tools() {
     assert!(section.contains("notepad.read"));
     assert!(section.contains("untrusted data"));
 }
+
+#[test]
+fn prompt_include_is_delimited_and_bounded() {
+    let _guard = serial();
+    let (_tmp, prev) = isolated_home("delimited");
+
+    let dir = std::env::var("XDG_DATA_HOME").unwrap();
+    let pad = std::path::Path::new(&dir).join("com.anyscapelabs.argus/notepad");
+    std::fs::create_dir_all(&pad).unwrap();
+    std::fs::write(pad.join("s9.md"), "remember the milk").unwrap();
+
+    let shown = notepad::prompt_include("s9").unwrap();
+    assert!(shown.starts_with("<working-notes>"));
+    assert!(shown.ends_with("</working-notes>"));
+    assert!(shown.contains("remember the milk"));
+
+    let big = "B".repeat(5000);
+    std::fs::write(pad.join("s8.md"), &big).unwrap();
+    let shown = notepad::prompt_include("s8").unwrap();
+    assert!(shown.starts_with("<working-notes>"));
+    assert!(shown.len() < 1400, "notepad must stay bounded");
+
+    restore_home(prev);
+}

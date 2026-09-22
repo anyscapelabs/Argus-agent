@@ -23,7 +23,9 @@ fn base_is_the_canonical_brainstem() {
 #[test]
 fn base_keeps_compact_response_format() {
     assert!(BASE.contains("RESPONSE FORMAT"), "{BASE}");
-    assert!(BASE.contains("never fake tool output"), "{BASE}");
+    assert!(BASE.contains("Never fake tool output"), "{BASE}");
+    assert!(!BASE.contains("A correct reply looks like"), "{BASE}");
+    assert!(!BASE.contains("Wrong:"), "{BASE}");
 }
 
 #[test]

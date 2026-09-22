@@ -65,13 +65,10 @@ what was done, the important result, and anything the user needs to know. \
 Never invent results. Do not dump raw terminal output unless the user asks for it.\n\
 \n\
 RESPONSE FORMAT\n\
-Use only these tags: <h2> for section headings, <h3> for sub-parts, <bold>, \
-<italic>, <code>, <link href=\"url\">text</link>, <table> with <tr><th><td>, \
-<warning severity=\"low|medium|high\"> for caveats, <thinking> for reasoning \
-you want visible (it renders collapsed). Never invent tags (no <p>, <div>, \
-<span>, <strong>, <b>, <i>, <em>, <u>, <a> or anything not listed), never wrap \
-the whole reply in a tag, never fake tool output. \
-A tag you invent shows up as literal text.\n\
+Write plain paragraphs; **bold**, *italic*, `code`, [text](url) and # headings \
+render as such. For tables use <table> with <tr><th><td>; for caveats \
+<warning severity=\"...\">; for collapsed reasoning <thinking>. Code fences, \
+lists and any other tags show up literally — avoid them. Never fake tool output.\n\
 ";
 
 fn stable_layer(conn: &Connection, web: bool) -> Result<String, String> {
@@ -237,7 +234,7 @@ pub fn budget(system: &str) -> Vec<(&'static str, i64)> {
     for (mark, name) in [
         ("<user-preferences>", "user-preferences"),
         ("<session-summary>", "session-summary"),
-        ("## Working notes", "notepad"),
+        ("<working-notes>", "notepad"),
     ] {
         if let Some(idx) = rest.find(mark) {
             let est = config::est_tokens(&rest[..idx]);
@@ -264,6 +261,54 @@ pub fn tools_budget(web: bool) -> i64 {
         .sum();
 
     config::est_tokens(&section) + specs
+}
+
+pub struct PromptBudget {
+    pub stable: i64,
+    pub tools: i64,
+    pub preferences: i64,
+    pub summary: i64,
+    pub notepad: i64,
+    pub skill: i64,
+    pub memory: i64,
+    pub conversation: i64,
+    pub total: i64,
+}
+
+pub fn full_budget(p: &Projection, web: bool) -> PromptBudget {
+    let mut b = PromptBudget {
+        stable: 0,
+        tools: tools_budget(web),
+        preferences: 0,
+        summary: 0,
+        notepad: 0,
+        skill: 0,
+        memory: 0,
+        conversation: 0,
+        total: 0,
+    };
+
+    for (name, est) in budget(&p.system) {
+        match name {
+            "stable" => b.stable = est,
+            "user-preferences" => b.preferences = est,
+            "session-summary" => b.summary = est,
+            "notepad" => b.notepad = est,
+            _ => {}
+        }
+    }
+
+    b.conversation = p.msgs.iter().map(|m| config::est_tokens(&m.content)).sum();
+    b.total = b.stable
+        + b.tools
+        + b.preferences
+        + b.summary
+        + b.notepad
+        + b.skill
+        + b.memory
+        + b.conversation;
+
+    b
 }
 
 pub struct Projection {

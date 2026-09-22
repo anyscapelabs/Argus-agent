@@ -26,7 +26,7 @@ pub struct ToolMeta {
 const TOOLS: &[ToolMeta] = &[
     ToolMeta {
         name: "terminal",
-        desc: "run a shell command via the detected shell; output streams live, default cap 120s (600s for long jobs), optional timeout in seconds (10-1800). label is a short human description shown in the UI; privilege is user (default) or admin — admin runs via the OS authorization dialog after the user's approval, use it only for work that truly needs root",
+        desc: "Execute commands on the user's computer. Use for: inspecting the system and files; creating or modifying files; running programs; builds and tests; Git; package managers; system administration. Use user privilege by default. Use admin privilege only when root access is required. Admin authentication is handled by the operating system. Never ask for or handle the user's sudo password.",
         args: "{\"command\":\"...\",\"cwd\":\".\",\"label\":\"...\",\"privilege\":\"user\"}",
         mutating: true,
     },
@@ -981,9 +981,8 @@ So your reply is: The file says hello.\n\
 Rules:\n\
 - Batch every independent action into one reply: open once, then click, type, scroll and read in the fewest replies possible, reusing the same tab. Never dribble one action per reply when several are needed.\n\
 - Independent reads may share one reply; desktop actions run one per reply.\n\
-- A result with status err (including \"action denied by user\") ends that line of action: \
-explain the failure and what would fix it, never repeat the same call.\n\
-- Attempt the full plan first; only when every route is exhausted write one summary of what failed — never a report after each single failure.\n\
+- A result with status err (including \"action denied by user\") ends that line of action.\n\
+- Attempt the full plan first; write one summary when every route is exhausted.\n\
 - Never narrate a screenshot you were not given, and never claim a tool ran \
 without its result message.\n\
 - Past runs render in history as <browser-action>, <terminal> and <document> blocks: \
@@ -1019,10 +1018,9 @@ pub fn guidance(web: bool) -> String {
 
     s.push_str(
         "Terminal rules:\n\
-1. Some commands pause for user approval first.\n\
-2. To open a GUI app, detach it so the command returns at once: end the \
+1. To open a GUI app, detach it so the command returns at once: end the \
 command with >/dev/null 2>&1 & — xdg-open and similar block until the app closes.\n\
-3. Never automate a terminal window with GUI tools; run the command here instead.\n\
+2. Never automate a terminal window with GUI tools; run the command here instead.\n\
 4. Least privilege: run everything as the normal user by default. Never write \
 sudo/su/doas yourself and never ask for a password — for work that truly needs root \
 (system packages, /etc, services), call the terminal tool again with privilege \"admin\" \

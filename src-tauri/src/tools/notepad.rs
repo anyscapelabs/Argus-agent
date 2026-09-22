@@ -145,13 +145,11 @@ pub fn prompt_include(session_id: &str) -> Option<String> {
     }
 
     if text.len() <= INCLUDE_BYTES {
-        return Some(format!(
-            "## Working notes (your private scratchpad)\n{text}"
-        ));
+        return Some(format!("<working-notes>\n{text}\n</working-notes>"));
     }
 
     let head: String = text.chars().take(INCLUDE_BYTES).collect();
     Some(format!(
-        "## Working notes (your private scratchpad, truncated)\n{head}\n…use notepad.read to see the rest."
+        "<working-notes>\n{head}\n…truncated, use notepad.read to see the rest.\n</working-notes>"
     ))
 }

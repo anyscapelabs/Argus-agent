@@ -171,3 +171,62 @@ fn budget_sections_sum_to_total() {
     let tb = tools_budget(true);
     assert!(tb > 1000, "tools budget implausibly small: {tb}");
 }
+
+#[test]
+fn full_budget_splits_named_sections_and_zeroes_unused_tiers() {
+    use argus_lib::prompt::full_budget;
+
+    let (conn, sid) = setup();
+    let p = project(&conn, &sid).unwrap();
+    let b = full_budget(&p, true);
+
+    assert!(b.stable > 0);
+    assert!(b.tools > 1000);
+    assert_eq!(b.skill, 0, "no skill tier is ever injected");
+    assert_eq!(b.memory, 0, "no memory tier is ever injected");
+    assert_eq!(
+        b.total,
+        b.stable
+            + b.tools
+            + b.preferences
+            + b.summary
+            + b.notepad
+            + b.skill
+            + b.memory
+            + b.conversation
+    );
+}
+
+#[test]
+fn runtime_architecture_stays_out_of_the_prompt() {
+    let (conn, sid) = setup();
+    let p = project(&conn, &sid).unwrap();
+    let tools = section(true);
+
+    for needle in [
+        "StreamEvent",
+        "StreamDone",
+        "ToolExecution",
+        "SQLite",
+        "prefix_hash",
+        "compact_seq",
+        "Tauri",
+        "ApprovalBlock",
+        "SessionStore",
+        "Gateway",
+    ] {
+        assert!(!p.system.contains(needle), "leaked: {needle}");
+        assert!(!tools.contains(needle), "leaked: {needle}");
+    }
+}
+
+#[test]
+fn terminal_contract_is_short_and_complete() {
+    let specs = tool_specs(false);
+    let term = specs.iter().find(|t| t.name == "terminal").unwrap();
+
+    assert!(term.description.contains("Use admin privilege only"));
+    assert!(term.description.contains("Never ask for or handle"));
+    assert!(!term.description.contains("120s"));
+    assert!(!term.description.contains("600s"));
+}

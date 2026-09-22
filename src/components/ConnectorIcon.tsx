@@ -2,6 +2,7 @@ import chrome from "../assets/connectors/chrome.svg?raw";
 import { LuSearch } from "react-icons/lu";
 
 import discord from "../assets/connectors/discord.svg?raw";
+import exa from "../assets/connectors/exa.svg?raw";
 import figma from "../assets/connectors/figma.svg?raw";
 import github from "../assets/connectors/github.svg?raw";
 import gitlab from "../assets/connectors/gitlab.svg?raw";
@@ -18,6 +19,7 @@ import trello from "../assets/connectors/trello.svg?raw";
 const ICONS: Record<string, string> = {
   chrome,
   discord,
+  exa,
   figma,
   github,
   gitlab,

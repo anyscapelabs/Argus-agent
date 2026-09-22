@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import AgentBubble from "./AgentBubble";
 import ChatInput from "./ChatInput";
 import UserBubble from "./UserBubble";
-import { parse } from "../lib/agentXml";
+import { parse, type BlockNode } from "../lib/agentXml";
 import WorkSummary, { formatWorked } from "./agent/WorkSummary";
+import DocumentCard from "./agent/DocumentCard";
 import ToolActivity, {
   actionStep,
   browserDoneStep,
@@ -268,6 +269,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
             }
 
             const workSteps: ToolStep[] = [];
+            const docBlocks: BlockNode[] = [];
             let stepIdx = 0;
             const workMsgs = last ? [...prior, last] : prior;
 
@@ -281,12 +283,11 @@ export default function ChatDetailPage({ sessionId }: Props) {
                   } else if (b.tag === "browser-action") {
                     workSteps.push(browserDoneStep(b));
                   } else if (b.tag === "document") {
-                    const title =
-                      b.attrs.title ?? b.attrs.name ?? b.attrs.id ?? "document";
                     workSteps.push({
                       group: "tool",
-                      label: `Created document ${title}`,
+                      label: `Created document ${b.attrs.title ?? b.attrs.name ?? b.attrs.id ?? "document"}`,
                     });
+                    docBlocks.push(b);
                   }
                 }
               } catch {
@@ -358,6 +359,9 @@ export default function ChatDetailPage({ sessionId }: Props) {
                         retryFrom(group.usr.id);
                       }}
                     />
+                    {docBlocks.map((b, di) => (
+                      <DocumentCard key={`doc-${di}`} block={b} />
+                    ))}
                   </>
                 ) : live ? (
                   <>

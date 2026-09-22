@@ -630,6 +630,12 @@ pub async fn send<R: tauri::Runtime>(
             if pre_failed {
                 code = -1;
             } else {
+                if exec.tool_call_id.is_some() {
+                    let _ = chan.send(StreamEvent::Delta {
+                        text: format!("<action tool=\"{}\">{}</action>", exec.tool, exec.args),
+                    });
+                }
+
                 exec.begin();
 
                 let sensitive = is_browser && tools::browser::sensitive(&exec.tool, &args_v).await;

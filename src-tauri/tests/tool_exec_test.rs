@@ -239,3 +239,18 @@ async fn two_step_results_append_in_order() {
     assert_eq!(round2[0].id, "a2");
     let _ = std::fs::remove_dir_all(&base);
 }
+
+#[test]
+fn native_calls_carry_ids_for_live_synthesis() {
+    let execs = build_executions("", &[native("c1", "doc.create", "{}")], 0);
+    assert_eq!(execs.len(), 1);
+    assert!(execs[0].tool_call_id.is_some());
+
+    let execs = build_executions(
+        r#"<action tool="terminal">{"command":"ls"}</action>"#,
+        &[],
+        0,
+    );
+    assert_eq!(execs.len(), 1);
+    assert!(execs[0].tool_call_id.is_none());
+}

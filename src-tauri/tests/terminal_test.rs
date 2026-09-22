@@ -139,3 +139,20 @@ async fn sudo_commands_fail_fast_without_hanging() {
         .unwrap_err();
     assert!(err.contains("elevated privileges"));
 }
+
+#[tokio::test]
+async fn admin_privilege_bypasses_sudo_refusal() {
+    use argus_lib::tools::shell::run_stream;
+
+    let out = run_stream(
+        &serde_json::json!({"command": "echo hi", "privilege": "admin"}),
+        0,
+        None,
+    )
+    .await;
+
+    match out {
+        Ok((text, _)) => assert!(text.contains("hi")),
+        Err(err) => assert!(!err.contains("do not write sudo")),
+    }
+}

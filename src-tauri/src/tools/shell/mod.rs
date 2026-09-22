@@ -145,9 +145,26 @@ async fn wait_hard(child: &mut tokio::process::Child) -> WaitOut {
     }
 }
 
-fn spawn_shell(cmd: &str, cwd: Option<&str>) -> Result<tokio::process::Child, String> {
+fn spawn_shell(
+    cmd: &str,
+    cwd: Option<&str>,
+    elevated: bool,
+) -> Result<tokio::process::Child, String> {
     let cfg = detect::status();
-    let mut c = Command::new(&cfg.binary);
+
+    if elevated && !matches!(cfg.kind, ShellKind::Bash | ShellKind::Sh) {
+        return Err("admin elevation is only supported on Linux bash/sh shells".into());
+    }
+
+    let mut c = if elevated {
+        // pkexec opens the OS authorization dialog itself: the password goes
+        // to polkit, never to Argus, and pkexec runs with a sanitized env.
+        let mut pk = Command::new("pkexec");
+        pk.arg(&cfg.binary);
+        pk
+    } else {
+        Command::new(&cfg.binary)
+    };
 
     match cfg.kind {
         ShellKind::Wsl => {
@@ -186,12 +203,13 @@ pub async fn run_stream(
     chan: Option<&Channel<StreamEvent>>,
 ) -> Result<(String, i64), String> {
     let cmd = args["command"].as_str().ok_or("terminal needs a command")?;
+    let elevated = args.get("privilege").and_then(|v| v.as_str()) == Some("admin");
 
-    if needs_elevation(cmd) {
+    if !elevated && needs_elevation(cmd) {
         return Err(
-            "this command needs elevated privileges (sudo/su/doas), which Argus \
-            cannot grant itself — run it yourself in a terminal, or describe what it \
-            should do and the agent will suggest the exact command"
+            "that command needs elevated privileges — do not write sudo yourself; \
+            call the terminal tool again with privilege \"admin\" instead, and the user \
+            will approve it first in Argus and then in the OS dialog"
                 .into(),
         );
     }
@@ -202,7 +220,7 @@ pub async fn run_stream(
         .unwrap_or_else(|| default_timeout_for(cmd));
     let hard_dur = Duration::from_secs(hard);
 
-    let mut child = spawn_shell(cmd, args["cwd"].as_str())?;
+    let mut child = spawn_shell(cmd, args["cwd"].as_str(), elevated)?;
     let pid = child.id();
 
     let out = child.stdout.take().ok_or("no stdout")?;

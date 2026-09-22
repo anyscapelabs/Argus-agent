@@ -26,8 +26,8 @@ pub struct ToolMeta {
 const TOOLS: &[ToolMeta] = &[
     ToolMeta {
         name: "terminal",
-        desc: "run a shell command via the detected shell; output streams live, default cap 120s (600s for long jobs), optional timeout in seconds (10-1800)",
-        args: "{\"command\":\"...\",\"cwd\":\".\"}",
+        desc: "run a shell command via the detected shell; output streams live, default cap 120s (600s for long jobs), optional timeout in seconds (10-1800). label is a short human description shown in the UI; privilege is user (default) or admin — admin runs via the OS authorization dialog after the user's approval, use it only for work that truly needs root",
+        args: "{\"command\":\"...\",\"cwd\":\".\",\"label\":\"...\",\"privilege\":\"user\"}",
         mutating: true,
     },
     ToolMeta {
@@ -1021,8 +1021,11 @@ pub fn guidance(web: bool) -> String {
 2. To open a GUI app, detach it so the command returns at once: end the \
 command with >/dev/null 2>&1 & — xdg-open and similar block until the app closes.\n\
 3. Never automate a terminal window with GUI tools; run the command here instead.\n\
-4. There is no sudo and no password prompt: never run sudo, it hangs until timeout. \
-Report permission errors instead.\n\
+4. Least privilege: run everything as the normal user by default. Never write \
+sudo/su/doas yourself and never ask for a password — for work that truly needs root \
+(system packages, /etc, services), call the terminal tool again with privilege \"admin\" \
+plus a short label; the user approves it in Argus first, then the OS asks for \
+authorization in its own dialog. The password never comes to you.\n\
 5. Keep disk scans bounded: scope du with --max-depth, wrap slow directories in \
 `timeout 15 du -sh <dir>`, prefer `ncdu -o` snapshots over repeated full-tree scans. \
 If a scan times out twice, switch strategy instead of retrying it.\n",

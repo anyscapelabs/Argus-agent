@@ -165,7 +165,7 @@ export default function SkillsPage() {
           </div>
         </div>
       )}
-      <div className="mt-6 flex flex-col divide-y divide-border-primary">
+      <div className="mt-6 flex flex-col divide-y divide-border-primary overflow-hidden rounded-lg border border-border-primary">
         {skills.map((skill) => (
           <SkillCard key={skill.name} skill={skill} onOpen={setSel} />
         ))}

@@ -16,7 +16,7 @@ export default function SkillCard({ skill, onOpen }: SkillCardProps) {
     <div
       onClick={() => onOpen(skill)}
       className={
-        "flex cursor-pointer items-center gap-3 rounded-xl bg-transparent " +
+        "flex cursor-pointer items-center gap-3 bg-transparent " +
         "px-3 py-2.5 transition-colors hover:bg-bg-hover-primary"
       }
     >

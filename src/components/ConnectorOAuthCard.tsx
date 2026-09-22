@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import {
@@ -70,6 +71,29 @@ type Props = {
 export default function ConnectorOAuthCard({ svc, onOpen }: Props) {
   const flow = useOAuthFlow(svc);
   const { state, code, verifyUrl, note } = flow;
+  const [copied, setCopied] = useState(false);
+  const opened = useRef(false);
+
+  useEffect(() => {
+    if (state === "waiting") {
+      setCopied(false);
+
+      if (verifyUrl && !opened.current) {
+        opened.current = true;
+        openUrl(verifyUrl).catch(() => {});
+      }
+    } else {
+      opened.current = false;
+    }
+  }, [state, verifyUrl]);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
+  };
 
   const line =
     state === "connected"
@@ -144,21 +168,35 @@ export default function ConnectorOAuthCard({ svc, onOpen }: Props) {
         )}
       </div>
       {state === "waiting" && code && (
-        <div className="ml-14 mt-1">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              openUrl(verifyUrl).catch(() => {});
-            }}
-            className={
-              "rounded-lg border border-border-primary bg-bg-secondary " +
-              "px-2.5 py-1 font-mono text-sm tracking-widest " +
-              "text-text-primary hover:bg-bg-hover-primary cursor-pointer"
-            }
-          >
-            {code}
-          </button>
+        <div
+          className="ml-14 mt-2 flex flex-col gap-1.5 rounded-md border border-border-primary bg-bg-secondary/50 px-2.5 py-2"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <p className="text-[11px] leading-snug text-text-secondary">
+            Copy the code, open {svc.name}, and paste it there:
+          </p>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-sm tracking-widest text-text-primary">
+              {code}
+            </span>
+            <button
+              type="button"
+              onClick={copy}
+              className="rounded-md border border-border-primary px-2 py-0.5 text-[11px] text-text-secondary hover:text-text-primary cursor-pointer"
+            >
+              {copied ? "Copied ✓" : "Copy"}
+            </button>
+            <button
+              type="button"
+              onClick={() => openUrl(verifyUrl).catch(() => {})}
+              className="rounded-md bg-accent px-2 py-0.5 text-[11px] font-medium text-bg-primary hover:opacity-90 cursor-pointer"
+            >
+              Open {svc.name} ↗
+            </button>
+          </div>
+          <p className="text-[11px] leading-snug text-text-secondary">
+            Approve there, then come back — this flips to Connected by itself.
+          </p>
         </div>
       )}
     </div>

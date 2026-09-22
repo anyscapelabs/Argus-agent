@@ -19,6 +19,7 @@ Once a connector is connected, the agent calls it like any other tool — ask in
 - **Notion**: search, query databases, read pages/blocks, create page, append text
 - **Figma**: file meta, comments, post comment
 - **Discord**: servers, channels, history, send
+- **Exa**: AI web search with snippets, full page text
 - **Telegram**: bot info, updates, send
 - **Todoist**: tasks, create, close, delete
 - **GitLab**: projects, issues, merge requests, pipelines, create issue

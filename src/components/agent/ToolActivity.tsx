@@ -247,9 +247,17 @@ export default function ToolActivity({
                 </span>
               )}
               {step.output !== undefined && step.output.length > 0 && (
-                <pre className="max-h-[160px] overflow-y-auto whitespace-pre-wrap font-mono text-xs leading-5 text-text-secondary">
-                  {step.output}
-                </pre>
+                step.group === "terminal" ? (
+                  <div className="rounded-md border border-border-primary bg-bg-primary px-3 py-2">
+                    <pre className="max-h-[180px] overflow-y-auto whitespace-pre-wrap font-mono text-sm leading-6 text-text-primary">
+                      {step.output}
+                    </pre>
+                  </div>
+                ) : (
+                  <pre className="max-h-[160px] overflow-y-auto whitespace-pre-wrap font-mono text-xs leading-5 text-text-secondary">
+                    {step.output}
+                  </pre>
+                )
               )}
               {i === approvalStep && approval && isEmailStep(step) && (
                 <EmailDraftCard

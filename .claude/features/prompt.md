@@ -4,7 +4,7 @@ Code: `src-tauri/src/prompt/{mod.rs,config.rs,compressor.rs}`.
 
 ## Assembly (`prompt::project`)
 
-Canonical brainstem (`BASE`: identity, core rules, terminal, tool selection, skills/memory retrieval, recovery, permissions, response + compact response-format block) + tool section (`tools::section`: action protocol, guidance) + optional `<user-preferences>` + optional `<session-summary>` + optional session notepad. No skill index, no automatic memory injection, no session-start recall — skills/memories load on demand via their tools; `bash.run` hidden from the model (runtime alias kept). Budgets via `prompt::budget` + `prompt::tools_budget` (chars/4 estimator, debug use).
+Canonical brainstem (`BASE`: identity, core rules, terminal, tool selection, skills/memory retrieval, recovery, permissions, response + minimal response-format block) + tool section (`tools::section`: action protocol, guidance) + optional `<user-preferences>` + optional `<session-summary>` + optional `<working-notes>` (1024-byte cap). No skill index, no automatic memory injection, no session-start recall — skills/memories load on demand via their tools; `bash.run` hidden from the model (runtime alias kept). Budgets via `prompt::budget` + `prompt::tools_budget` + `full_budget()` PromptBudget struct (skill/memory tiers always 0).
 
 ## Config / compaction
 

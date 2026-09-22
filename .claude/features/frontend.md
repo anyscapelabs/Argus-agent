@@ -18,7 +18,7 @@ Code: `src/{App.tsx,lib/ipc.ts,lib/agentXml.ts,stores/,hooks/,components/}`, `sr
 ## Components
 
 - Shell: `Sidebar, Toolbar, Dropdown, Toasts, SessionList, NewAgentPage, ChatDetailPage, ChatInput, AgentBubble (parse(agentXml)), UserBubble`.
-- Agent blocks (`components/agent/`): `ThinkingBlock, PlanBlock, ActionBlock, ToolActivity, TerminalBlock, DiffBlock, FileChip, FileGroup, PathChip, TableBlock, WebSearchGroup, EmailDraftCard, DocumentCard, MemoryRefChip, ApprovalBlock (Run/Deny), StreamingIndicator, AlertBanner, WorkSummary`.
+- Agent blocks (`components/agent/`): `ThinkingBlock, PlanBlock, ToolActivity (single bordered work container with divide-y rows; terminal steps render as TerminalActivity cards inside it), EmailDraftCard, DocumentCard, MemoryRefChip, ApprovalBlock (Run/Deny), StreamingIndicator, AlertBanner, WorkSummary, FileGroup, PathChip, DiffBlock, TableBlock, WebSearchGroup, inline (shared inline-tag renderer)`. Dead code removed: `ActionBlock, TerminalBlock, FileChip`.
 - Knowledge: `MemoryPage, SkillsPage, SkillCard, LibraryPage, LibraryCard, ConnectorsPage, ConnectorCard, ProjectsPage, ProjectCard`, `settings/* (ProvidersPage, ModelsPage, ProviderConnectModal, ConnectedProviderList, SettingsSidebar)`.
 
 ## Rules for agents

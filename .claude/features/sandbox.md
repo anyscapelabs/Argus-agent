@@ -1,6 +1,6 @@
 # Sandbox — Untrusted-Source Execution (plan, approved decisions locked)
 
-Status: plan. Phases 1–4 not yet implemented.
+Status: phases 1–2 implemented (`tools/sandbox.rs` trust classify + podman runner, `tests/sandbox_test.rs`). Phases 3–4 not yet implemented.
 
 ## Locked decisions
 

@@ -142,3 +142,51 @@ fn duplicate_window_expires_after_sixty_seconds() {
     .unwrap();
     assert!(!has_unreplied_duplicate(&conn, "s1", "hello").unwrap());
 }
+
+#[test]
+fn mark_final_flags_only_the_final_turn() {
+    use argus_lib::sessions::schema::NewMsg;
+
+    let conn = dupe_db();
+    user_msg(&conn, "s1", "do the thing");
+
+    let first = argus_lib::sessions::store::add_msg(
+        &conn,
+        &NewMsg {
+            session_id: "s1".into(),
+            role: "assistant".into(),
+            content: "working on it <action tool=\"grep\">{\"pattern\":\"x\"}</action>".into(),
+            model_id: None,
+            provider_id: None,
+            tok_in: None,
+            tok_out: None,
+            tool_calls: None,
+            tool_call_id: None,
+        },
+    )
+    .unwrap();
+
+    assistant_msg(&conn, "s1", "all done, here are the findings");
+
+    let last_id: String = conn
+        .query_row(
+            "SELECT id FROM messages WHERE session_id = 's1' AND role = 'assistant' ORDER BY seq DESC LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    argus_lib::sessions::store::mark_final(&conn, &last_id).unwrap();
+
+    let kinds: Vec<(String, Option<String>)> = conn
+        .prepare("SELECT id, kind FROM messages WHERE session_id = 's1' AND role = 'assistant' ORDER BY seq")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    assert_eq!(kinds.len(), 2);
+    assert_eq!(kinds[0].0, first.id);
+    assert_eq!(kinds[0].1, None);
+    assert_eq!(kinds[1].1, Some("final".to_string()));
+}

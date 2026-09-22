@@ -102,6 +102,8 @@ pub struct Msg {
     pub tool_calls: Option<String>,
     #[serde(default)]
     pub tool_call_id: Option<String>,
+    #[serde(default)]
+    pub kind: Option<String>,
     pub created_at: String,
 }
 

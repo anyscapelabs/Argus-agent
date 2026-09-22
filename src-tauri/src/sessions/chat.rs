@@ -532,6 +532,11 @@ pub async fn send<R: tauri::Runtime>(
                               partial work above is saved; send 'continue' to resume"
                             .into(),
                     });
+
+                    if let Ok(conn) = gw.conn.lock() {
+                        let _ = store::mark_final(&conn, &asst.id);
+                    }
+
                     finished = true;
                     break;
                 }
@@ -557,6 +562,11 @@ pub async fn send<R: tauri::Runtime>(
                           above is saved; send 'continue' to let it retry"
                         .into(),
                 });
+
+                if let Ok(conn) = gw.conn.lock() {
+                    let _ = store::mark_final(&conn, &asst.id);
+                }
+
                 finished = true;
                 break;
             }
@@ -567,6 +577,10 @@ pub async fn send<R: tauri::Runtime>(
                 tauri::async_runtime::spawn(async move {
                     run_skill_reflection(&app2, &sid).await;
                 });
+            }
+
+            if let Ok(conn) = gw.conn.lock() {
+                let _ = store::mark_final(&conn, &asst.id);
             }
 
             finished = true;

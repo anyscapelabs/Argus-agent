@@ -66,6 +66,20 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
             .map_err(|err| err.to_string())?;
     }
 
+    let has_kind: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'kind'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|n| n > 0)
+        .map_err(|err| err.to_string())?;
+
+    if !has_kind {
+        conn.execute("ALTER TABLE messages ADD COLUMN kind TEXT", [])
+            .map_err(|err| err.to_string())?;
+    }
+
     conn.pragma_update(None, "foreign_keys", true)
         .map_err(|err| err.to_string())?;
 
@@ -212,7 +226,7 @@ pub fn delete_session(conn: &Connection, id: &str) -> Result<(), String> {
 }
 
 const MSG_COLS: &str =
-    "id, session_id, seq, role, content, model_id, provider_id, tok_in, tok_out, active, vote, tool_calls, tool_call_id, created_at";
+    "id, session_id, seq, role, content, model_id, provider_id, tok_in, tok_out, active, vote, tool_calls, tool_call_id, kind, created_at";
 
 fn row_msg(r: &rusqlite::Row) -> rusqlite::Result<Msg> {
     Ok(Msg {
@@ -229,8 +243,19 @@ fn row_msg(r: &rusqlite::Row) -> rusqlite::Result<Msg> {
         vote: r.get(10)?,
         tool_calls: r.get(11)?,
         tool_call_id: r.get(12)?,
-        created_at: r.get(13)?,
+        kind: r.get(13)?,
+        created_at: r.get(14)?,
     })
+}
+
+pub fn mark_final(conn: &Connection, id: &str) -> Result<(), String> {
+    conn.execute(
+        "UPDATE messages SET kind = 'final' WHERE id = ?1",
+        params![id],
+    )
+    .map_err(|err| err.to_string())?;
+
+    Ok(())
 }
 
 pub fn add_msg(conn: &Connection, m: &NewMsg) -> Result<Msg, String> {

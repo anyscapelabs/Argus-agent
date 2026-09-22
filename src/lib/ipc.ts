@@ -164,6 +164,7 @@ export type MsgRow = {
   vote: string | null;
   tool_calls?: string | null;
   tool_call_id?: string | null;
+  kind?: string | null;
   created_at: string;
 };
 

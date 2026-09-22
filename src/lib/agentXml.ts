@@ -469,13 +469,62 @@ function normalizeMdLine(line: string): string {
   return inlineMd(line.replace(/^\s*>\s?/, ""));
 }
 
+function tableRow(line: string): string[] | null {
+  const t = line.trim();
+  if (!/^\|.*\|$/.test(t)) return null;
+  return t
+    .slice(1, -1)
+    .split("|")
+    .map((c) => c.trim());
+}
+
+function tryTable(lines: string[], i: number): { xml: string; next: number } | null {
+  const head = tableRow(lines[i]);
+  if (head === null || i + 1 >= lines.length) return null;
+
+  const sep = lines[i + 1].trim();
+  if (!sep.includes("-") || !/^\|?[\s:\-|]+\|?$/.test(sep)) return null;
+
+  let xml =
+    "<table><tr>" +
+    head.map((c) => `<th>${inlineMd(c)}</th>`).join("") +
+    "</tr>";
+  let j = i + 2;
+
+  while (j < lines.length) {
+    const cells = tableRow(lines[j]);
+    if (cells === null || cells.length !== head.length) break;
+    xml += "<tr>" + cells.map((c) => `<td>${inlineMd(c)}</td>`).join("") + "</tr>";
+    j++;
+  }
+
+  return { xml: xml + "</table>", next: j };
+}
+
 function normalizeMd(src: string): string {
   const parts = src.split(/```[a-zA-Z0-9_-]*[^\S\n]*\n?/);
 
   return parts
     .map((seg, i) => {
       if (i % 2 === 1) return seg;
-      return seg.split("\n").map(normalizeMdLine).join("\n");
+
+      const lines = seg.split("\n");
+      const out: string[] = [];
+      let k = 0;
+
+      while (k < lines.length) {
+        const t = tryTable(lines, k);
+
+        if (t !== null) {
+          out.push(t.xml);
+          k = t.next;
+        } else {
+          out.push(normalizeMdLine(lines[k]));
+          k++;
+        }
+      }
+
+      return out.join("\n");
     })
     .join("\n");
 }

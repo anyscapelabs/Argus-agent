@@ -66,9 +66,11 @@ Never invent results. Do not dump raw terminal output unless the user asks for i
 \n\
 RESPONSE FORMAT\n\
 Write plain paragraphs; **bold**, *italic*, `code`, [text](url) and # headings \
-render as such. For tables use <table> with <tr><th><td>; for caveats \
-<warning severity=\"...\">; for collapsed reasoning <thinking>. Code fences, \
-lists and any other tags show up literally — avoid them. Never fake tool output.\n\
+render as such. For tables you MUST use <table> with <tr><th><td> — markdown \
+pipe tables (| a | b |) render as literal text, never as a table. Write lists \
+as short sentences, not - or 1. items. For caveats <warning severity=\"...\">; \
+for collapsed reasoning <thinking>. Code fences and any other tags show up \
+literally — avoid them. Never fake tool output.\n\
 ";
 
 fn stable_layer(conn: &Connection, web: bool) -> Result<String, String> {

@@ -555,6 +555,49 @@ export function memoryDelete(id: string): Promise<void> {
   return invoke<void>("memory_delete", { id });
 }
 
+export type LearningPreference = {
+  id: string;
+  scope: string;
+  category: string;
+  key: string;
+  value: string;
+  confidence: number;
+  explicit: boolean;
+  evidence_count: number;
+  last_confirmed: string;
+  created_at: string;
+  updated_at: string;
+};
+
+const CMD_LEARN_LIST = "learning_list";
+const CMD_LEARN_FORGET = "learning_forget";
+const CMD_LEARN_CORR = "learning_record_correction";
+const CMD_LEARN_FB = "learning_feedback";
+
+export function learningList(): Promise<LearningPreference[]> {
+  return invoke<LearningPreference[]>(CMD_LEARN_LIST);
+}
+
+export function learningForget(id: string): Promise<void> {
+  return invoke<void>(CMD_LEARN_FORGET, { id });
+}
+
+export function learningRecordCorrection(
+  sessionId: string,
+  messageId: string,
+  edited: string,
+): Promise<void> {
+  return invoke<void>(CMD_LEARN_CORR, { sessionId, messageId, edited });
+}
+
+export function learningFeedback(
+  sessionId: string,
+  messageId: string,
+  feedback: string,
+): Promise<void> {
+  return invoke<void>(CMD_LEARN_FB, { sessionId, messageId, feedback });
+}
+
 export type LibItem = {
   id: string;
   name: string;

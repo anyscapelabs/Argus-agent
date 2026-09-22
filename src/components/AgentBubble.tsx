@@ -3,6 +3,7 @@ import { FaThumbsDown, FaThumbsUp } from "react-icons/fa";
 import {
   FiCheck,
   FiCopy,
+  FiEdit3,
   FiRefreshCcw,
   FiThumbsDown,
   FiThumbsUp,
@@ -56,6 +57,7 @@ type Props = {
   vote?: string | null;
   onVote?: (next: "up" | "down" | null) => void;
   onRetry?: () => void;
+  onEdit?: (edited: string) => Promise<void>;
   liveTerm?: LiveTerm;
   hideActions?: boolean;
 };
@@ -647,6 +649,7 @@ export default function AgentBubble({
   vote,
   onVote,
   onRetry,
+  onEdit,
   liveTerm,
   hideActions,
 }: Props) {
@@ -655,6 +658,10 @@ export default function AgentBubble({
     [text],
   );
   const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [editErr, setEditErr] = useState<string | null>(null);
 
   const copy = async () => {
     if (!text) {
@@ -670,7 +677,56 @@ export default function AgentBubble({
 
   return (
     <div className="group/agent flex flex-col gap-3 text-base text-text-primary">
-      {tree ? (
+      {editing ? (
+        <div className="flex flex-col gap-2">
+          <textarea
+            value={draft}
+            rows={8}
+            onChange={(e) => setDraft(e.target.value)}
+            className={
+              "w-full resize-y rounded-lg border border-border-primary " +
+              "bg-bg-hover-secondary px-3 py-2 font-mono text-xs " +
+              "leading-5 text-text-primary focus:outline-none " +
+              "focus:ring-1 focus:ring-text-secondary"
+            }
+          />
+          {editErr && <p className="text-xs text-red-400">{editErr}</p>}
+          <div className="flex justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(false);
+                setEditErr(null);
+              }}
+              className="rounded-md border border-border-primary px-2.5 py-1 text-xs text-text-secondary hover:text-text-primary cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={saving || draft.trim() === ""}
+              onClick={async () => {
+                if (!onEdit) return;
+
+                setSaving(true);
+                setEditErr(null);
+
+                try {
+                  await onEdit(draft);
+                  setEditing(false);
+                } catch (e) {
+                  setEditErr(String(e));
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-bg-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save correction"}
+            </button>
+          </div>
+        </div>
+      ) : tree ? (
         renderTree(tree, !!caret, caret ? liveTerm : undefined)
       ) : (
         <div className="font-sans text-[16px] font-light">{children}</div>
@@ -727,6 +783,21 @@ export default function AgentBubble({
           >
             {copied ? <FiCheck size={14} /> : <FiCopy size={14} />}
           </button>
+
+          {onEdit !== undefined && (
+            <button
+              type="button"
+              aria-label="Edit response"
+              onClick={() => {
+                setDraft(text ?? "");
+                setEditErr(null);
+                setEditing(true);
+              }}
+              className="flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-bg-hover-primary hover:text-text-primary focus:outline-none focus-visible:bg-bg-hover-primary"
+            >
+              <FiEdit3 size={14} />
+            </button>
+          )}
         </div>
       )}
     </div>

@@ -15,6 +15,8 @@ import { parseDbTime } from "../lib/relativeTime";
 import { useChatModels } from "../hooks/useChatModels";
 import { sessionStore, useSessions, type Turn } from "../stores/sessions";
 import type { MsgRow } from "../lib/ipc";
+import { learningRecordCorrection } from "../lib/ipc";
+import { toast } from "../stores/toast";
 
 const SCROLL_LINE = 40;
 const SCROLL_PAGE_RATIO = 0.85;
@@ -333,6 +335,18 @@ export default function ChatDetailPage({ sessionId }: Props) {
                         }
 
                         sessionStore.setVote(sessionId, last.id, v);
+                      }}
+                      onEdit={async (edited) => {
+                        if (last === undefined) return;
+
+                        await learningRecordCorrection(
+                          sessionId,
+                          last.id,
+                          edited,
+                        );
+                        toast.success(
+                          "Correction saved — Argus will learn from it",
+                        );
                       }}
                       onRetry={() => {
                         if (group.usr === null) {

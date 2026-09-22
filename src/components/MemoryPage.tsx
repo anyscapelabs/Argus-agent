@@ -97,7 +97,7 @@ export default function MemoryPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-2xl py-4">
+    <div className="mx-auto w-full max-w-4xl py-4">
       <div className="mb-1 flex items-center justify-between">
         <h1 className="text-2xl font-medium text-text-primary">Memory</h1>
         <div className="flex gap-1 rounded-lg border border-border-primary p-1">

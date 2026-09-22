@@ -42,7 +42,7 @@ type ProjectsPageProps = {
 
 export default function ProjectsPage({ onNewProject }: ProjectsPageProps) {
   return (
-    <div className="mx-auto w-full max-w-2xl py-4">
+    <div className="mx-auto w-full max-w-4xl py-4">
       <div className="mb-1 flex items-center justify-between">
         <h1 className="text-2xl font-medium text-text-primary">Projects</h1>
         <button

@@ -75,7 +75,7 @@ export default function LibraryPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-2xl py-4">
+    <div className="mx-auto w-full max-w-4xl py-4">
       <h1 className="mb-1 text-2xl font-medium text-text-primary">
         Library
       </h1>

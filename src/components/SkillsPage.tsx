@@ -64,7 +64,7 @@ export default function SkillsPage() {
 
   if (creating) {
     return (
-      <div className="mx-auto w-full max-w-2xl py-4">
+      <div className="mx-auto w-full max-w-4xl py-4">
         <SkillEditorPage
           skill={null}
           onBack={() => setCreating(false)}
@@ -79,7 +79,7 @@ export default function SkillsPage() {
 
   if (editing) {
     return (
-      <div className="mx-auto w-full max-w-2xl py-4">
+      <div className="mx-auto w-full max-w-4xl py-4">
         <SkillEditorPage
           skill={editing}
           onBack={() => setEditing(null)}
@@ -94,7 +94,7 @@ export default function SkillsPage() {
 
   if (sel) {
     return (
-      <div className="mx-auto w-full max-w-2xl py-4">
+      <div className="mx-auto w-full max-w-4xl py-4">
         <SkillDetailPage
           skill={sel}
           onBack={() => setSel(null)}
@@ -109,7 +109,7 @@ export default function SkillsPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl py-4">
+    <div className="mx-auto w-full max-w-4xl py-4">
       <div className="mb-1 flex items-center justify-between">
         <h1 className="text-2xl font-medium text-text-primary">Skills</h1>
         <button
@@ -165,7 +165,7 @@ export default function SkillsPage() {
           </div>
         </div>
       )}
-      <div className="mt-6 flex flex-col gap-1">
+      <div className="mt-6 flex flex-col divide-y divide-border-primary">
         {skills.map((skill) => (
           <SkillCard key={skill.name} skill={skill} onOpen={setSel} />
         ))}

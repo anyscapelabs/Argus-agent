@@ -83,7 +83,7 @@ export default function SkillEditorPage({
         sections — When to use, Steps, Pitfalls.
       </p>
 
-      <div className="mt-5 flex max-w-xl flex-col gap-4">
+      <div className="mt-5 flex max-w-2xl flex-col gap-4">
         {!editing && (
           <label className="flex flex-col gap-1.5">
             <span className="text-sm text-text-secondary">Name</span>

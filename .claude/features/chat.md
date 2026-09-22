@@ -18,6 +18,7 @@ Code: `src-tauri/src/sessions/{chat.rs,mod.rs,store.rs,schema.rs,browser_import.
 ## Frontend (`src/stores/sessions.ts`)
 
 - `Channel<StreamEvent>`: `delta|reset|step|term|term_end|approval|notice|err`. Optimistic `pending-` user msg, auto-title 60 chars, retry via `sessSupersedeFrom`, `stop()` via `sessCancelChat`.
+- Turn structure is backend-driven: the loop-final assistant row is marked `kind='final'` (`store::mark_final`); `ChatDetailPage` renders that row whole and collapses all other assistant turns into compact `ToolActivity` step rows (no prose, no outputs) — never positional inference. Prompt rule: status line + actions while working, complete answer only in action-free turns.
 - `Turn{text,term:Record<idx,chunk>,termCode,approval,err}` mutated incrementally; `step` clears turn + reloads; `done` clears + reloads; `err` preserves retryable turn. Background turns fire `notifyDone` only when not watching (`App.tsx:45-70`).
 - Rendering: `AgentBubble` parses `lib/agentXml.ts` tags; `ApprovalBlock` Run/Deny; `SessionList` + `listen("sessions-changed")` in `App.tsx:75`.
 - Email drafts: `gmail.send`/`outlook.send` pending approvals render as interactive `EmailDraftCard` (editable To/Subject/Body) inside `ToolActivity` via `actionStep` email branch; Send → `resolveApproval(id, true, editedArgs)`, Discard → deny. History `<email-draft>` blocks render read-only.

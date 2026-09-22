@@ -55,8 +55,8 @@ const TOOLS: &[ToolMeta] = &[
     },
     ToolMeta {
         name: "skill.read",
-        desc: "read one skill's full body by name from the Skills index",
-        args: "{\"name\":\"...\"}",
+        desc: "read a skill's SKILL.md by name; pass file (e.g. reference/api.md) for a reference doc listed in the skill's body",
+        args: "{\"name\":\"...\",\"file\":\"\"}",
         mutating: false,
     },
     ToolMeta {
@@ -727,6 +727,16 @@ pub async fn exec(
                 .filter(|s| !s.is_empty())
                 .ok_or("missing name")?;
             let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+
+            if let Some(file) = args
+                .get("file")
+                .and_then(|v| v.as_str())
+                .filter(|f| !f.is_empty())
+            {
+                let content = crate::skills::store::read_file(&gw.skills_dir, name, file)?;
+                return Ok(content);
+            }
+
             let sk = crate::skills::store::get_skill(&conn, &gw.skills_dir, name)?;
             let _ = crate::skills::store::touch_skill(&conn, name);
             Ok(format!("{}\n{}", sk.description, sk.body))

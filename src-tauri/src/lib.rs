@@ -141,6 +141,8 @@ pub fn run() {
             skills::skill_touch,
             skills::skill_search,
             skills::skill_sync,
+            skills::skill_files,
+            skills::skill_read_file,
             library::library_add,
             library::library_list,
             library::library_get,

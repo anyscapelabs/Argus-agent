@@ -60,6 +60,20 @@ pub fn skill_sync(gw: State<'_, Gateway>) -> Result<usize, String> {
     store::sync(&conn, &gw.skills_dir)
 }
 
+#[tauri::command]
+pub fn skill_files(gw: State<'_, Gateway>, name: String) -> Result<Vec<String>, String> {
+    store::list_files(&gw.skills_dir, &name)
+}
+
+#[tauri::command]
+pub fn skill_read_file(
+    gw: State<'_, Gateway>,
+    name: String,
+    file: String,
+) -> Result<String, String> {
+    store::read_file(&gw.skills_dir, &name, &file)
+}
+
 pub fn default_dir(app_data: &PathBuf) -> PathBuf {
     app_data.join("skills")
 }

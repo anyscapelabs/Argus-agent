@@ -11,6 +11,7 @@ import {
 import { formatRelativeTime, parseDbTime } from "../lib/relativeTime";
 import { renderSkillMd } from "../lib/skillMd";
 import Dropdown from "./Dropdown";
+import ScrollBox from "./ScrollBox";
 
 type Props = {
   skill: Skill;
@@ -265,7 +266,7 @@ export default function SkillDetailPage({
       )}
 
       {tab === "contents" && (
-        <div className="mt-5 flex h-[62vh] gap-0 overflow-hidden rounded-lg border border-border-primary">
+        <div className="mt-5 flex h-[72vh] gap-0 overflow-hidden rounded-lg border border-border-primary">
           <div className="w-52 shrink-0 overflow-y-auto border-r border-border-primary px-1.5 py-2">
             {tree.map((grp, gi) => (
               <div key={gi} className="mb-1">
@@ -342,17 +343,19 @@ export default function SkillDetailPage({
                 </button>
               </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
-              {fileText === null ? (
-                <p className="text-sm text-text-secondary">Loading…</p>
-              ) : isMd(file) && !raw ? (
-                renderSkillMd(fileText)
-              ) : (
-                <pre className="whitespace-pre-wrap font-mono text-xs leading-5 text-text-primary">
-                  {fileText}
-                </pre>
-              )}
-            </div>
+            <ScrollBox className="min-h-0 flex-1">
+              <div className="px-5 py-3">
+                {fileText === null ? (
+                  <p className="text-sm text-text-secondary">Loading…</p>
+                ) : isMd(file) && !raw ? (
+                  renderSkillMd(fileText)
+                ) : (
+                  <pre className="whitespace-pre-wrap font-mono text-xs leading-5 text-text-primary">
+                    {fileText}
+                  </pre>
+                )}
+              </div>
+            </ScrollBox>
           </div>
         </div>
       )}

@@ -369,6 +369,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
                     <AgentBubble
                       text={allText}
                       caret
+                      showThinking={(turn?.text ?? "").length === 0}
                       liveTerm={{
                         term: turn?.term ?? {},
                         termCode: turn?.termCode ?? {},

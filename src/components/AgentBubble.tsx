@@ -61,6 +61,7 @@ type Props = {
   liveTerm?: LiveTerm;
   hideActions?: boolean;
   hideToolActivity?: boolean;
+  showThinking?: boolean;
 };
 
 const HEADING_CLS: Record<string, string> = {
@@ -666,6 +667,7 @@ export default function AgentBubble({
   liveTerm,
   hideActions,
   hideToolActivity,
+  showThinking,
 }: Props) {
   const tree: XmlTree | null = useMemo(
     () => (text !== undefined ? parse(text) : null),
@@ -750,7 +752,7 @@ export default function AgentBubble({
         <div className="font-sans text-[16px] font-light">{children}</div>
       )}
 
-      {caret && <StreamingIndicator />}
+      {caret && showThinking !== false && <StreamingIndicator />}
 
       {text !== undefined && text.length > 0 && !caret && !hideActions && (
         <div className="flex items-center gap-1 text-text-secondary">

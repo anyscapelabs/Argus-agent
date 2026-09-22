@@ -121,7 +121,7 @@ export function actionStep(
       output,
       code,
       approvalIdx: idx,
-      live,
+      live: live && code === undefined,
     };
   }
   const hint = hintOf(args);

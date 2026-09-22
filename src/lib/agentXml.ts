@@ -236,6 +236,14 @@ export function tokenize(buf: string): Token[] {
     }
 
     if (!/^[a-z][a-z0-9-]*$/.test(tag)) {
+      if (isClose && !isKnownTag(tag)) {
+        flush(i);
+        start = end + 1;
+        toks.push({ kind: "close", tag: "" });
+        i = end + 1;
+        continue;
+      }
+
       i++;
       continue;
     }
@@ -377,6 +385,8 @@ export function buildTree(toks: Token[]): XmlTree {
 
       flush();
 
+      if (cur) cur = null;
+
       const kind: BlockNode["kind"] =
         tag === "h1" || tag === "h2" || tag === "h3" || tag === "h4"
           ? "heading"
@@ -406,6 +416,13 @@ export function buildTree(toks: Token[]): XmlTree {
     }
 
     if (!cur) continue;
+
+    if (tag === "") {
+      buf = "";
+      cur = null;
+      continue;
+    }
+
     if (cur.tag !== tag) continue;
 
     buf = "";

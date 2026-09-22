@@ -8,6 +8,7 @@ Code: `src-tauri/src/gateway/{mod.rs,store.rs,catalog.rs,router.rs,schema.rs,ada
 - Commands: `gw_list_providers, gw_upsert_provider, gw_list_models, gw_provider_models, gw_chat_models, gw_set_model_enabled, gw_add_model, gw_link_model, gw_connect, gw_disconnect, gw_set_routing, gw_chat, gw_chat_stream(Channel<StreamEvent>), gw_sync_providers, gw_logo, gw_logs`.
 - `store.rs`: rusqlite + `keyring::Entry::new("argus-gw", provider_id)` get/set/delete. Secrets never in DB.
 - `adapters/mod.rs`: `dispatch|dispatch_stream` by `compatible: Anthropic|OpenAI`, `verify_key()` auth-probe, `openai_msgs(), anthropic_content(), sse_events(), wire_name/real_name (dot→underscore), shot_bytes()` only `/screenshots/shot-*.png`, `is_local()`.
+- `openai_compat.rs::scrub_chunk` strips provider-native control sentinels (`</?｜…>`, e.g. leaked DeepSeek tool-call closers) from streamed deltas before UI/storage, with cross-chunk carry buffer. Never forward raw `delta.content` past this point.
 - `catalog.rs`: `maybe_sync_catalog()` spawned in `lib.rs:80` + models.dev sync.
 - `router.rs:269 stream_run(chan)`: `prefer_free|prefer_paid|pinned` failover, retryable `402/408/429/5xx`, costs from usage.
 

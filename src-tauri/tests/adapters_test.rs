@@ -171,3 +171,43 @@ fn anthropic_wire_tools_carry_sanitized_names() {
     assert_eq!(out[0]["name"], "memory_save");
     assert_eq!(out[0]["input_schema"]["type"], "object");
 }
+
+#[test]
+fn scrub_chunk_strips_fullwidth_sentinels() {
+    use argus_lib::gateway::adapters::openai_compat::scrub_chunk;
+
+    let (clean, carry) = scrub_chunk("", "hello <｜DSML｜tool_calls> world");
+    assert_eq!(clean, "hello  world");
+    assert_eq!(carry, "");
+}
+
+#[test]
+fn scrub_chunk_holds_partial_sentinel_across_chunks() {
+    use argus_lib::gateway::adapters::openai_compat::scrub_chunk;
+
+    let (clean, carry) = scrub_chunk("", "done <｜DSM");
+    assert_eq!(clean, "done ");
+    assert!(!carry.is_empty());
+
+    let (clean2, carry2) = scrub_chunk(&carry, "L｜tool_calls> tail");
+    assert_eq!(clean2, " tail");
+    assert_eq!(carry2, "");
+}
+
+#[test]
+fn scrub_chunk_leaves_plain_text_alone() {
+    use argus_lib::gateway::adapters::openai_compat::scrub_chunk;
+
+    let (clean, carry) = scrub_chunk("", "a < b and 5 > 3");
+    assert_eq!(clean, "a < b and 5 > 3");
+    assert_eq!(carry, "");
+}
+
+#[test]
+fn scrub_chunk_strips_slashed_sentinel_variant() {
+    use argus_lib::gateway::adapters::openai_compat::scrub_chunk;
+
+    let (clean, carry) = scrub_chunk("", "x </｜DSML｜tool_calls> y");
+    assert_eq!(clean, "x  y");
+    assert_eq!(carry, "");
+}

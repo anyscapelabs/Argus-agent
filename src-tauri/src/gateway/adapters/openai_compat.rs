@@ -10,6 +10,29 @@ struct CallAcc {
     args: String,
 }
 
+fn sentinel_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"</?｜[^<>]{0,220}>").unwrap())
+}
+
+pub fn scrub_chunk(carry: &str, chunk: &str) -> (String, String) {
+    let combined = format!("{carry}{chunk}");
+    let mut cleaned = sentinel_re().replace_all(&combined, "").into_owned();
+
+    if let Some(idx) = cleaned.rfind('<') {
+        let tail = cleaned[idx..].to_string();
+        let after_lt = tail.strip_prefix('<').unwrap_or("");
+        let after_slash = after_lt.strip_prefix('/').unwrap_or(after_lt);
+
+        if after_slash.starts_with('｜') && !tail.contains('>') && tail.len() < 220 {
+            cleaned.truncate(idx);
+            return (cleaned, tail);
+        }
+    }
+
+    (cleaned, String::new())
+}
+
 pub fn wire_tools(tools: &[ToolSpec]) -> serde_json::Value {
     serde_json::Value::Array(
         tools
@@ -75,6 +98,7 @@ pub async fn stream(
     let mut done = StreamDone::default();
     let mut acc: Vec<CallAcc> = vec![];
     let mut stream = resp.bytes_stream();
+    let mut carry = String::new();
 
     while let Some(chunk) = stream.next().await {
         let bytes = chunk.map_err(|err| CallError {
@@ -111,12 +135,17 @@ pub async fn stream(
 
                 if let Some(c) = v["choices"][0]["delta"]["content"].as_str() {
                     if !c.is_empty() {
-                        on_delta(c).map_err(|err| CallError {
-                            status: None,
-                            msg: err,
-                            retry_after: None,
-                        })?;
-                        done.text.push_str(c);
+                        let (clean, rest) = scrub_chunk(&carry, c);
+                        carry = rest;
+
+                        if !clean.is_empty() {
+                            on_delta(&clean).map_err(|err| CallError {
+                                status: None,
+                                msg: err,
+                                retry_after: None,
+                            })?;
+                            done.text.push_str(&clean);
+                        }
                     }
                 }
 
@@ -161,6 +190,11 @@ pub async fn stream(
                 }
             }
         }
+    }
+
+    if !carry.is_empty() {
+        let (clean, _) = scrub_chunk(&carry, "");
+        done.text.push_str(&clean);
     }
 
     done.tool_calls = acc

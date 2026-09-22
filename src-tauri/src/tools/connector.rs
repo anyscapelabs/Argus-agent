@@ -148,6 +148,18 @@ pub const META: &[ToolMeta] = &[
         mutating: true,
     },
     ToolMeta {
+        name: "exa.search",
+        desc: "AI-powered web search with clean snippets; use for current events, docs and facts",
+        args: "{\"query\":\"...\",\"limit\":10}",
+        mutating: false,
+    },
+    ToolMeta {
+        name: "exa.contents",
+        desc: "fetch a web page's full text via Exa",
+        args: "{\"url\":\"https://...\"}",
+        mutating: false,
+    },
+    ToolMeta {
         name: "telegram.me",
         desc: "which Telegram bot the token belongs to",
         args: "{}",
@@ -350,6 +362,10 @@ pub async fn exec(name: &str, args: &Value) -> Result<String, String> {
         "discord.send" => {
             out(crate::mcp::discord::send(s(args, "channel_id")?, s(args, "content")?).await)
         }
+        "exa.search" => {
+            out(crate::mcp::exa::search(s(args, "query")?, num(args, "limit", 10)).await)
+        }
+        "exa.contents" => out(crate::mcp::exa::contents(s(args, "url")?).await),
         "telegram.me" => out(crate::mcp::telegram::me().await),
         "telegram.updates" => out(crate::mcp::telegram::updates().await),
         "telegram.send" => {

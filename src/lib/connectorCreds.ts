@@ -66,6 +66,16 @@ export const CONNECTOR_SERVICES: ConnectorService[] = [
     ],
   },
   {
+    id: "exa",
+    name: "Exa",
+    tagline: "AI web search and page text",
+    details:
+      "Search the web with clean snippets and fetch full page text — via your Exa API key.",
+    fields: [
+      { kind: "token", label: "API key", placeholder: "…" },
+    ],
+  },
+  {
     id: "telegram",
     name: "Telegram",
     tagline: "Chats via your bot",

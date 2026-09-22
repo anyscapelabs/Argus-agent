@@ -64,6 +64,8 @@ async fn dispatch_routes_required_arg_tools() {
         ("figma.comment", "key"),
         ("discord.channels", "guild_id"),
         ("discord.send", "channel_id"),
+        ("exa.search", "query"),
+        ("exa.contents", "url"),
         ("telegram.send", "chat_id"),
         ("todoist.create_task", "content"),
         ("todoist.close_task", "id"),

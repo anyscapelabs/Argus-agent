@@ -1,5 +1,6 @@
 pub mod client;
 pub mod discord;
+pub mod exa;
 pub mod figma;
 pub mod github;
 pub mod gitlab;

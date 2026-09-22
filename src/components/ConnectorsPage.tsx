@@ -23,6 +23,7 @@ const GRID_IDS = [
   "notion",
   "figma",
   "discord",
+  "exa",
   "telegram",
   "todoist",
   "gitlab",

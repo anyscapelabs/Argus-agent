@@ -1,4 +1,6 @@
 import chrome from "../assets/connectors/chrome.svg?raw";
+import { LuSearch } from "react-icons/lu";
+
 import discord from "../assets/connectors/discord.svg?raw";
 import figma from "../assets/connectors/figma.svg?raw";
 import github from "../assets/connectors/github.svg?raw";
@@ -38,7 +40,17 @@ type Props = {
 
 export default function ConnectorIcon({ id, size = 20, className }: Props) {
   const svg = ICONS[id];
-  if (!svg) return null;
+
+  if (!svg) {
+    return (
+      <span
+        className={"inline-flex shrink-0 items-center justify-center text-text-secondary " + (className ?? "")}
+        style={{ width: size, height: size }}
+      >
+        <LuSearch size={Math.round(size * 0.85)} />
+      </span>
+    );
+  }
 
   return (
     <span

@@ -206,7 +206,7 @@ fn remember(conn: &rusqlite::Connection, content: &str) {
 }
 
 #[test]
-fn session_start_injects_relevant_memory() {
+fn session_start_does_not_inject_memories() {
     let conn = project_db();
     remember(
         &conn,
@@ -217,10 +217,13 @@ fn session_start_injects_relevant_memory() {
     say(&conn, &s, "user", "how do I deploy the backend with docker");
 
     let p = argus_lib::prompt::project(&conn, &s).unwrap();
-    assert!(p.system.contains("## Relevant memories"), "{}", p.system);
-    let block = p.system.split("## Relevant memories").nth(1).unwrap_or("");
-    assert!(block.contains("docker compose"), "{}", block);
-    assert!(!block.contains("pancake"), "{}", block);
+    assert!(!p.system.contains("docker compose"), "{}", p.system);
+    assert!(!p.system.contains("pancake"), "{}", p.system);
+    assert!(!p.system.contains("Relevant memories"), "{}", p.system);
+    assert!(
+        p.system.contains("memory.search"),
+        "retrieval tools must stay available"
+    );
 }
 
 #[test]
@@ -237,6 +240,11 @@ fn session_start_skips_recall_after_first_exchange() {
 
     let p = argus_lib::prompt::project(&conn, &s).unwrap();
     assert!(!p.system.contains("## Relevant memories"), "{}", p.system);
+    assert!(
+        !p.system.contains("docker compose up every Friday"),
+        "{}",
+        p.system
+    );
 }
 
 #[test]

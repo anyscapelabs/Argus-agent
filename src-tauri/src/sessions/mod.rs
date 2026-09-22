@@ -79,7 +79,10 @@ pub fn sess_set_vote(
     };
 
     let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-    store::set_vote(&conn, &session_id, &msg_id, v.as_deref())
+    store::set_vote(&conn, &session_id, &msg_id, v.as_deref())?;
+    crate::learning::record_vote(&conn, &session_id, &msg_id, v.as_deref())?;
+
+    Ok(())
 }
 
 #[tauri::command]

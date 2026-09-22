@@ -1,5 +1,6 @@
 pub mod connectors;
 pub mod gateway;
+pub mod learning;
 pub mod library;
 pub mod mcp;
 pub mod memory;
@@ -44,6 +45,7 @@ pub fn run() {
             skills::store::migrate(&conn)?;
             library::store::migrate(&conn)?;
             memory::store::migrate(&conn)?;
+            learning::migrate(&conn)?;
             connectors::store::migrate(&conn)?;
 
             let _ = mcp::sync_from(&conn);
@@ -161,6 +163,10 @@ pub fn run() {
             memory::memory_unlink,
             memory::memory_recall,
             memory::memory_graph,
+            learning::learning_list,
+            learning::learning_forget,
+            learning::learning_record_correction,
+            learning::learning_feedback,
             gateway::gw_logs,
             prompt::prompt_preview,
             prompt::compressor::prompt_status,

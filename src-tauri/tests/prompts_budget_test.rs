@@ -189,6 +189,44 @@ fn full_budget_splits_named_sections_and_zeroes_unused_tiers() {
         b.stable
             + b.tools
             + b.preferences
+            + b.learned
+            + b.summary
+            + b.notepad
+            + b.skill
+            + b.memory
+            + b.conversation
+    );
+}
+
+#[test]
+fn learned_preferences_enter_the_budget_when_present() {
+    use argus_lib::prompt::full_budget;
+
+    let (conn, sid) = setup();
+    argus_lib::learning::store::migrate(&conn).unwrap();
+    argus_lib::learning::store::upsert_preference(
+        &conn,
+        "global",
+        "style",
+        "formality",
+        "casual_professional",
+        0.9,
+        true,
+    )
+    .unwrap();
+
+    let p = project(&conn, &sid).unwrap();
+    assert!(p.system.contains("<learned-preferences>"));
+    assert!(p.system.contains("formality: casual_professional"));
+
+    let b = full_budget(&p, true);
+    assert!(b.learned > 0);
+    assert_eq!(
+        b.total,
+        b.stable
+            + b.tools
+            + b.preferences
+            + b.learned
             + b.summary
             + b.notepad
             + b.skill

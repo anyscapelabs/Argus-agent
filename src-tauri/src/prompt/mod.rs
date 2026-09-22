@@ -116,6 +116,13 @@ pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String
         .ok();
 
     let mut system = stable.clone();
+    if let Ok(learned) = crate::learning::prompt_context(&conn) {
+        if !learned.trim().is_empty() {
+            system.push_str("\n\n");
+            system.push_str(&learned);
+        }
+    }
+
     if let Some(sum) = &summary {
         system.push_str("\n\n<session-summary>\n");
         system.push_str(sum);
@@ -235,6 +242,7 @@ pub fn budget(system: &str) -> Vec<(&'static str, i64)> {
 
     for (mark, name) in [
         ("<user-preferences>", "user-preferences"),
+        ("<learned-preferences>", "learned"),
         ("<session-summary>", "session-summary"),
         ("<working-notes>", "notepad"),
     ] {
@@ -269,6 +277,7 @@ pub struct PromptBudget {
     pub stable: i64,
     pub tools: i64,
     pub preferences: i64,
+    pub learned: i64,
     pub summary: i64,
     pub notepad: i64,
     pub skill: i64,
@@ -282,6 +291,7 @@ pub fn full_budget(p: &Projection, web: bool) -> PromptBudget {
         stable: 0,
         tools: tools_budget(web),
         preferences: 0,
+        learned: 0,
         summary: 0,
         notepad: 0,
         skill: 0,
@@ -294,6 +304,7 @@ pub fn full_budget(p: &Projection, web: bool) -> PromptBudget {
         match name {
             "stable" => b.stable = est,
             "user-preferences" => b.preferences = est,
+            "learned" => b.learned = est,
             "session-summary" => b.summary = est,
             "notepad" => b.notepad = est,
             _ => {}
@@ -304,6 +315,7 @@ pub fn full_budget(p: &Projection, web: bool) -> PromptBudget {
     b.total = b.stable
         + b.tools
         + b.preferences
+        + b.learned
         + b.summary
         + b.notepad
         + b.skill

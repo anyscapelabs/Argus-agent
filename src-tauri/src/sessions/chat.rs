@@ -579,6 +579,14 @@ pub async fn send<R: tauri::Runtime>(
                 });
             }
 
+            {
+                let app3 = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let gw = app3.state::<Gateway>();
+                    crate::learning::learn_pending(&gw).await;
+                });
+            }
+
             if let Ok(conn) = gw.conn.lock() {
                 let _ = store::mark_final(&conn, &asst.id);
             }

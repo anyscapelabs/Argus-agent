@@ -5,6 +5,7 @@ pub mod fs;
 pub mod grep;
 pub mod notepad;
 pub mod recover;
+pub mod sandbox;
 pub mod shell;
 pub mod web;
 

@@ -339,6 +339,16 @@ class SessionStore {
         return;
       }
 
+      if (ev.type === "notice") {
+        this.patchTurn(sessionId, (prev) => ({
+          ...prev,
+          text:
+            prev.text +
+            `\n\n<warning severity="medium">${ev.msg}</warning>`,
+        }));
+        return;
+      }
+
       if (ev.type === "err") {
         this.patchTurn(sessionId, (prev) => ({ ...prev, err: ev.msg }));
       }

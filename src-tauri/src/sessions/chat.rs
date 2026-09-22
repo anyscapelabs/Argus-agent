@@ -676,6 +676,18 @@ pub async fn send<R: tauri::Runtime>(
                             exec.succeed(t);
                         }
                         Err(err) => {
+                            if exec.is_browser_tool()
+                                && err.contains("Chrome is not connected to Argus")
+                            {
+                                let _ = chan.send(StreamEvent::Notice {
+                                    msg: "the agent needs your real Chrome once: open \
+                                        chrome://extensions, enable Developer mode, click \
+                                        Load unpacked and pick the Argus extension folder, \
+                                        then tell it to try again"
+                                        .into(),
+                                });
+                            }
+
                             exec.fail(err);
                             code = -1;
                         }

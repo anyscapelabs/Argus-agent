@@ -492,6 +492,14 @@ export function skillUpdate(
   return invoke<Skill>("skill_update", { name, upd });
 }
 
+export function skillFiles(name: string): Promise<string[]> {
+  return invoke<string[]>("skill_files", { name });
+}
+
+export function skillReadFile(name: string, file: string): Promise<string> {
+  return invoke<string>("skill_read_file", { name, file });
+}
+
 export type Memory = {
   id: string;
   content: string;

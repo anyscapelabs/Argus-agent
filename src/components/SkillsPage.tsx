@@ -165,7 +165,7 @@ export default function SkillsPage() {
           </div>
         </div>
       )}
-      <div className="mt-6 grid grid-cols-2 gap-4">
+      <div className="mt-6 flex flex-col gap-1">
         {skills.map((skill) => (
           <SkillCard key={skill.name} skill={skill} onOpen={setSel} />
         ))}

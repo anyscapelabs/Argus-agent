@@ -269,8 +269,9 @@ export default function ChatDetailPage({ sessionId }: Props) {
 
             const workSteps: ToolStep[] = [];
             let stepIdx = 0;
+            const workMsgs = last ? [...prior, last] : prior;
 
-            for (const m of prior) {
+            for (const m of workMsgs) {
               try {
                 for (const b of parse(m.content)) {
                   if (b.tag === "action") {
@@ -328,6 +329,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
                     </WorkSummary>
                     <AgentBubble
                       text={last?.content}
+                      hideToolActivity
                       vote={voteOf(last?.id ?? "")}
                       onVote={(v) => {
                         if (last === undefined) {

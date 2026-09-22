@@ -60,6 +60,7 @@ type Props = {
   onEdit?: (edited: string) => Promise<void>;
   liveTerm?: LiveTerm;
   hideActions?: boolean;
+  hideToolActivity?: boolean;
 };
 
 const HEADING_CLS: Record<string, string> = {
@@ -470,6 +471,7 @@ function renderTree(
   tree: XmlTree,
   live: boolean,
   liveTerm?: LiveTerm,
+  hideTools?: boolean,
 ): React.ReactNode[] {
   const diffs = new Map<string, { added: number; removed: number }>();
   const paths = new Set<string>();
@@ -595,6 +597,17 @@ function renderTree(
     }
 
     if (
+      hideTools === true &&
+      (blk.tag === "action" ||
+        blk.tag === "terminal" ||
+        blk.tag === "browser-action" ||
+        blk.tag === "document")
+    ) {
+      i++;
+      continue;
+    }
+
+    if (
       blk.tag === "action" ||
       blk.tag === "terminal" ||
       blk.tag === "browser-action"
@@ -652,6 +665,7 @@ export default function AgentBubble({
   onEdit,
   liveTerm,
   hideActions,
+  hideToolActivity,
 }: Props) {
   const tree: XmlTree | null = useMemo(
     () => (text !== undefined ? parse(text) : null),
@@ -677,8 +691,7 @@ export default function AgentBubble({
 
   return (
     <div className="group/agent flex flex-col gap-3 text-base text-text-primary">
-      {editing ? (
-        <div className="flex flex-col gap-2">
+      {editing ? (        <div className="flex flex-col gap-2">
           <textarea
             value={draft}
             rows={8}
@@ -727,7 +740,12 @@ export default function AgentBubble({
           </div>
         </div>
       ) : tree ? (
-        renderTree(tree, !!caret, caret ? liveTerm : undefined)
+        renderTree(
+          tree,
+          !!caret,
+          caret ? liveTerm : undefined,
+          !!hideToolActivity,
+        )
       ) : (
         <div className="font-sans text-[16px] font-light">{children}</div>
       )}

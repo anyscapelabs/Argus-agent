@@ -30,7 +30,12 @@ export function useOAuthFlow(svc: OAuthSvc) {
   const [code, setCode] = useState("");
   const [verifyUrl, setVerifyUrl] = useState("");
   const [note, setNote] = useState("");
+  const [tick, setTick] = useState(0);
   const alive = useRef(true);
+
+  const refresh = useCallback(() => {
+    setTick((t) => t + 1);
+  }, []);
 
   useEffect(() => {
     alive.current = true;
@@ -43,6 +48,9 @@ export function useOAuthFlow(svc: OAuthSvc) {
         if (s.connected) {
           setState("connected");
           setWho(String(s.email ?? s.login ?? ""));
+        } else {
+          setState("off");
+          setWho("");
         }
       })
       .catch(() => {});
@@ -50,7 +58,7 @@ export function useOAuthFlow(svc: OAuthSvc) {
     return () => {
       alive.current = false;
     };
-  }, [svc]);
+  }, [svc, tick]);
 
   useEffect(() => {
     if (state !== "waiting") return;
@@ -120,5 +128,5 @@ export function useOAuthFlow(svc: OAuthSvc) {
     setNote("");
   }, [svc]);
 
-  return { state, who, code, verifyUrl, note, connect, cancel, drop };
+  return { state, who, code, verifyUrl, note, connect, cancel, drop, refresh };
 }

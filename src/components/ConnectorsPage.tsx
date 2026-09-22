@@ -15,7 +15,9 @@ import { CONNECTOR_SERVICES, type ConnectorService } from "../lib/connectorCreds
 import ConnectorIcon from "./ConnectorIcon";
 import ConnectorConnectModal from "./ConnectorConnectModal";
 import ConnectorOAuthCard, { OAUTH_SERVICES } from "./ConnectorOAuthCard";
+import ConnectorOAuthModal from "./ConnectorOAuthModal";
 import ConnectorDetailPage from "./ConnectorDetailPage";
+import type { OAuthSvc } from "../lib/oauthFlow";
 
 const GRID_IDS = [
   "linear",
@@ -43,9 +45,16 @@ const ON_KEY = "argus.ext.enabled";
 type GridProps = {
   onOpen: (svc: ConnectorService) => void;
   onConnectKeys: (svc: ConnectorService) => void;
+  onOAuthConnect: (svc: OAuthSvc) => void;
+  oauthTick: number;
 };
 
-function ConnectorGrid({ onOpen, onConnectKeys }: GridProps) {
+function ConnectorGrid({
+  onOpen,
+  onConnectKeys,
+  onOAuthConnect,
+  oauthTick,
+}: GridProps) {
   const [connected, setConnected] = useState<Record<string, boolean>>({});
 
   const refresh = async () => {
@@ -134,6 +143,8 @@ function ConnectorGrid({ onOpen, onConnectKeys }: GridProps) {
 
             if (s) onOpen(s);
           }}
+          onOAuthConnect={onOAuthConnect}
+          refreshSignal={oauthTick}
         />
       ))}
     </div>
@@ -356,6 +367,8 @@ export default function ConnectorsPage() {
   const [active, setActive] = useState<ConnectorService | null>(null);
   const [ownApp, setOwnApp] = useState<ConnectorService | null>(null);
   const [detail, setDetail] = useState<ConnectorService | null>(null);
+  const [oauthFlow, setOauthFlow] = useState<OAuthSvc | null>(null);
+  const [oauthTick, setOauthTick] = useState(0);
 
   if (detail) {
     return (
@@ -364,6 +377,7 @@ export default function ConnectorsPage() {
           svc={detail}
           onBack={() => setDetail(null)}
           onConnectKeys={setActive}
+          onOAuthConnect={setOauthFlow}
           onOwnApp={setOwnApp}
           onDisabled={() => {}}
         />
@@ -379,6 +393,12 @@ export default function ConnectorsPage() {
           mode="ownApp"
           onClose={() => setOwnApp(null)}
           onSaved={() => {}}
+        />
+        <ConnectorOAuthModal
+          open={oauthFlow !== null}
+          svc={oauthFlow}
+          onClose={() => setOauthFlow(null)}
+          onConnected={() => setOauthTick((t) => t + 1)}
         />
       </div>
     );
@@ -412,7 +432,12 @@ export default function ConnectorsPage() {
         >
           Connectors
         </h2>
-        <ConnectorGrid onOpen={setDetail} onConnectKeys={setActive} />
+        <ConnectorGrid
+          onOpen={setDetail}
+          onConnectKeys={setActive}
+          onOAuthConnect={setOauthFlow}
+          oauthTick={oauthTick}
+        />
       </div>
       <ConnectorConnectModal
         open={active !== null}
@@ -426,6 +451,12 @@ export default function ConnectorsPage() {
         mode="ownApp"
         onClose={() => setOwnApp(null)}
         onSaved={() => {}}
+      />
+      <ConnectorOAuthModal
+        open={oauthFlow !== null}
+        svc={oauthFlow}
+        onClose={() => setOauthFlow(null)}
+        onConnected={() => setOauthTick((t) => t + 1)}
       />
     </div>
   );

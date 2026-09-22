@@ -20,6 +20,7 @@ type Props = {
   svc: ConnectorService | null;
   onBack: () => void;
   onConnectKeys: (svc: ConnectorService) => void;
+  onOAuthConnect: (svc: OAuthSvc) => void;
   onOwnApp: (svc: ConnectorService) => void;
   onDisabled: () => void;
 };
@@ -38,6 +39,7 @@ export default function ConnectorDetailPage({
   svc,
   onBack,
   onConnectKeys,
+  onOAuthConnect,
   onOwnApp,
   onDisabled,
 }: Props) {
@@ -100,7 +102,8 @@ export default function ConnectorDetailPage({
   const mainAction = () => {
     if (connected || busy) return;
 
-    if (isOauth) void flow.connect();
+    if (isOauth && oauth && oauth.flow === "device") onOAuthConnect(oauth);
+    else if (isOauth) void flow.connect();
     else onConnectKeys(svc);
   };
 

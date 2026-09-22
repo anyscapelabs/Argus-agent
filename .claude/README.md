@@ -10,6 +10,7 @@
 | `features/chat.md` | Sessions, approvals, streaming | Chat UI or `sessions/chat.rs` |
 | `features/gateway.md` | Providers, models, router, keyring | Providers/models work |
 | `features/memory.md` | Skills + durable memory + session-memory graph | Skills/Memory pages |
+| `features/learning.md` | Feedback loop: votes/corrections → preferences + examples | Learning-backed behavior |
 | `features/tools.md` | Terminal, grep, fs, notepad, web, recover | Computer-control tools |
 | `features/browser.md` | Isolated profiles + extension bridge | Browser automation |
 | `features/connectors.md` | 14 MCP connectors, vault, OAuth/device/PAT | Any integration |

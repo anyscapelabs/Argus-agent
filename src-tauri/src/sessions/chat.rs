@@ -229,6 +229,52 @@ async fn ask_approval(
     reply
 }
 
+async fn run_skill_reflection<R: tauri::Runtime>(app: &AppHandle<R>, session_id: &str) {
+    let gw = app.state::<Gateway>();
+
+    let req: ChatReq = {
+        let Ok(conn) = gw.conn.lock() else { return };
+        let Ok(mut p) = project(&conn, session_id) else {
+            return;
+        };
+
+        if p.model_id.is_none() {
+            match auto_model(&conn) {
+                Ok(m) => p.model_id = Some(m),
+                Err(_) => return,
+            }
+        }
+
+        let mut r = p.chat_req();
+        attach_shots(&mut r.msgs);
+        r.msgs.push(WireMsg {
+            role: "user".into(),
+            content: SKILL_NUDGE.into(),
+            ..Default::default()
+        });
+        r
+    };
+
+    let null_chan = Channel::<StreamEvent>::new(|_| Ok(()));
+
+    let Ok(stats) = router::stream_run(&gw, req, &null_chan).await else {
+        return;
+    };
+
+    let base_text = sanitize_tags(&tools::normalize_actions(&stats.text));
+    let execs = tools::build_executions(&base_text, &stats.tool_calls, 0);
+
+    for e in execs {
+        if e.tool != "skill.create" {
+            continue;
+        }
+
+        let _ =
+            tools::recover::exec_with_recovery(&gw, &e.tool, &e.args, "never", false, true, None)
+                .await;
+    }
+}
+
 fn esc_attr(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('"', "&quot;")
@@ -405,7 +451,6 @@ pub async fn send<R: tauri::Runtime>(
     let mut claim_nudges = 0usize;
     let mut trunc_conts = 0usize;
     let mut empty_retries = 0usize;
-    let mut skill_nudged = false;
     let mut finished = false;
     let mut acts_run = 0usize;
     let mut recent: Vec<(String, String)> = vec![];
@@ -516,10 +561,12 @@ pub async fn send<R: tauri::Runtime>(
                 break;
             }
 
-            if !skill_nudged && acts_run >= HARD_STEPS {
-                skill_nudged = true;
-                nudge = Some(SKILL_NUDGE.into());
-                continue;
+            if acts_run >= HARD_STEPS {
+                let app2 = app.clone();
+                let sid = session_id.to_string();
+                tauri::async_runtime::spawn(async move {
+                    run_skill_reflection(&app2, &sid).await;
+                });
             }
 
             finished = true;

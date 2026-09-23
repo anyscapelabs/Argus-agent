@@ -39,5 +39,17 @@ libc = "0.2"
 chromiumoxide = "0.9"
 tauri-plugin-notification = "2"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock = "0.4"
+seccompiler = "0.5"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
+
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

@@ -2,7 +2,7 @@ use std::process::Command as StdCommand;
 
 use tokio::process::Command;
 
-use super::{Backend, Guard};
+use super::{Backend, Guard, Probe};
 use crate::tools::sandbox::plan::{
     LinuxPlan, Plan, SandboxError, SandboxResult, SeccompProfile, SECCOMP_DENY,
 };
@@ -339,6 +339,35 @@ impl Backend for LinuxBackend {
     fn plan(&self, policy: &Policy) -> SandboxResult<Plan> {
         self.available()?;
         linux_plan(policy)
+    }
+
+    /// The ABI version is the real answer here: rules only ever cover the
+    /// rights the running kernel actually implements, so a Project profile on
+    /// an old kernel quietly loses its network restriction unless we say so.
+    fn selftest(&self) -> SandboxResult<Probe> {
+        self.available()?;
+
+        let abi = abi_version().unwrap_or(0);
+
+        if abi < 1 {
+            return Err(SandboxError::Unavailable {
+                backend: NAME,
+                why: "Landlock is present but exposes no usable ABI".into(),
+            });
+        }
+
+        let net = if abi >= 4 {
+            "network rules available"
+        } else {
+            "network rules need kernel 6.7 (ABI 4) — network restrictions \
+             will be refused, not silently skipped"
+        };
+
+        Ok(Probe {
+            backend: NAME,
+            enforcing: true,
+            detail: format!("landlock ABI {abi}: {net}"),
+        })
     }
 
     fn apply(&self, plan: &Plan, cmd: &mut Command) -> SandboxResult<Guard> {

@@ -454,3 +454,48 @@ fn config_round_trips_and_defaults_fail_closed() {
     assert_eq!(back.default_profile, Profile::Project);
     assert_eq!(back.net_allow, vec![443]);
 }
+
+#[test]
+fn canary_profile_grants_the_target_only_when_asked() {
+    let tight = macos::canary_profile(false);
+    let loose = macos::canary_profile(true);
+
+    assert!(tight.starts_with("(version 1)"));
+    assert!(tight.contains("(deny default)"));
+    assert!(!tight.contains(macos::CANARY_TARGET));
+    assert!(loose.contains(macos::CANARY_TARGET));
+
+    // The system paths must survive in both, or a denial proves nothing.
+    for p in macos::CANARY_SYS {
+        assert!(tight.contains(p), "{p} missing from the canary profile");
+    }
+}
+
+#[test]
+fn a_canary_that_denies_by_blanket_is_not_accepted_as_enforcement() {
+    // The permissive profile failed, so the later denial would be meaningless.
+    let err = macos::verdict(true, true, false).unwrap_err();
+    assert!(err.to_string().contains("too strict"), "{err}");
+
+    // The tightening changed nothing: seatbelt is not enforcing.
+    let err = macos::verdict(true, false, true).unwrap_err();
+    assert!(err.to_string().contains("not enforcing"), "{err}");
+}
+
+#[test]
+fn a_canary_denies_the_target_while_still_running_it() {
+    let probe = macos::verdict(true, false, false).unwrap();
+    assert!(probe.enforcing);
+    assert_eq!(probe.backend, "macos");
+    assert!(probe.detail.contains(macos::CANARY_TARGET));
+}
+
+#[test]
+fn a_broken_control_makes_the_canary_inconclusive() {
+    let err = macos::verdict(false, false, false).unwrap_err();
+    assert!(err.to_string().contains("cannot tell enforcement"), "{err}");
+
+    // Even a denial is meaningless when the control never worked.
+    let err = macos::verdict(false, false, true).unwrap_err();
+    assert!(err.to_string().contains("cannot tell enforcement"), "{err}");
+}

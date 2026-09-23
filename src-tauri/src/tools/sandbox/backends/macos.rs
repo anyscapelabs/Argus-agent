@@ -1,9 +1,89 @@
-use crate::tools::sandbox::plan::{Plan, SandboxResult, SbplPlan};
+use crate::tools::sandbox::backends::Probe;
+use crate::tools::sandbox::plan::{Plan, SandboxError, SandboxResult, SbplPlan};
 use crate::tools::sandbox::policy::{EnvPolicy, FsAccess, FsPolicy, NetPolicy, Policy, Profile};
 
 pub const NAME: &str = "macos";
 
 pub const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
+
+/// Enough for `/bin/cat` and its loader to start, and nothing else. A blanket
+/// deny would make any command fail and look like a working sandbox, so the
+/// probe runs twice: once without the target readable and once with it.
+pub const CANARY_SYS: &[&str] = &[
+    "/bin",
+    "/usr/bin",
+    "/usr/lib",
+    "/usr/libexec",
+    "/lib",
+    "/System",
+    "/Library",
+    "/private/var/db/dyld",
+    "/dev",
+];
+
+/// A file that exists and is readable everywhere, so a denial cannot be blamed
+/// on a missing path.
+pub const CANARY_TARGET: &str = "/etc/hosts";
+
+pub fn canary_profile(grant_target: bool) -> String {
+    let mut s = String::from(
+        "(version 1)\n(deny default)\n(allow process-exec)\n(allow process-fork)\n\
+         (allow sysctl-read)\n(allow file-read-metadata)\n(allow mach-lookup)\n",
+    );
+
+    for p in CANARY_SYS {
+        s.push_str(&format!("(allow file-read* (subpath {}))\n", quote(p)));
+    }
+
+    if grant_target {
+        s.push_str(&format!(
+            "(allow file-read* (literal {}))\n",
+            quote(CANARY_TARGET)
+        ));
+    }
+
+    s
+}
+
+/// Decide what a probe run means. Pure, so the policy is testable off-platform.
+pub fn verdict(control_ok: bool, with_grant: bool, sandboxed: bool) -> SandboxResult<Probe> {
+    if !control_ok {
+        return Err(SandboxError::Unavailable {
+            backend: NAME,
+            why: format!(
+                "cannot read {CANARY_TARGET} outside the sandbox; \
+                         the self-test cannot tell enforcement from a broken system"
+            ),
+        });
+    }
+
+    // The profile is too tight to even start the command. That is our bug, not
+    // the OS ignoring the profile, and the two need different fixes.
+    if with_grant && !sandboxed {
+        return Err(SandboxError::Unavailable {
+            backend: NAME,
+            why: format!(
+                "the self-test profile is too strict to run {CANARY_TARGET}; \
+                 refusing to guess whether seatbelt is enforcing"
+            ),
+        });
+    }
+
+    if !with_grant && sandboxed {
+        return Err(SandboxError::Unavailable {
+            backend: NAME,
+            why: "seatbelt is present but a denied read succeeded — this system \
+                  is not enforcing the sandbox"
+                .into(),
+        });
+    }
+
+    Ok(Probe {
+        backend: NAME,
+        enforcing: true,
+        detail: format!("seatbelt enforced a path denial on {CANARY_TARGET}"),
+    })
+}
 
 /// Apple deprecated `sandbox-exec`. It still works; when it stops, isolated
 /// profiles must fail rather than fall through to the host.
@@ -93,8 +173,65 @@ use tokio::process::Command;
 
 #[cfg(target_os = "macos")]
 use super::{Backend, Guard};
+
 #[cfg(target_os = "macos")]
-use crate::tools::sandbox::plan::SandboxError;
+fn read_target() -> Option<bool> {
+    use std::process::{Command, Stdio};
+
+    Command::new("/bin/cat")
+        .arg(CANARY_TARGET)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .ok()
+        .map(|s| s.success())
+}
+
+#[cfg(target_os = "macos")]
+fn run_canary(grant_target: bool) -> Option<bool> {
+    use std::process::{Command, Stdio};
+
+    Command::new(SANDBOX_EXEC)
+        .arg("-p")
+        .arg(canary_profile(grant_target))
+        .arg("/bin/cat")
+        .arg(CANARY_TARGET)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .ok()
+        .map(|s| s.success())
+}
+
+#[cfg(target_os = "macos")]
+fn probe() -> SandboxResult<Probe> {
+    let Some(control) = read_target() else {
+        return Err(SandboxError::Unavailable {
+            backend: NAME,
+            why: "the self-test could not run /bin/cat at all".into(),
+        });
+    };
+
+    // Grant first: if even the permissive profile cannot read the file, a
+    // denial afterwards would prove nothing about seatbelt.
+    let granted = run_canary(true).ok_or_else(|| SandboxError::Unavailable {
+        backend: NAME,
+        why: "sandbox-exec could not run the self-test profile".into(),
+    })?;
+
+    if !granted {
+        return verdict(control, true, false);
+    }
+
+    let denied = run_canary(false).ok_or_else(|| SandboxError::Unavailable {
+        backend: NAME,
+        why: "sandbox-exec could not run the self-test profile".into(),
+    })?;
+
+    verdict(control, false, denied)
+}
 
 #[cfg(target_os = "macos")]
 impl Backend for MacBackend {
@@ -113,8 +250,34 @@ impl Backend for MacBackend {
         Ok(())
     }
 
+    /// Seatbelt being on disk is not the same as seatbelt enforcing. Probe it
+    /// for real, once, then remember the answer.
+    fn selftest(&self) -> SandboxResult<Probe> {
+        use std::sync::OnceLock;
+
+        static CACHE: OnceLock<Result<Probe, String>> = OnceLock::new();
+
+        let cached = CACHE.get_or_init(|| match probe() {
+            Ok(p) => Ok(p),
+            Err(e) => Err(e.to_string()),
+        });
+
+        match cached {
+            Ok(p) => Ok(p.clone()),
+            Err(why) => Err(SandboxError::Unavailable {
+                backend: NAME,
+                why: why.clone(),
+            }),
+        }
+    }
+
     fn plan(&self, policy: &Policy) -> SandboxResult<Plan> {
         self.available()?;
+
+        // The file existing is not the guarantee. If seatbelt is present but
+        // not enforcing, an isolated profile must refuse rather than pretend.
+        self.selftest()?;
+
         macos_plan(policy)
     }
 

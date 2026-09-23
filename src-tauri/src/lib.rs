@@ -135,6 +135,7 @@ pub fn run() {
             tools::sandbox::sandbox_config,
             tools::sandbox::sandbox_set_config,
             tools::sandbox::sandbox_runs,
+            tools::sandbox::sandbox_selftest,
             sessions::term_shell_set,
             sessions::term_shell_clear,
             sessions::ext_install::sess_ext_install,

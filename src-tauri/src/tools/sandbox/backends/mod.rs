@@ -7,6 +7,15 @@ use tokio::process::Command;
 use super::plan::{Plan, SandboxError, SandboxResult};
 use super::policy::Policy;
 
+/// What a self-test can say about the local boundary. Settings shows it so
+/// someone who suspects a silent downgrade can see the real state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Probe {
+    pub backend: &'static str,
+    pub enforcing: bool,
+    pub detail: String,
+}
+
 /// Work that must happen after the process exists. Unix installs the boundary
 /// between fork and exec, so its guard is empty; Windows has no pre-exec hook.
 pub struct Guard {
@@ -48,6 +57,10 @@ pub trait Backend: Send + Sync {
 
     fn available(&self) -> SandboxResult<()>;
 
+    /// Run the boundary once and report whether it actually enforces. An
+    /// `Err` here is a refusal, never a downgrade.
+    fn selftest(&self) -> SandboxResult<Probe>;
+
     /// Pure translation. No syscalls, so it is tested on every platform.
     fn plan(&self, policy: &Policy) -> SandboxResult<Plan>;
 
@@ -73,6 +86,13 @@ impl Backend for Unsupported {
         self.available().map(|()| Plan::None)
     }
 
+    fn selftest(&self) -> SandboxResult<Probe> {
+        self.available()?;
+        Err(SandboxError::Unavailable {
+            backend: "unsupported",
+            why: "has no boundary to test".into(),
+        })
+    }
     fn apply(&self, _plan: &Plan, _cmd: &mut Command) -> SandboxResult<Guard> {
         self.available().map(|()| Guard::none())
     }

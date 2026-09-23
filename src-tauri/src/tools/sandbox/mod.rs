@@ -327,6 +327,28 @@ pub fn sandbox_set_config(gw: tauri::State<'_, Gateway>, cfg: SandboxConfig) -> 
     set_config(&gw, &cfg)
 }
 
+/// Ask the local backend to prove it enforces. Never a downgrade: a failure
+/// here is reported as such, and isolated profiles refuse to run.
+#[tauri::command]
+pub fn sandbox_selftest() -> Result<Value, String> {
+    let be = backends::current();
+
+    match be.selftest() {
+        Ok(probe) => Ok(serde_json::json!({
+            "ok": true,
+            "backend": probe.backend,
+            "enforcing": probe.enforcing,
+            "detail": probe.detail,
+        })),
+        Err(err) => Ok(serde_json::json!({
+            "ok": false,
+            "backend": err.backend(),
+            "enforcing": false,
+            "detail": err.to_string(),
+        })),
+    }
+}
+
 #[tauri::command]
 pub fn sandbox_runs(
     gw: tauri::State<'_, Gateway>,

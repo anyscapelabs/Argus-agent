@@ -4,11 +4,12 @@ use crate::tools::sandbox::policy::{EnvPolicy, FsAccess, FsPolicy, NetPolicy, Po
 
 pub const NAME: &str = "macos";
 
+// Apple deprecated this and shipped no successor. When it stops, isolated
+// profiles refuse rather than fall through to the host.
 pub const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 
-/// Enough for `/bin/cat` and its loader to start, and nothing else. A blanket
-/// deny would make any command fail and look like a working sandbox, so the
-/// probe runs twice: once without the target readable and once with it.
+// Loader paths only. A blanket deny would make any command fail and look
+// like a working sandbox, so the probe runs twice.
 pub const CANARY_SYS: &[&str] = &[
     "/bin",
     "/usr/bin",
@@ -21,8 +22,7 @@ pub const CANARY_SYS: &[&str] = &[
     "/dev",
 ];
 
-/// A file that exists and is readable everywhere, so a denial cannot be blamed
-/// on a missing path.
+// Exists everywhere, so a denial is never a missing file.
 pub const CANARY_TARGET: &str = "/etc/hosts";
 
 pub fn canary_profile(grant_target: bool) -> String {
@@ -45,7 +45,6 @@ pub fn canary_profile(grant_target: bool) -> String {
     s
 }
 
-/// Decide what a probe run means. Pure, so the policy is testable off-platform.
 pub fn verdict(control_ok: bool, with_grant: bool, sandboxed: bool) -> SandboxResult<Probe> {
     if !control_ok {
         return Err(SandboxError::Unavailable {
@@ -57,8 +56,7 @@ pub fn verdict(control_ok: bool, with_grant: bool, sandboxed: bool) -> SandboxRe
         });
     }
 
-    // The profile is too tight to even start the command. That is our bug, not
-    // the OS ignoring the profile, and the two need different fixes.
+    // Too tight to start at all: our bug, not the OS ignoring us.
     if with_grant && !sandboxed {
         return Err(SandboxError::Unavailable {
             backend: NAME,
@@ -85,8 +83,6 @@ pub fn verdict(control_ok: bool, with_grant: bool, sandboxed: bool) -> SandboxRe
     })
 }
 
-/// Apple deprecated `sandbox-exec`. It still works; when it stops, isolated
-/// profiles must fail rather than fall through to the host.
 fn quote(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');
@@ -214,8 +210,7 @@ fn probe() -> SandboxResult<Probe> {
         });
     };
 
-    // Grant first: if even the permissive profile cannot read the file, a
-    // denial afterwards would prove nothing about seatbelt.
+    // Grant first, or a later denial proves nothing.
     let granted = run_canary(true).ok_or_else(|| SandboxError::Unavailable {
         backend: NAME,
         why: "sandbox-exec could not run the self-test profile".into(),
@@ -250,8 +245,6 @@ impl Backend for MacBackend {
         Ok(())
     }
 
-    /// Seatbelt being on disk is not the same as seatbelt enforcing. Probe it
-    /// for real, once, then remember the answer.
     fn selftest(&self) -> SandboxResult<Probe> {
         use std::sync::OnceLock;
 
@@ -274,8 +267,7 @@ impl Backend for MacBackend {
     fn plan(&self, policy: &Policy) -> SandboxResult<Plan> {
         self.available()?;
 
-        // The file existing is not the guarantee. If seatbelt is present but
-        // not enforcing, an isolated profile must refuse rather than pretend.
+        // On disk is not enforcing. Refuse rather than pretend.
         self.selftest()?;
 
         macos_plan(policy)
@@ -293,9 +285,6 @@ impl Backend for MacBackend {
     }
 }
 
-/// `sandbox-exec` is a launcher, so the boundary is the wrapper rather than a
-/// pre-exec hook. Kept separate from `apply` because it changes argv, which
-/// makes it testable off-platform.
 pub fn wrap(plan: &Plan, shell: &str, command: &str) -> SandboxResult<Vec<String>> {
     let Plan::Macos(p) = plan else {
         return Ok(vec![shell.to_string(), "-c".into(), command.to_string()]);

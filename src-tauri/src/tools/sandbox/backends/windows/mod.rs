@@ -1,13 +1,13 @@
+pub mod quote;
 use crate::tools::sandbox::plan::{Capability, JobPlan, Plan, SandboxError, SandboxResult};
 use crate::tools::sandbox::policy::{FsPolicy, NetPolicy, Policy, Profile};
 
 pub const NAME: &str = "windows";
 
-/// Resource limits and containment are enforced here. The filesystem and
-/// network boundary is not: AppContainer needs `STARTUPINFOEXW` on a raw
-/// `CreateProcessW`, and `tokio::process::Command` does not expose it. A policy
-/// asking for a filesystem scope is refused until that spawn path exists —
-/// Job Objects cannot express "read the project but not the home directory".
+// Job Objects carry limits and containment but cannot scope the filesystem.
+// Until the AppContainer spawn path is wired in, a filesystem policy is a
+// hard stop, not a downgrade.
+
 pub fn job_plan(policy: &Policy) -> SandboxResult<Plan> {
     if policy.profile == Profile::Host {
         return Ok(Plan::None);
@@ -72,9 +72,6 @@ impl Backend for WinBackend {
         job_plan(policy)
     }
 
-    /// The job is created here and the child assigned the moment it exists.
-    /// A hostile process runs a few instructions before that lands; closing the
-    /// gap needs CREATE_SUSPENDED, which means a raw spawn.
     fn apply(&self, plan: &Plan, _cmd: &mut Command) -> SandboxResult<Guard> {
         let Plan::Windows(jp) = plan else {
             return Err(SandboxError::Apply {

@@ -38,8 +38,6 @@ pub fn linux_plan(policy: &Policy) -> SandboxResult<Plan> {
     }))
 }
 
-/// Unreadable means unknown, and unknown means try it: `restrict_self` reports
-/// `NotEnforced` and the caller fails closed.
 #[cfg(target_os = "linux")]
 fn lsm_has_landlock() -> bool {
     match std::fs::read_to_string("/sys/kernel/security/lsm") {
@@ -117,7 +115,6 @@ fn target_arch() -> Option<seccompiler::TargetArch> {
     None
 }
 
-/// Built before the fork so the pre-exec closure only moves a finished buffer.
 #[cfg(target_os = "linux")]
 fn build_seccomp(profile: &SeccompProfile) -> SandboxResult<Option<seccompiler::BpfProgram>> {
     let SeccompProfile::Deny(names) = profile else {
@@ -183,8 +180,8 @@ fn set_rlimit(resource: libc::c_uint, value: Option<u64>) -> SandboxResult<()> {
     Ok(())
 }
 
-/// Runs between fork and exec: async-signal-safe calls only, no allocation.
 #[cfg(target_os = "linux")]
+// Between fork and exec: async-signal-safe only, no allocation.
 fn enter_sandbox(plan: &LinuxPlan, prog: Option<seccompiler::BpfProgram>) -> SandboxResult<()> {
     use landlock::{
         Access, AccessFs, AccessNet, NetPort, Ruleset, RulesetAttr, RulesetCreatedAttr,
@@ -341,9 +338,6 @@ impl Backend for LinuxBackend {
         linux_plan(policy)
     }
 
-    /// The ABI version is the real answer here: rules only ever cover the
-    /// rights the running kernel actually implements, so a Project profile on
-    /// an old kernel quietly loses its network restriction unless we say so.
     fn selftest(&self) -> SandboxResult<Probe> {
         self.available()?;
 

@@ -7,8 +7,6 @@ use tokio::process::Command;
 use super::plan::{Plan, SandboxError, SandboxResult};
 use super::policy::Policy;
 
-/// What a self-test can say about the local boundary. Settings shows it so
-/// someone who suspects a silent downgrade can see the real state.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Probe {
     pub backend: &'static str,
@@ -16,8 +14,6 @@ pub struct Probe {
     pub detail: String,
 }
 
-/// Work that must happen after the process exists. Unix installs the boundary
-/// between fork and exec, so its guard is empty; Windows has no pre-exec hook.
 pub struct Guard {
     action: Option<Box<dyn FnOnce(u32) -> SandboxResult<()> + Send>>,
 }
@@ -52,22 +48,19 @@ impl Guard {
     }
 }
 
+// No syscall in plan(), so all three platforms are testable from any host.
 pub trait Backend: Send + Sync {
     fn name(&self) -> &'static str;
 
     fn available(&self) -> SandboxResult<()>;
 
-    /// Run the boundary once and report whether it actually enforces. An
-    /// `Err` here is a refusal, never a downgrade.
     fn selftest(&self) -> SandboxResult<Probe>;
 
-    /// Pure translation. No syscalls, so it is tested on every platform.
     fn plan(&self, policy: &Policy) -> SandboxResult<Plan>;
 
     fn apply(&self, plan: &Plan, cmd: &mut Command) -> SandboxResult<Guard>;
 }
 
-/// Refuses everything rather than pretending the policy was enforced.
 pub struct Unsupported;
 
 impl Backend for Unsupported {

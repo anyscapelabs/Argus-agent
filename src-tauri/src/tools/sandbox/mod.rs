@@ -124,8 +124,6 @@ fn audit(gw: &Gateway, r: &ExecutionRecord) {
     );
 }
 
-/// The only coordinator. Resolves a policy, refuses when it cannot be enforced,
-/// then spawns once — there is no second attempt on the host.
 pub async fn run(
     gw: &Gateway,
     req: Request<'_>,
@@ -327,8 +325,6 @@ pub fn sandbox_set_config(gw: tauri::State<'_, Gateway>, cfg: SandboxConfig) -> 
     set_config(&gw, &cfg)
 }
 
-/// Ask the local backend to prove it enforces. Never a downgrade: a failure
-/// here is reported as such, and isolated profiles refuse to run.
 #[tauri::command]
 pub fn sandbox_selftest() -> Result<Value, String> {
     let be = backends::current();

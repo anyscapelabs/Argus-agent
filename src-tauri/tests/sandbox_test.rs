@@ -499,3 +499,47 @@ fn a_broken_control_makes_the_canary_inconclusive() {
     let err = macos::verdict(false, false, true).unwrap_err();
     assert!(err.to_string().contains("cannot tell enforcement"), "{err}");
 }
+
+#[test]
+fn a_plain_argument_is_not_quoted() {
+    for a in ["ls", "-la", "/usr/bin/git", "a|b", "x&y"] {
+        assert_eq!(windows::quote::quote_arg(a), a, "{a} was quoted needlessly");
+    }
+}
+
+#[test]
+fn an_argument_with_spaces_survives_the_round_trip() {
+    let q = windows::quote::quote_arg("C:\\Program Files\\thing.exe");
+
+    assert!(q.starts_with('"') && q.ends_with('"'), "{q}");
+    assert!(q.contains("Program Files\\thing.exe"));
+}
+
+#[test]
+fn a_trailing_backslash_does_not_swallow_the_closing_quote() {
+    // Only matters once quoting starts; a bare run needs no quotes.
+    assert_eq!(windows::quote::quote_arg("C:\\dir\\"), "C:\\dir\\");
+
+    let q = windows::quote::quote_arg("C:\\Program Files\\dir\\");
+    assert_eq!(q, r#""C:\Program Files\dir\\""#);
+}
+
+#[test]
+fn an_embedded_quote_is_escaped() {
+    assert_eq!(windows::quote::quote_arg(r#"a"b"#), r#""a\"b""#);
+
+    assert_eq!(windows::quote::quote_arg(r#"C:\a\"b"#), r#""C:\a\\\"b""#);
+}
+
+#[test]
+fn an_empty_argument_survives() {
+    assert_eq!(windows::quote::quote_arg(""), r#""""#);
+}
+
+#[test]
+fn the_command_line_joins_in_order() {
+    let line =
+        windows::quote::command_line(&["cmd".into(), "/c".into(), "echo hello world".into()]);
+
+    assert_eq!(line, r#"cmd /c "echo hello world""#);
+}

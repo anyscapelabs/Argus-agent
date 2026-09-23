@@ -220,7 +220,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
           {groups.map((group, gi) => {
             const assistants = group.agent.filter((a) => a.role === "assistant");
             const live = running && gi === groups.length - 1;
-            const buildWorkSteps = (msgs: MsgRow[]): ToolStep[] => {
+            const buildWorkSteps = (msgs: MsgRow[], liveIds: Set<string>): ToolStep[] => {
               const steps: ToolStep[] = [];
               let stepIdx = 0;
 
@@ -232,15 +232,24 @@ export default function ChatDetailPage({ sessionId }: Props) {
                   continue;
                 }
 
+                const isLive = liveIds.has(m.id);
+
                 for (let bi = 0; bi < blocks.length; bi++) {
                   const b = blocks[bi];
 
                   if (b.tag === "action") {
-                    steps.push(actionStep(b, stepIdx++, false));
+                    const idx = stepIdx++;
+                    steps.push(
+                      isLive
+                        ? actionStep(b, idx, true, turn?.term[idx] ?? "", turn?.termCode[idx])
+                        : actionStep(b, idx, false),
+                    );
                   } else if (b.tag === "terminal") {
-                    steps.push({ ...terminalStep(b), output: undefined });
+                    const s = terminalStep(b);
+                    steps.push(isLive ? s : { ...s, output: undefined });
                   } else if (b.tag === "sandbox") {
-                    steps.push({ ...sandboxStep(b), output: undefined });
+                    const s = sandboxStep(b);
+                    steps.push(isLive ? s : { ...s, output: undefined });
                   } else if (b.tag === "browser-action") {
                     steps.push(browserDoneStep(b));
                   } else if (b.tag === "document") {
@@ -311,7 +320,10 @@ export default function ChatDetailPage({ sessionId }: Props) {
               );
             }
 
-            const workSteps = buildWorkSteps(last ? [...prior, last] : prior);
+            const workSteps = buildWorkSteps(
+              last ? [...prior, last] : prior,
+              live && last ? new Set([last.id]) : new Set<string>(),
+            );
 
             const showSummary = !live && workSteps.length > 0;
             const allText = assistants.map((a) => a.content).join("\n\n");
@@ -395,6 +407,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
                     <AgentBubble
                       text={allText}
                       caret
+                      hideToolActivity
                       showThinking={(turn?.text ?? "").length === 0}
                       liveTerm={{
                         term: turn?.term ?? {},

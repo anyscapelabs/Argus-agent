@@ -47,6 +47,7 @@ pub fn run() {
             memory::store::migrate(&conn)?;
             learning::migrate(&conn)?;
             connectors::store::migrate(&conn)?;
+            tools::sandbox::schema::migrate(&conn)?;
 
             let _ = mcp::sync_from(&conn);
 
@@ -133,6 +134,7 @@ pub fn run() {
             sessions::term_shell_status,
             tools::sandbox::sandbox_config,
             tools::sandbox::sandbox_set_config,
+            tools::sandbox::sandbox_runs,
             sessions::term_shell_set,
             sessions::term_shell_clear,
             sessions::ext_install::sess_ext_install,

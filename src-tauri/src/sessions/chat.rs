@@ -1007,7 +1007,7 @@ pub async fn send<R: tauri::Runtime>(
                     .unwrap_or("command");
                 let blk = crate::tools::sandbox::record_block(
                     cmd,
-                    "offline",
+                    crate::tools::sandbox::Profile::Restricted.as_str(),
                     &crate::tools::sandbox::origin_label(turn_origin.as_ref(), &allow_hosts),
                     status,
                     &body,

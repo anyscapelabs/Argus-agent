@@ -57,6 +57,20 @@ pub fn classify(err: &str) -> RecoveryKind {
         return RecoveryKind::ToolNotFound;
     }
 
+    // A policy refusal is final: retrying it cannot make the kernel able to
+    // enforce what it just said it could not.
+    if has_any(
+        &e,
+        &[
+            "refusing to run this outside a sandbox",
+            "sandbox unavailable",
+            "sandbox failed to apply",
+            "unknown sandbox profile",
+        ],
+    ) {
+        return RecoveryKind::PermissionDenied;
+    }
+
     if has_any(
         &e,
         &[

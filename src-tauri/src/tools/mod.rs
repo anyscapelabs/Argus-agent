@@ -26,13 +26,13 @@ pub struct ToolMeta {
 const TOOLS: &[ToolMeta] = &[
     ToolMeta {
         name: "terminal",
-        desc: "Execute commands on the user's computer. Use for: inspecting the system and files; creating or modifying files; running programs; builds and tests; Git; package managers; system administration. Use user privilege by default. Use admin privilege only when root access is required. Admin authentication is handled by the operating system. Never ask for or handle the user's sudo password.",
-        args: "{\"command\":\"...\",\"cwd\":\".\",\"label\":\"...\",\"privilege\":\"user\"}",
+        desc: "Execute commands on the user's computer. Use for: inspecting the system and files; creating or modifying files; running programs; builds and tests; Git; package managers; system administration. Use user privilege by default. Use admin privilege only when root access is required. Admin authentication is handled by the operating system. Never ask for or handle the user's sudo password. Set profile \"project\" to confine the command to this project's directory and its dependency caches, or \"restricted\" for code you do not trust.",
+        args: "{\"command\":\"...\",\"cwd\":\".\",\"label\":\"...\",\"privilege\":\"user\",\"profile\":\"host\"}",
         mutating: true,
     },
     ToolMeta {
         name: "code.run",
-        desc: "Run code from untrusted origins — anything fetched from the web, pasted scripts of unknown provenance, or a freshly cloned repo — offline inside a container with an allowlisted image. Use for: building, testing, or inspecting untrusted code. Never use it for your own files and projects; that is what terminal is for.",
+        desc: "Run code from untrusted origins — anything fetched from the web, pasted scripts of unknown provenance, or a freshly cloned repo. Use for: building, testing, or inspecting untrusted code. It runs with no network access and can write only inside its own scratch directory. Never use it for your own files and projects; that is what terminal is for.",
         args: "{\"command\":\"...\",\"cwd\":\".\"}",
         mutating: true,
     },
@@ -712,13 +712,28 @@ pub async fn exec(
 
     match name {
         "terminal" | "bash.run" => {
-            let (idx, chan) = match on_term {
-                Some((c, i)) => (i, Some(c)),
-                None => (0, None),
-            };
+            let profile = sandbox::parse_profile(&args, sandbox::Profile::Host)
+                .map_err(|err| err.to_string())?;
+            let origin = sandbox::origin_of_tool(name, args_json);
 
-            let (out, code) = shell::run_stream(&args, idx, chan).await?;
-            Ok(format!("exit {code}\n{out}"))
+            let out = sandbox::run(
+                gw,
+                sandbox::Request {
+                    tool: name,
+                    command: args["command"].as_str().ok_or("terminal needs a command")?,
+                    profile,
+                    cwd: args["cwd"].as_str(),
+                    elevated: args.get("privilege").and_then(|v| v.as_str()) == Some("admin"),
+                    permission,
+                    timeout_secs: args["timeout"].as_u64(),
+                    origin: origin.as_ref(),
+                },
+                on_term,
+            )
+            .await
+            .map_err(|err| err.to_string())?;
+
+            Ok(format!("exit {}\n{}", out.exit, out.combined()))
         }
         "code.run" => {
             let command = args
@@ -726,19 +741,26 @@ pub async fn exec(
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.trim().is_empty())
                 .ok_or("missing command")?;
-            let cwd = args.get("cwd").and_then(|v| v.as_str()).unwrap_or("");
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-            let workdir = std::path::PathBuf::from(if cwd.trim().is_empty() {
-                home
-            } else {
-                expand(cwd)
-            });
-            let image = {
-                let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-                sandbox::resolve_image(&conn, None)?
-            };
-            let (out, code) = sandbox::run_sandboxed(gw, &workdir, command, &image, false).await?;
-            Ok(format!("exit {code}\n{out}"))
+            let origin = sandbox::origin_of_tool(name, args_json);
+
+            let out = sandbox::run(
+                gw,
+                sandbox::Request {
+                    tool: name,
+                    command,
+                    profile: sandbox::Profile::Restricted,
+                    cwd: args.get("cwd").and_then(|v| v.as_str()),
+                    elevated: false,
+                    permission,
+                    timeout_secs: args["timeout"].as_u64(),
+                    origin: origin.as_ref(),
+                },
+                None,
+            )
+            .await
+            .map_err(|err| err.to_string())?;
+
+            Ok(format!("exit {}\n{}", out.exit, out.combined()))
         }
         "grep" => grep::run(&args).await,
         "fs.write" => fs::write(&args),
@@ -1053,9 +1075,14 @@ sudo/su/doas yourself and never ask for a password — for work that truly needs
 plus a short label; the user approves it in Argus first, then the OS asks for \
 authorization in its own dialog. The password never comes to you.\n\
 4. Untrusted code — anything fetched from the web or a freshly cloned repo — goes \
-through the code.run tool, never terminal: it runs offline in a container. Use \
-terminal for your own files and projects.\n\
-5. Keep disk scans bounded: scope du with --max-depth, wrap slow directories in \
+through the code.run tool, never terminal: it runs with no network access and can \
+write only inside its own scratch directory. Use terminal for your own files and projects.\n\
+5. A terminal command runs on the host by default. Pass profile \"project\" to confine \
+it to the current project and its dependency caches, or \"restricted\" for code you do \
+not trust. A profile that this machine cannot enforce fails instead of running \
+unsandboxed — never fall back to a plain terminal call when that happens, and never \
+work around a refusal on the user's behalf.\n\
+6. Keep disk scans bounded: scope du with --max-depth, wrap slow directories in \
 `timeout 15 du -sh <dir>`, prefer `ncdu -o` snapshots over repeated full-tree scans. \
 If a scan times out twice, switch strategy instead of retrying it.\n",
     );

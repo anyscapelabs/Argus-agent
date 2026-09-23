@@ -7,6 +7,7 @@ Code: `src-tauri/src/sessions/{chat.rs,mod.rs,store.rs,schema.rs,browser_import.
 - Project prompt → stream reply → parse `<action>` → approval gate → `tools::exec` → `<tool-result>` back in. Loop-guard trips on 3rd identical repeat.
 - Screenshots by path attach as images (last 2 msgs). Overflow → `prompt::compressor` summarization with utility model.
 - `ask_approval()` + `sess_chat_stream(sessionId,content,on_event:Channel<StreamEvent>)`, `sess_cancel_chat`, `sess_resolve_approval(id, allow, args?)` (oneshot `HashMap<String,Sender<ApprovalReply>>` in `Gateway.approvals`; `allow` + optional edited args JSON, validated by `gateway::approval_reply`, applied to `exec.args` before run — browser tools excluded).
+- Headless runs: `ChatSink` trait (`Channel` impl forwards, `NullSink` drops; `term_chan()` gates terminal streaming) — `send()` takes `&dyn ChatSink` + a `role` tag (`"user"` default; scheduler turns use `"system"`/`"cron"`), and every finished turn emits `argus://session-activity {session_id, kind:"turn-done"}`. Tests: `chat_headless_test.rs`.
 - Skill reflection runs out-of-band: after a 6+ action turn finishes, `run_skill_reflection` fires silently via a null channel and only executes `skill.create` actions — it never persists a visible nudge turn, so the model's real final answer stays last.
 - `notice` stream events render as `<warning>` banners in the live turn (previously dropped); a `browser.*` failure matching "Chrome is not connected to Argus" posts the one-time Load-unpacked setup steps instead of reading as a generic failure.
 

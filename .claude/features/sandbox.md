@@ -1,13 +1,32 @@
-# Sandbox — Untrusted-Source Execution (plan, approved decisions locked)
+# Sandbox — native OS isolation (no container)
 
-Status: phases 1–2 implemented (`tools/sandbox.rs` trust classify + podman runner, `tests/sandbox_test.rs`). Phases 3–4 not yet implemented.
+Status: implemented. Linux verified end to end (`tests/sandbox_linux_test.rs`,
+13 tests, all passing). macOS SBPL generation and Windows JobPlan are
+unit-tested from Linux; their syscall invocation is not.
 
-## Locked decisions
+## The decision
 
-- Unknown origin → treated as `untrusted` (user can mark trusted explicitly).
-- Default untrusted profile → `offline` (no network unless user explicitly approves a netted run).
+Argus does not run a container. It creates a controlled execution boundary
+around individual processes, using whatever the OS already offers. The old
+Podman path (`detect_runtime`, image allowlist, digest pins, `podman → docker →
+refuse` fallback) is deleted.
 
-## Trust model
+## The split
+
+Sandboxing must be installed between fork and exec, where only async-signal-safe
+calls are legal. That forces the whole policy to be computed before the fork —
+which is also what makes the other two platforms testable from Linux.
+
+```
+resolve(profile, ctx) -> Policy   policy.rs   pure, no I/O
+plan(policy) -> Plan             plan.rs     pure, OS-free plan structs
+apply(plan, cmd) -> Guard        backends/   the only platform-gated code
+```
+
+macOS SBPL strings, Linux Landlock rule lists, and Windows job-limit structs
+are all plain data, so `tests/sandbox_test.rs` asserts them on any host.
+
+## Trust model (unchanged, `trust.rs`)
 
 Levels: `trusted` | `untrusted` | `unknown` (handled as untrusted).
 
@@ -18,28 +37,70 @@ Levels: `trusted` | `untrusted` | `unknown` (handled as untrusted).
 | Host | allowlist (`github.com/you/*`, self-hosted GitLab, in settings) | unknown hosts, raw IPs, shorteners — always untrusted |
 | Content triggers | — | build/install scripts, `curl … \| sh` in fetched content |
 
-Enforcement principle: the model never decides trust — it only carries provenance labels. The backend (`tools::exec` gate) re-derives trust from origin tags on every call. Ambiguous cases go to approval with a trust badge; the user is final arbiter.
+The model never decides trust; it carries provenance labels. The gate
+re-derives trust from origin tags on every call. Ambiguous cases go to approval
+with a trust badge; the user is final arbiter.
 
-## Mechanism: Podman (rootless containers)
+## Profiles (`policy.rs`)
 
-Why Podman over bubblewrap: daemonless, rootless by default, Docker-compatible CLI, per-run resource limits, and a real filesystem boundary (image + volume) instead of namespace tricks over the host root. Fits the local-first model — no daemon, no root.
+| | Restricted | Project | Host |
+|---|---|---|---|
+| Filesystem | sysroot + `/dev /proc /sys /run` ro, tmp rw | sysroot ro, project + `~/.cache` + tmp rw, dep caches ro | unrestricted |
+| Network | none | 80, 443 | full |
+| Env | 7 keys only | inherit | inherit |
+| Wall / mem | 120s / 2 GiB | 900s / 4 GiB | — |
+| Output cap | 64 KiB | 256 KiB | 8 MiB |
 
-- Run shape: `podman run --rm --read-only --cap-drop=all --security-opt=no-new-privileges --pids-limit=256 --memory=2g --cpus=2 -v <repo>:/work:rw -w /work <image> <cmd>`. Existing timeout/output caps and `Channel` streaming unchanged — Podman wraps, doesn't replace.
-- Profiles: `offline` (default, `--network=none`) for build/test/inspect; `netted` (bridge network, FS/process isolation only) strictly on explicit approval, since network re-opens exfiltration.
-- Images: official per-language images pinned by digest (e.g. `rust:…@sha256:…`, `node:…@sha256:…`), image allowlist in settings. Never `:latest`, never user-suggested image refs — the model proposes the language, the backend maps it to the pinned image.
-- Never silently downgrade: fallback chain is `podman` → `docker` CLI (same flags) → refuse with install hint. A weaker fallback would lie about the isolation guarantee, so absence of a container runtime is a hard stop, not a quiet bypass.
+`terminal` defaults to Host (behavior unchanged); the agent may pass
+`profile: "project" | "restricted"` per command. `code.run` is always
+Restricted.
 
-## Integration points
+## Per-platform enforcement (`backends/`)
 
-- New `src-tauri/src/tools/sandbox.rs`: `Trust` enum, `classify()`, `run_sandboxed()`.
-- `src-tauri/src/tools/mod.rs`: provenance tags on executions + gate check.
-- `src-tauri/src/sessions/chat.rs`: origin labels through the loop, trust in approval events.
-- `src/stores/sessions.ts` + `ApprovalBlock.tsx`: trust badge + "Run sandboxed".
-- Settings host + image allowlists via kv prefs; tests in `src-tauri/tests/sandbox_test.rs` (classification offline-testable, container runs presence-gated on `podman info`).
+**Linux** — Landlock LSM for filesystem and (ABI v4 / kernel 6.7+) TCP
+restrictions, `seccompiler` BPF for a Restricted deny list, `setrlimit` for
+AS/CPU/NOFILE/FSIZE, `setpgid(0,0)` so the teardown killpg takes the whole
+tree. `PR_SET_NO_NEW_PRIVS` before any of it.
 
-## Phases
+Two things the platform cannot express, and the code says so instead of
+pretending:
 
-1. Trust model + classification (pure logic, no deps).
-2. Sandbox runner (detect runtime, offline profile, pinned images, hard refuse).
-3. Loop + UI wiring (provenance, badge, run-sandboxed).
-4. Hardening (netted policy, allowlist UI, docs).
+- `RLIMIT_NPROC` counts every process of the real uid, so `linux_plan()` zeroes
+  `procs` — a per-sandbox budget needs cgroups. The plan struct records `None`
+  rather than a limit that does not exist.
+- `RLIMIT_FSIZE` is a real file cap, not temp-storage accounting.
+
+**macOS** — `sandbox-exec -p '<SBPL>'`, SBPL generated in `plan()` as a pure
+string. `quote()` escapes `"` and `\` and strips newlines so a project path
+cannot break out of the profile. Apple deprecated `sandbox-exec`; if it goes
+away, isolated profiles fail rather than fall through to the host.
+
+**Windows** — Job Objects for `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`,
+`PROCESS_MEMORY`, `ACTIVE_PROCESS`. AppContainer is *not* wired: it needs
+`STARTUPINFOEXW` on a raw `CreateProcessW`, which `tokio::process::Command` does
+not expose. So `require_container()` refuses any plan with a non-empty
+`fs_grants`. On Windows today, an fs-scoped profile is a hard stop — the
+restricted filesystem boundary is not yet real, and the code fails closed
+instead of downgrading.
+
+## Fail closed
+
+No path exists from sandboxed to host. `plan()` or `apply()` erroring returns
+before the command runs; `a_refused_plan_never_runs_the_command` asserts the
+command provably did not execute. `recover.rs` classifies every sandbox refusal
+as `PermissionDenied` so the agent cannot retry into a weaker path.
+
+## Observability (`record.rs`, `schema.rs`)
+
+`sandbox_runs` holds id, tool, command, profile, backend, origin, permission,
+start, duration, exit, termination, byte counts, truncated flag. **Output is
+never persisted** — the audit trail is not a second place secrets live. Table
+capped at `MAX_ROWS = 5000`.
+
+## Tests
+
+- `tests/sandbox_test.rs` — trust, policy resolution, macOS SBPL, Windows
+  JobPlan, Linux plan, fail-closed errors, config round-trip. Runs everywhere.
+- `tests/sandbox_linux_test.rs` — 13 tests, Linux only. Landlock read/write
+  scope, network denial, seccomp denial, rlimit AS, no_new_privs, foreign-plan
+  refusal, refused-plan-never-runs, Unsupported backend, killpg teardown.

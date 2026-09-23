@@ -8,6 +8,14 @@ Source: `docs/user-guide/security.md`, `src-tauri/src/tools/mod.rs:693`, `src-ta
 - `never` only for explicit trusted flows. Read-only (`grep`, `skill.read/search`, `memory.search/read`, `web.*`, reads, screenshots) never needs approval.
 - Preserve the gate in `tools/mod.rs:693`. New mutating tool must set `mutating:true` + test the blocked path.
 
+## Sandbox boundary
+
+- `tools/sandbox/` isolates processes with the OS (Landlock + seccomp + rlimits, `sandbox-exec`, Job Objects). No container, no image.
+- **Fail closed.** A policy the backend cannot enforce returns `Err` and the command never runs. Never add a sandboxed → host fallback.
+- The LLM never picks a profile to escape a restriction. `terminal` takes a `profile` arg for the agent to *tighten* only; `code.run` is always Restricted. The `Host` profile is a user setting.
+- `sandbox_runs` stores metadata and byte counts only — never output, never secrets.
+- Sandbox refusals classify as `PermissionDenied` in `recover.rs`; do not make them retryable.
+
 ## Secrets
 
 | Secret | Storage |

@@ -3,11 +3,11 @@ import { useEffect, useRef, useState } from "react";
 import AgentBubble from "./AgentBubble";
 import ChatInput from "./ChatInput";
 import UserBubble from "./UserBubble";
-import { parse, type BlockNode } from "../lib/agentXml";
-import WorkSummary, { formatWorked } from "./agent/WorkSummary";
+import { parseCached, type BlockNode } from "../lib/agentXml";
 import ToolActivity, {
   actionStep,
   browserDoneStep,
+  formatWorked,
   terminalStep,
   type ToolStep,
 } from "./agent/ToolActivity";
@@ -219,19 +219,78 @@ export default function ChatDetailPage({ sessionId }: Props) {
           {groups.map((group, gi) => {
             const assistants = group.agent.filter((a) => a.role === "assistant");
             const live = running && gi === groups.length - 1;
-            const msgTools = (content: string): boolean => {
-              try {
-                return parse(content).some(
-                  (b) =>
-                    b.tag === "action" ||
-                    b.tag === "terminal" ||
-                    b.tag === "browser-action" ||
-                    b.tag === "document",
-                );
-              } catch {
-                return false;
+            const buildWorkSteps = (msgs: MsgRow[]): ToolStep[] => {
+              const steps: ToolStep[] = [];
+              let stepIdx = 0;
+
+              for (const m of msgs) {
+                let blocks;
+                try {
+                  blocks = parseCached(m.content);
+                } catch {
+                  continue;
+                }
+
+                for (let bi = 0; bi < blocks.length; bi++) {
+                  const b = blocks[bi];
+
+                  if (b.tag === "action") {
+                    steps.push(actionStep(b, stepIdx++, false));
+                  } else if (b.tag === "terminal") {
+                    steps.push({ ...terminalStep(b), output: undefined });
+                  } else if (b.tag === "browser-action") {
+                    steps.push(browserDoneStep(b));
+                  } else if (b.tag === "document") {
+                    steps.push({
+                      group: "tool",
+                      label: `Created document ${b.attrs.title ?? b.attrs.name ?? b.attrs.id ?? "document"}`,
+                    });
+                    docBlocks.push(b);
+                  } else if (b.tag === "thinking") {
+                    const body = b.children
+                      .map((c) => c.value)
+                      .join("")
+                      .trim();
+
+                    if (body) {
+                      steps.push({ group: "thought", label: "Thought", body });
+                    }
+                  } else if (b.tag === "plan") {
+                    const texts: string[] = [];
+                    let j = bi + 1;
+
+                    while (j < blocks.length && blocks[j].tag === "step") {
+                      texts.push(
+                        blocks[j].children
+                          .map((c) => c.value)
+                          .join("")
+                          .trim(),
+                      );
+                      j++;
+                    }
+                    bi = j - 1;
+
+                    steps.push({
+                      group: "plan",
+                      label:
+                        texts.length > 0
+                          ? `Plan · ${texts.length} steps`
+                          : "Plan",
+                      body:
+                        texts.length > 0
+                          ? texts
+                              .map((t, n) => `${n + 1}. ${t}`)
+                              .join("\n")
+                          : undefined,
+                    });
+                  }
+                }
               }
+
+              return steps;
             };
+
+            const docBlocks: BlockNode[] = [];
 
             let last: MsgRow | undefined;
             let prior: MsgRow[];
@@ -244,55 +303,13 @@ export default function ChatDetailPage({ sessionId }: Props) {
             } else {
               last =
                 assistants.find((a) => a.kind === "final") ??
-                assistants.filter(
-                  (a) =>
-                    a.content.trim().length > 0 && !msgTools(a.content),
-                ).slice(-1)[0] ??
                 assistants[assistants.length - 1];
               prior = assistants.filter(
                 (a) => a !== last && a.content.trim().length > 0,
               );
             }
 
-            const priorText = prior.map((a) => a.content).join("\n\n");
-            let priorHasTools = false;
-            try {
-              priorHasTools = parse(priorText).some(
-                (b) =>
-                  b.tag === "action" ||
-                  b.tag === "terminal" ||
-                  b.tag === "browser-action",
-              );
-            } catch {
-              priorHasTools = false;
-            }
-
-            const workSteps: ToolStep[] = [];
-            const docBlocks: BlockNode[] = [];
-            let stepIdx = 0;
-            const workMsgs = last ? [...prior, last] : prior;
-
-            for (const m of workMsgs) {
-              try {
-                for (const b of parse(m.content)) {
-                  if (b.tag === "action") {
-                    workSteps.push(actionStep(b, stepIdx++, false));
-                  } else if (b.tag === "terminal") {
-                    workSteps.push({ ...terminalStep(b), output: undefined });
-                  } else if (b.tag === "browser-action") {
-                    workSteps.push(browserDoneStep(b));
-                  } else if (b.tag === "document") {
-                    workSteps.push({
-                      group: "tool",
-                      label: `Created document ${b.attrs.title ?? b.attrs.name ?? b.attrs.id ?? "document"}`,
-                    });
-                    docBlocks.push(b);
-                  }
-                }
-              } catch {
-                continue;
-              }
-            }
+            const workSteps = buildWorkSteps(last ? [...prior, last] : prior);
 
             const showSummary = !live && workSteps.length > 0;
             const allText = assistants.map((a) => a.content).join("\n\n");
@@ -324,9 +341,11 @@ export default function ChatDetailPage({ sessionId }: Props) {
                 )}
                 {showSummary ? (
                   <>
-                    <WorkSummary label={workLabel}>
-                      <ToolActivity steps={workSteps} live={false} />
-                    </WorkSummary>
+                    <ToolActivity
+                      label={workLabel}
+                      steps={workSteps}
+                      live={false}
+                    />
                     <AgentBubble
                       text={last?.content}
                       hideToolActivity
@@ -362,10 +381,14 @@ export default function ChatDetailPage({ sessionId }: Props) {
                   </>
                 ) : live ? (
                   <>
-                    {priorHasTools && (
-                      <WorkSummary label={workLabel} live startedAt={startMs}>
-                        <AgentBubble text={priorText} hideActions />
-                      </WorkSummary>
+                    {workSteps.length > 0 && (
+                      <ToolActivity
+                        steps={workSteps}
+                        live
+                        liveStartedAt={startMs}
+                        approval={turn?.approval ?? null}
+                        sessionId={sessionId}
+                      />
                     )}
                     <AgentBubble
                       text={allText}

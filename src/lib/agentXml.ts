@@ -532,3 +532,21 @@ function normalizeMd(src: string): string {
 export function parse(buf: string): XmlTree {
   return buildTree(tokenize(normalizeMd(buf)));
 }
+
+const PARSE_CACHE = new Map<string, XmlTree>();
+
+export function parseCached(text: string): XmlTree {
+  const hit = PARSE_CACHE.get(text);
+
+  if (hit !== undefined) return hit;
+
+  const tree = parse(text);
+  PARSE_CACHE.set(text, tree);
+
+  if (PARSE_CACHE.size > 50) {
+    const first = PARSE_CACHE.keys().next();
+    if (!first.done) PARSE_CACHE.delete(first.value);
+  }
+
+  return tree;
+}

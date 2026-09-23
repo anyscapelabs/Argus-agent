@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
-import { FiCheck, FiChevronDown, FiTerminal, FiTool, FiX } from "react-icons/fi";
+import { useEffect, useRef, useState } from "react";
+import { FiCheck, FiChevronDown, FiList, FiMessageSquare, FiTerminal, FiTool, FiX } from "react-icons/fi";
 import { SiGooglechrome } from "react-icons/si";
 
 import { sessionStore, type PendingApproval } from "../../stores/sessions";
+import { useWorkTimer } from "../../stores/workTimer";
 
 import type { BlockNode } from "../../lib/agentXml";
 import EmailDraftCard from "./EmailDraftCard";
@@ -151,17 +152,76 @@ export function fmtDuration(ms: number): string {
   return `${Math.round(ms)}ms`;
 }
 
+export function formatDuration(ms: number): string {
+  const totalSec = Math.max(0, Math.round(ms / 1000));
+
+  if (totalSec < 60) {
+    return `${totalSec} sec`;
+  }
+
+  const mins = Math.floor(totalSec / 60);
+  const secs = totalSec % 60;
+
+  if (mins < 60) {
+    return secs === 0 ? `${mins} min` : `${mins} min ${secs} sec`;
+  }
+
+  const hours = Math.floor(mins / 60);
+  const remMin = mins % 60;
+
+  return remMin === 0 ? `${hours} hr` : `${hours} hr ${remMin} min`;
+}
+
+export function formatWorked(startMs: number | null, endMs: number | null): string {
+  if (startMs === null || endMs === null || endMs < startMs) {
+    return "Work details";
+  }
+
+  return `Worked for ${formatDuration(endMs - startMs)}`;
+}
+
+function ThoughtRow({ step }: { step: ToolStep }) {
+  const [show, setShow] = useState(false);
+  const Icon = step.group === "plan" ? FiList : FiMessageSquare;
+
+  return (
+    <div className="flex flex-col gap-1 px-3 py-2">
+      <button
+        type="button"
+        onClick={() => setShow((v) => !v)}
+        className="flex items-center gap-2 text-left cursor-pointer"
+      >
+        <Icon size={13} className="shrink-0 text-text-secondary" />
+        <span className="min-w-0 flex-1 truncate text-sm text-text-secondary">
+          {step.label}
+        </span>
+        {step.body && (
+          <span className="shrink-0 text-xs text-text-secondary/70">
+            {show ? "Hide ↑" : "Show →"}
+          </span>
+        )}
+      </button>
+      {show && step.body && (
+        <p className="max-h-[240px] overflow-y-auto whitespace-pre-wrap pl-6 text-sm leading-6 text-text-secondary">
+          {step.body}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function browserDoneStep(blk: BlockNode): ToolStep {
   return { group: "browser", label: displayLabel(blk) };
 }
 
 export type ToolStep = {
-  group: "browser" | "terminal" | "tool";
+  group: "browser" | "terminal" | "tool" | "thought" | "plan";
   label: string;
   detail?: string;
   output?: string;
   code?: number;
   durationMs?: number;
+  body?: string;
   approvalIdx?: number;
   live?: boolean;
   tool?: string;
@@ -173,6 +233,8 @@ type Props = {
   live?: boolean;
   approval?: PendingApproval | null;
   sessionId?: string;
+  label?: string;
+  liveStartedAt?: number | null;
 };
 
 function titleFor(steps: ToolStep[], live: boolean): string {
@@ -304,15 +366,37 @@ export default function ToolActivity({
   live = false,
   approval = null,
   sessionId,
+  label,
+  liveStartedAt = null,
 }: Props) {
   const approvalStep = approval
     ? steps.findIndex((s) => s.approvalIdx === approval.idx)
     : -1;
   const [open, setOpen] = useState(live || approvalStep !== -1);
+  const now = useWorkTimer((s) => s.now);
+  const mountedAt = useRef(Date.now());
 
   useEffect(() => {
     setOpen(live || approvalStep !== -1);
   }, [live, approvalStep]);
+
+  useEffect(() => {
+    if (!live) {
+      return;
+    }
+
+    useWorkTimer.getState().start();
+
+    return () => {
+      useWorkTimer.getState().stop();
+    };
+  }, [live]);
+
+  const header =
+    label ??
+    (live
+      ? `Working… ${formatDuration(now - (liveStartedAt ?? mountedAt.current))}`
+      : titleFor(steps, live));
 
   const decide = (allow: boolean) => {
     if (sessionId !== undefined && approval) {
@@ -344,7 +428,7 @@ export default function ToolActivity({
             "text-sm " + `${live ? "shimmer-text" : "text-text-secondary"}`
           }
         >
-          {titleFor(steps, live)}
+          {header}
         </span>
         <FiChevronDown
           size={12}
@@ -354,8 +438,10 @@ export default function ToolActivity({
       {open && (
         <div className="mt-1.5 overflow-hidden rounded-lg border border-border-primary">
           <div className="flex flex-col divide-y divide-border-primary">
-            {steps.map((step, i) =>
-              step.group === "terminal" ? (
+          {steps.map((step, i) =>
+            step.group === "thought" || step.group === "plan" ? (
+              <ThoughtRow key={i} step={step} />
+            ) : step.group === "terminal" ? (
                 <TerminalActivity
                   key={i}
                   step={step}

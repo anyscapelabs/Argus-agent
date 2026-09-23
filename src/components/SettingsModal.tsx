@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import ModelsPage from "./settings/ModelsPage";
 import ProvidersPage from "./settings/ProvidersPage";
 import SettingsSidebar, { type SettingsTab } from "./settings/SettingsSidebar";
+import SandboxPage from "./settings/SandboxPage";
 import TerminalPage from "./settings/TerminalPage";
 
 type SettingsCardProps = {
@@ -150,6 +151,7 @@ export default function SettingsModal({
           {activeTab === "models" && <ModelsPage onNavigate={setActiveTab} />}
           {activeTab === "providers" && <ProvidersPage />}
           {activeTab === "terminal" && <TerminalPage />}
+          {activeTab === "sandbox" && <SandboxPage />}
         </div>
       </div>
     </div>

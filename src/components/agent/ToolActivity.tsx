@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FiCheck, FiChevronDown, FiList, FiMessageSquare, FiTerminal, FiTool, FiX } from "react-icons/fi";
+import { FiCheck, FiChevronDown, FiList, FiMessageSquare, FiShield, FiTerminal, FiTool, FiX } from "react-icons/fi";
 import { SiGooglechrome } from "react-icons/si";
 
 import { sessionStore, type PendingApproval } from "../../stores/sessions";
@@ -152,6 +152,22 @@ export function fmtDuration(ms: number): string {
   return `${Math.round(ms)}ms`;
 }
 
+export function sandboxStep(blk: BlockNode): ToolStep {
+  const command = blk.attrs.command ?? "command";
+  const output = blk.children.map((c) => c.value).join("");
+  const bits = ["sandboxed", blk.attrs.profile, blk.attrs.origin].filter(
+    (b) => b !== undefined && b !== "",
+  );
+
+  return {
+    group: "sandbox",
+    label: `$ ${command}`,
+    detail: bits.join(" · "),
+    output: output.length > 0 ? output : undefined,
+    badge: "sandboxed",
+  };
+}
+
 export function formatDuration(ms: number): string {
   const totalSec = Math.max(0, Math.round(ms / 1000));
 
@@ -215,7 +231,7 @@ export function browserDoneStep(blk: BlockNode): ToolStep {
 }
 
 export type ToolStep = {
-  group: "browser" | "terminal" | "tool" | "thought" | "plan";
+  group: "browser" | "terminal" | "tool" | "thought" | "plan" | "sandbox";
   label: string;
   detail?: string;
   output?: string;
@@ -226,6 +242,7 @@ export type ToolStep = {
   live?: boolean;
   tool?: string;
   args?: Record<string, unknown>;
+  badge?: string;
 };
 
 type Props = {
@@ -301,6 +318,12 @@ function TerminalActivity({
         >
           {denied ? "Denied" : step.label}
         </span>
+        {step.badge && (
+          <span className="flex shrink-0 items-center gap-1 rounded-md border border-border-primary px-1.5 py-0.5 text-[10px] text-text-secondary">
+            <FiShield size={10} />
+            {step.badge}
+          </span>
+        )}
         {hasDetails && !approval && (
           <button
             type="button"
@@ -441,7 +464,7 @@ export default function ToolActivity({
           {steps.map((step, i) =>
             step.group === "thought" || step.group === "plan" ? (
               <ThoughtRow key={i} step={step} />
-            ) : step.group === "terminal" ? (
+            ) : step.group === "terminal" || step.group === "sandbox" ? (
                 <TerminalActivity
                   key={i}
                   step={step}

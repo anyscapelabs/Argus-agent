@@ -93,6 +93,16 @@ export const TAG_SCHEMA: readonly TagSchema[] = [
     ],
   },
   {
+    tag: "sandbox",
+    selfClosing: false,
+    attributes: [
+      { name: "command" },
+      { name: "profile" },
+      { name: "origin" },
+      { name: "status" },
+    ],
+  },
+  {
     tag: "email-draft",
     selfClosing: false,
     attributes: [{ name: "id" }, { name: "to" }, { name: "subject" }],

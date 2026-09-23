@@ -28,6 +28,7 @@ import ApprovalBlock from "./agent/ApprovalBlock";
 import ToolActivity, {
   actionStep,
   browserDoneStep,
+  sandboxStep,
   terminalStep,
   type ToolStep,
 } from "./agent/ToolActivity";
@@ -603,6 +604,7 @@ function renderTree(
       (blk.tag === "action" ||
         blk.tag === "terminal" ||
         blk.tag === "browser-action" ||
+        blk.tag === "sandbox" ||
         blk.tag === "document")
     ) {
       i++;
@@ -612,7 +614,8 @@ function renderTree(
     if (
       blk.tag === "action" ||
       blk.tag === "terminal" ||
-      blk.tag === "browser-action"
+      blk.tag === "browser-action" ||
+      blk.tag === "sandbox"
     ) {
       const steps: ToolStep[] = [];
 
@@ -620,7 +623,8 @@ function renderTree(
         i < tree.length &&
         (tree[i].tag === "action" ||
           tree[i].tag === "terminal" ||
-          tree[i].tag === "browser-action")
+          tree[i].tag === "browser-action" ||
+          tree[i].tag === "sandbox")
       ) {
         const b = tree[i];
 
@@ -630,6 +634,9 @@ function renderTree(
           aIdx++;
         } else if (b.tag === "terminal") {
           steps.push(terminalStep(b));
+          aIdx++;
+        } else if (b.tag === "sandbox") {
+          steps.push(sandboxStep(b));
           aIdx++;
         } else {
           steps.push(browserDoneStep(b));

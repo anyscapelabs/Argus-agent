@@ -8,6 +8,7 @@ import ToolActivity, {
   actionStep,
   browserDoneStep,
   formatWorked,
+  sandboxStep,
   terminalStep,
   type ToolStep,
 } from "./agent/ToolActivity";
@@ -238,6 +239,8 @@ export default function ChatDetailPage({ sessionId }: Props) {
                     steps.push(actionStep(b, stepIdx++, false));
                   } else if (b.tag === "terminal") {
                     steps.push({ ...terminalStep(b), output: undefined });
+                  } else if (b.tag === "sandbox") {
+                    steps.push({ ...sandboxStep(b), output: undefined });
                   } else if (b.tag === "browser-action") {
                     steps.push(browserDoneStep(b));
                   } else if (b.tag === "document") {

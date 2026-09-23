@@ -249,16 +249,15 @@ export default function ChatDetailPage({ sessionId }: Props) {
                       label: `Created document ${b.attrs.title ?? b.attrs.name ?? b.attrs.id ?? "document"}`,
                     });
                     docBlocks.push(b);
+                  } else if (b.tag === "check") {
+                    steps.push({
+                      group: "tool",
+                      label:
+                        b.attrs.status === "retry"
+                          ? "Caught an issue, retrying"
+                          : "Checked the answer",
+                    });
                   } else if (b.tag === "thinking") {
-                    const body = b.children
-                      .map((c) => c.value)
-                      .join("")
-                      .trim();
-
-                    if (body) {
-                      steps.push({ group: "thought", label: "Thought", body });
-                    }
-                  } else if (b.tag === "plan") {
                     const texts: string[] = [];
                     let j = bi + 1;
 

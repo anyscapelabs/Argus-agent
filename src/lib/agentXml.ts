@@ -103,6 +103,11 @@ export const TAG_SCHEMA: readonly TagSchema[] = [
     ],
   },
   {
+    tag: "check",
+    selfClosing: true,
+    attributes: [{ name: "status", values: ["pass", "retry"] }],
+  },
+  {
     tag: "email-draft",
     selfClosing: false,
     attributes: [{ name: "id" }, { name: "to" }, { name: "subject" }],

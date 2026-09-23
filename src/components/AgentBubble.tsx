@@ -605,6 +605,7 @@ function renderTree(
         blk.tag === "terminal" ||
         blk.tag === "browser-action" ||
         blk.tag === "sandbox" ||
+        blk.tag === "check" ||
         blk.tag === "document")
     ) {
       i++;

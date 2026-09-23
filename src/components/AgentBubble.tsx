@@ -21,7 +21,8 @@ import {
 } from "react-icons/si";
 
 import type { BlockNode, InlineNode, XmlTree } from "../lib/agentXml";
-import { parse } from "../lib/agentXml";
+import { blockRole, parse } from "../lib/agentXml";
+import { ExtLink } from "../lib/extLink";
 import { type PendingApproval } from "../stores/sessions";
 import AlertBanner from "./agent/AlertBanner";
 import ApprovalBlock from "./agent/ApprovalBlock";
@@ -116,20 +117,29 @@ function renderInline(nodes: InlineNode[]): React.ReactNode {
       if (urlRe.test(up)) {
         urlRe.lastIndex = 0;
         out.push(
-          <a
-            key={`i-${k++}`}
-            href={up}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-400 underline decoration-blue-400/30 underline-offset-2 hover:text-blue-300"
-          >
+          <ExtLink key={`i-${k++}`} href={up}>
             {up}
-          </a>,
+          </ExtLink>,
         );
         continue;
       }
 
-      const mParts = up.split(mentionRe);
+      const emailRe =
+        /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+)/g;
+      const eParts = up.split(emailRe);
+
+      for (let ei = 0; ei < eParts.length; ei++) {
+        const ep = eParts[ei];
+        if (!ep) {
+          continue;
+        }
+
+        if (ei % 2 === 1) {
+          pushPlain(ep);
+          continue;
+        }
+
+        const mParts = ep.split(mentionRe);
 
       for (const mp of mParts) {
         if (!mp) {
@@ -190,6 +200,7 @@ function renderInline(nodes: InlineNode[]): React.ReactNode {
 
         pushText(mp);
       }
+      }
     }
   };
 
@@ -207,15 +218,15 @@ function renderInline(nodes: InlineNode[]): React.ReactNode {
 
     if (link?.href) {
       out.push(
-        <a
-          key={`i-${k++}`}
-          href={link.href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={`text-blue-400 underline decoration-blue-400/30 underline-offset-2 hover:text-blue-300 ${cls}`}
-        >
-          {seg}
-        </a>,
+        cls ? (
+          <span key={`i-${k++}`} className={cls}>
+            <ExtLink href={link.href}>{seg}</ExtLink>
+          </span>
+        ) : (
+          <ExtLink key={`i-${k++}`} href={link.href}>
+            {seg}
+          </ExtLink>
+        ),
       );
       return;
     }
@@ -237,7 +248,7 @@ function renderInline(nodes: InlineNode[]): React.ReactNode {
       return;
     }
 
-    const re = /(?:~\/|\/)[^\s<>"'`]+/g;
+    const re = /(?:~\/)?[^\s<>"'`]*\/[^\s<>"'`]+/g;
     let cur = 0;
     let m: RegExpExecArray | null;
     const plain = (from: number, to: number) => {
@@ -254,10 +265,15 @@ function renderInline(nodes: InlineNode[]): React.ReactNode {
         .slice(0, raw.length - junk)
         .replace(/\/+$/, "");
 
+      const slashes = (path.match(/\//g) ?? []).length;
+      const base = path.split("/").pop() ?? "";
       const usable =
         path.length >= 2 &&
         !path.startsWith("//") &&
-        (path.startsWith("~/") || path.includes("/", 1));
+        (path.startsWith("~/") ||
+          path.startsWith("/") ||
+          slashes >= 2 ||
+          base.includes("."));
 
       if (!usable) {
         continue;
@@ -530,6 +546,11 @@ function renderTree(
   while (i < tree.length) {
     const blk = tree[i];
 
+    if (hideTools === true && blockRole(blk.tag) === "work") {
+      i++;
+      continue;
+    }
+
     if (blk.tag === "action" && WEB_ACTIONS.has(blk.attrs.tool ?? "")) {
       const grp: BlockNode[] = [];
       while (
@@ -614,19 +635,6 @@ function renderTree(
       paths.size > 0
     ) {
       aIdx++;
-      i++;
-      continue;
-    }
-
-    if (
-      hideTools === true &&
-      (blk.tag === "action" ||
-        blk.tag === "terminal" ||
-        blk.tag === "browser-action" ||
-        blk.tag === "sandbox" ||
-        blk.tag === "check" ||
-        blk.tag === "document")
-    ) {
       i++;
       continue;
     }

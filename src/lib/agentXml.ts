@@ -309,6 +309,25 @@ export type BlockNode = {
 
 export type XmlTree = BlockNode[];
 
+// Single source of truth for block ownership. The work panel renders `work`
+// blocks; bubbles render everything else, plus `work` only when no panel
+// owns the turn (fallback so tools can never vanish).
+const WORK_TAGS = new Set([
+  "action",
+  "terminal",
+  "sandbox",
+  "browser-action",
+  "check",
+  "document",
+  "plan",
+  "thinking",
+  "step",
+]);
+
+export function blockRole(tag: string): "work" | "content" {
+  return WORK_TAGS.has(tag) ? "work" : "content";
+}
+
 export function buildTree(toks: Token[]): XmlTree {
   const blks: BlockNode[] = [];
   let buf = "";
@@ -539,7 +558,15 @@ function escCode(s: string): string {
 }
 
 function normalizeMdLine(line: string): string {
-  const { text, restore } = shieldLine(line);
+  const { text: masked, restore } = shieldLine(line);
+  let text = masked;
+  if (/<\/?(?:ul|ol|li)[\s>/]/i.test(text)) {
+    text = text
+      .replace(/<\/?(?:ul|ol)[^<>]*>/gi, "")
+      .replace(/<li[^<>]*>/gi, "- ")
+      .replace(/<\/li>/gi, "");
+    if (text.trim() === "") return "";
+  }
   const h = text.match(/^(#{1,6})\s+(.*)$/);
   if (h !== null) {
     const tag = h[1].length <= 2 ? "h2" : "h3";

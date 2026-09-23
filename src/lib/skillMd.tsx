@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { ExtLink } from "./extLink";
+
 const INLINE_RE = /(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g;
 
 function inline(text: string, key: string): ReactNode[] {
@@ -30,15 +32,9 @@ function inline(text: string, key: string): ReactNode[] {
 
       if (m) {
         out.push(
-          <a
-            key={k}
-            href={m[2]}
-            target="_blank"
-            rel="noreferrer"
-            className="text-blue-400 underline underline-offset-2"
-          >
+          <ExtLink key={k} href={m[2]}>
             {m[1]}
-          </a>,
+          </ExtLink>,
         );
       } else {
         out.push(p);

@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { ExtLink } from "../../lib/extLink";
+
 const CLS: Record<string, string> = {
   bold: "font-bold",
   italic: "italic",
@@ -26,15 +28,9 @@ export function renderInlineText(text: string): ReactNode {
 
       if (m[1] === "link") {
         out.push(
-          <a
-            key={k++}
-            href={m[2] ?? ""}
-            target="_blank"
-            rel="noreferrer"
-            className="text-blue-400 underline decoration-blue-400/30 underline-offset-2 hover:text-blue-300"
-          >
+          <ExtLink key={k++} href={m[2] ?? ""}>
             {inner}
-          </a>,
+          </ExtLink>,
         );
       } else {
         out.push(

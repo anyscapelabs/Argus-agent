@@ -254,3 +254,16 @@ fn native_calls_carry_ids_for_live_synthesis() {
     assert_eq!(execs.len(), 1);
     assert!(execs[0].tool_call_id.is_none());
 }
+
+#[tokio::test]
+async fn code_run_is_gated_and_needs_a_command() {
+    use argus_lib::tools::{exec, is_mutating};
+
+    assert!(is_mutating("code.run"));
+
+    let (gw, _base) = test_gw("code-run");
+    let err = exec(&gw, "code.run", "{}", "never", false, true, None)
+        .await
+        .unwrap_err();
+    assert_eq!(err, "missing command");
+}

@@ -148,3 +148,90 @@ fn build_run_refuses_unlisted_images() {
 
     assert!(err.contains("allowlist"));
 }
+
+#[test]
+fn origin_of_tool_spots_untrusted_sources() {
+    use argus_lib::tools::sandbox::{origin_of_tool, Origin};
+
+    assert!(matches!(
+        origin_of_tool("web.read", r#"{"url":"https://evil.example/x"}"#),
+        Some(Origin::WebFetch(_))
+    ));
+    assert!(matches!(
+        origin_of_tool("browser.open", r#"{"url":"https://x.test"}"#),
+        Some(Origin::WebFetch(_))
+    ));
+    assert!(matches!(
+        origin_of_tool(
+            "terminal",
+            r#"{"command":"git clone https://github.com/a/b.git"}"#
+        ),
+        Some(Origin::GitClone(_))
+    ));
+    assert!(origin_of_tool("terminal", r#"{"command":"cargo test"}"#).is_none());
+    assert!(origin_of_tool("memory.search", r#"{"query":"x"}"#).is_none());
+    assert!(origin_of_tool("code.run", r#"{"command":"ls"}"#).is_none());
+}
+
+#[test]
+fn resolve_image_needs_allowlisted_default() {
+    use argus_lib::tools::sandbox::resolve_image;
+
+    let gw = test_gw();
+    let conn = gw.conn.lock().unwrap();
+
+    assert!(resolve_image(&conn, None).is_err());
+
+    conn.execute(
+        "INSERT INTO kv (k, v) VALUES ('sandbox.allow_images', ?1)
+         ON CONFLICT(k) DO UPDATE SET v = ?1",
+        rusqlite::params![r#"["docker.io/library/rust:1.84@sha256:abc"]"#],
+    )
+    .unwrap();
+
+    assert!(resolve_image(&conn, None).is_err(), "no default set");
+
+    conn.execute(
+        "INSERT INTO kv (k, v) VALUES ('sandbox.default_image', ?1)
+         ON CONFLICT(k) DO UPDATE SET v = ?1",
+        rusqlite::params!["docker.io/library/rust:1.84@sha256:abc"],
+    )
+    .unwrap();
+
+    assert_eq!(
+        resolve_image(&conn, None).unwrap(),
+        "docker.io/library/rust:1.84@sha256:abc"
+    );
+    assert!(resolve_image(&conn, Some("evil/image:latest")).is_err());
+}
+
+#[test]
+fn validate_config_rejects_loose_images() {
+    use argus_lib::tools::sandbox::validate_config;
+
+    assert!(validate_config(
+        &["github.com".to_string()],
+        &["docker.io/library/rust:1.84@sha256:abc".to_string()],
+        "docker.io/library/rust:1.84@sha256:abc",
+    )
+    .is_ok());
+
+    assert!(validate_config(&[], &["rust:latest".to_string()], "",).is_err());
+    assert!(validate_config(
+        &[],
+        &["docker.io/library/rust:1.84@sha256:abc".to_string()],
+        "other:1@sha256:x",
+    )
+    .is_err());
+}
+
+#[test]
+fn record_block_escapes_and_labels() {
+    use argus_lib::tools::sandbox::record_block;
+
+    let blk = record_block("echo <hi>", "offline", "web fetch", "ok", "out & done");
+    assert!(blk.contains("<sandbox"));
+    assert!(blk.contains("command=\"echo &lt;hi>\""));
+    assert!(blk.contains("origin=\"web fetch\""));
+    assert!(blk.contains("out &amp; done"));
+}

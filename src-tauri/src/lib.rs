@@ -130,6 +130,8 @@ pub fn run() {
             sessions::chat::sess_resolve_approval,
             sessions::browser_import::sess_browser_import,
             sessions::term_shell_status,
+            tools::sandbox::sandbox_config,
+            tools::sandbox::sandbox_set_config,
             sessions::term_shell_set,
             sessions::term_shell_clear,
             sessions::ext_install::sess_ext_install,

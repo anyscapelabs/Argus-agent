@@ -482,6 +482,13 @@ pub async fn send<R: tauri::Runtime>(
     let mut finished = false;
     let mut acts_run = 0usize;
     let mut recent: Vec<(String, String)> = vec![];
+    let mut turn_origin: Option<crate::tools::sandbox::Origin> = None;
+    let allow_hosts: Vec<String> = {
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+        crate::gateway::store::kv_get(&conn, crate::tools::sandbox::KV_ALLOW_HOSTS)
+            .and_then(|v| serde_json::from_str(&v).ok())
+            .unwrap_or_default()
+    };
 
     for _step in 0..MAX_STEPS {
         let req = {
@@ -841,6 +848,30 @@ pub async fn send<R: tauri::Runtime>(
                 match (exec.start, exec.end) {
                     (Some(s), Some(e)) => edits.push((s, e, blk)),
                     _ => append_blocks.push(blk),
+                }
+            }
+
+            if exec.tool == "code.run" {
+                let cmd = args_v
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("command");
+                let blk = crate::tools::sandbox::record_block(
+                    cmd,
+                    "offline",
+                    &crate::tools::sandbox::origin_label(turn_origin.as_ref(), &allow_hosts),
+                    status,
+                    &body,
+                );
+                match (exec.start, exec.end) {
+                    (Some(s), Some(e)) => edits.push((s, e, blk)),
+                    _ => append_blocks.push(blk),
+                }
+            }
+
+            if exec.tool != "code.run" {
+                if let Some(o) = crate::tools::sandbox::origin_of_tool(&exec.tool, &exec.args) {
+                    turn_origin = Some(o);
                 }
             }
 

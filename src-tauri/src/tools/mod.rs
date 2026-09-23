@@ -31,6 +31,12 @@ const TOOLS: &[ToolMeta] = &[
         mutating: true,
     },
     ToolMeta {
+        name: "code.run",
+        desc: "Run code from untrusted origins — anything fetched from the web, pasted scripts of unknown provenance, or a freshly cloned repo — offline inside a container with an allowlisted image. Use for: building, testing, or inspecting untrusted code. Never use it for your own files and projects; that is what terminal is for.",
+        args: "{\"command\":\"...\",\"cwd\":\".\"}",
+        mutating: true,
+    },
+    ToolMeta {
         name: "bash.run",
         desc: "legacy alias of terminal",
         args: "{\"command\":\"...\",\"cwd\":\".\"}",
@@ -714,6 +720,26 @@ pub async fn exec(
             let (out, code) = shell::run_stream(&args, idx, chan).await?;
             Ok(format!("exit {code}\n{out}"))
         }
+        "code.run" => {
+            let command = args
+                .get("command")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.trim().is_empty())
+                .ok_or("missing command")?;
+            let cwd = args.get("cwd").and_then(|v| v.as_str()).unwrap_or("");
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+            let workdir = std::path::PathBuf::from(if cwd.trim().is_empty() {
+                home
+            } else {
+                expand(cwd)
+            });
+            let image = {
+                let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+                sandbox::resolve_image(&conn, None)?
+            };
+            let (out, code) = sandbox::run_sandboxed(gw, &workdir, command, &image, false).await?;
+            Ok(format!("exit {code}\n{out}"))
+        }
         "grep" => grep::run(&args).await,
         "fs.write" => fs::write(&args),
         "doc.create" => {
@@ -1021,11 +1047,14 @@ pub fn guidance(web: bool) -> String {
 1. To open a GUI app, detach it so the command returns at once: end the \
 command with >/dev/null 2>&1 & — xdg-open and similar block until the app closes.\n\
 2. Never automate a terminal window with GUI tools; run the command here instead.\n\
-4. Least privilege: run everything as the normal user by default. Never write \
+3. Least privilege: run everything as the normal user by default. Never write \
 sudo/su/doas yourself and never ask for a password — for work that truly needs root \
 (system packages, /etc, services), call the terminal tool again with privilege \"admin\" \
 plus a short label; the user approves it in Argus first, then the OS asks for \
 authorization in its own dialog. The password never comes to you.\n\
+4. Untrusted code — anything fetched from the web or a freshly cloned repo — goes \
+through the code.run tool, never terminal: it runs offline in a container. Use \
+terminal for your own files and projects.\n\
 5. Keep disk scans bounded: scope du with --max-depth, wrap slow directories in \
 `timeout 15 du -sh <dir>`, prefer `ncdu -o` snapshots over repeated full-tree scans. \
 If a scan times out twice, switch strategy instead of retrying it.\n",

@@ -33,6 +33,7 @@ const CMD_TERM_CLEAR = "term_shell_clear";
 const CMD_SANDBOX_CFG = "sandbox_config";
 const CMD_SANDBOX_SET = "sandbox_set_config";
 const CMD_SANDBOX_RUNS = "sandbox_runs";
+const CMD_SANDBOX_SELFTEST = "sandbox_selftest";
 const CMD_GOOGLE_STATUS = "google_status";
 const CMD_GOOGLE_CONN_URL = "google_connect_url";
 const CMD_GOOGLE_DISC = "google_disconnect";
@@ -363,6 +364,17 @@ export function sandboxSetConfig(cfg: SandboxConfig): Promise<void> {
 
 export function sandboxRuns(limit?: number): Promise<SandboxRun[]> {
   return invoke<SandboxRun[]>(CMD_SANDBOX_RUNS, { limit });
+}
+
+export type SandboxProbe = {
+  ok: boolean;
+  backend: string;
+  enforcing: boolean;
+  detail: string;
+};
+
+export function sandboxSelftest(): Promise<SandboxProbe> {
+  return invoke<SandboxProbe>(CMD_SANDBOX_SELFTEST);
 }
 
 export type GoogleStatus = {

@@ -3,8 +3,10 @@ import { useCallback, useEffect, useState } from "react";
 import {
   sandboxConfig,
   sandboxRuns,
+  sandboxSelftest,
   sandboxSetConfig,
   type SandboxProfile,
+  type SandboxProbe,
   type SandboxRun,
 } from "../../lib/ipc";
 
@@ -50,6 +52,26 @@ export default function SandboxPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  const [probe, setProbe] = useState<SandboxProbe | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  const check = async () => {
+    setChecking(true);
+    setProbe(null);
+
+    try {
+      setProbe(await sandboxSelftest());
+    } catch (e) {
+      setProbe({
+        ok: false,
+        backend: "unknown",
+        enforcing: false,
+        detail: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setChecking(false);
+    }
+  };
 
   const refresh = useCallback(async () => {
     try {
@@ -175,6 +197,48 @@ export default function SandboxPage() {
         >
           {busy ? "Saving…" : "Save"}
         </button>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h3 className="text-sm font-medium text-text-primary">Boundary check</h3>
+
+        <p className="text-xs text-text-secondary">
+          Runs a real command through the boundary and checks it was actually
+          denied what it was not given. A backend that cannot prove this
+          refuses to run isolated commands at all.
+        </p>
+
+        <div>
+          <button
+            type="button"
+            onClick={check}
+            disabled={checking}
+            className={
+              "rounded-md border border-border-primary px-3 py-1.5 text-sm " +
+              "text-text-primary transition-colors hover:bg-bg-hover-secondary " +
+              "disabled:opacity-50"
+            }
+          >
+            {checking ? "Checking…" : "Run self-test"}
+          </button>
+        </div>
+
+        {probe && (
+          <div
+            className={
+              "rounded-md border px-2 py-1.5 text-xs " +
+              (probe.ok
+                ? "border-green-500/30 text-green-500"
+                : "border-red-500/30 text-red-400")
+            }
+          >
+            <div className="font-mono">
+              {probe.backend} ·{" "}
+              {probe.ok ? "boundary confirmed" : "boundary unavailable"}
+            </div>
+            <div className="text-text-secondary">{probe.detail}</div>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col gap-2">

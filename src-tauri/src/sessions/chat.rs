@@ -195,9 +195,33 @@ pub fn repeated(recent: &[(String, String)], key: &(String, String)) -> bool {
     recent.iter().rev().take_while(same_site).count() >= 2
 }
 
+pub trait ChatSink: Send + Sync {
+    fn emit(&self, ev: StreamEvent);
+
+    fn term_chan(&self) -> Option<&Channel<StreamEvent>> {
+        None
+    }
+}
+
+impl ChatSink for Channel<StreamEvent> {
+    fn emit(&self, ev: StreamEvent) {
+        let _ = self.send(ev);
+    }
+
+    fn term_chan(&self) -> Option<&Channel<StreamEvent>> {
+        Some(self)
+    }
+}
+
+pub struct NullSink;
+
+impl ChatSink for NullSink {
+    fn emit(&self, _ev: StreamEvent) {}
+}
+
 async fn ask_approval(
     gw: &Gateway,
-    chan: &Channel<StreamEvent>,
+    sink: &dyn ChatSink,
     id: &str,
     idx: u32,
     cmd: &str,
@@ -208,7 +232,7 @@ async fn ask_approval(
         map.insert(id.into(), tx);
     }
 
-    let _ = chan.send(StreamEvent::Approval {
+    sink.emit(StreamEvent::Approval {
         id: id.into(),
         idx,
         command: cmd.into(),
@@ -412,7 +436,8 @@ pub async fn send<R: tauri::Runtime>(
     app: &AppHandle<R>,
     session_id: &str,
     content: &str,
-    chan: &Channel<StreamEvent>,
+    sink: &dyn ChatSink,
+    role: &str,
 ) -> Result<(), String> {
     {
         let conn = gw.conn.lock().map_err(|err| err.to_string())?;
@@ -422,7 +447,7 @@ pub async fn send<R: tauri::Runtime>(
                 &conn,
                 &NewMsg {
                     session_id: session_id.into(),
-                    role: "user".into(),
+                    role: role.into(),
                     content: content.into(),
                     model_id: None,
                     provider_id: None,
@@ -434,6 +459,9 @@ pub async fn send<R: tauri::Runtime>(
             )?;
         }
     }
+
+    let null_chan = Channel::<StreamEvent>::new(|_| Ok(()));
+    let model_chan: &Channel<StreamEvent> = sink.term_chan().unwrap_or(&null_chan);
 
     let (perm, web) = {
         let conn = gw.conn.lock().map_err(|err| err.to_string())?;
@@ -478,7 +506,7 @@ pub async fn send<R: tauri::Runtime>(
             r
         };
 
-        let stats = router::stream_run(gw, req, chan).await?;
+        let stats = router::stream_run(gw, req, model_chan).await?;
         tok_in_sum += stats.tok_in;
 
         if stats.text.trim().is_empty() && stats.tool_calls.is_empty() {
@@ -527,7 +555,7 @@ pub async fn send<R: tauri::Runtime>(
 
             if trunc_conts > MAX_TRUNC_CONTS {
                 if done {
-                    let _ = chan.send(StreamEvent::Notice {
+                    sink.emit(StreamEvent::Notice {
                         msg: "the model's reply was cut off at its output limit twice — \
                               partial work above is saved; send 'continue' to resume"
                             .into(),
@@ -557,7 +585,7 @@ pub async fn send<R: tauri::Runtime>(
                     continue;
                 }
 
-                let _ = chan.send(StreamEvent::Notice {
+                sink.emit(StreamEvent::Notice {
                     msg: "the reply described an action but none ran — partial work \
                           above is saved; send 'continue' to let it retry"
                         .into(),
@@ -595,7 +623,7 @@ pub async fn send<R: tauri::Runtime>(
             break;
         }
 
-        let _ = chan.send(StreamEvent::Step);
+        sink.emit(StreamEvent::Step);
 
         let mut edits: Vec<(usize, usize, String)> = vec![];
         let mut append_blocks: Vec<String> = vec![];
@@ -631,7 +659,7 @@ pub async fn send<R: tauri::Runtime>(
                 code = -1;
             } else {
                 if exec.tool_call_id.is_some() {
-                    let _ = chan.send(StreamEvent::Delta {
+                    sink.emit(StreamEvent::Delta {
                         text: format!("<action tool=\"{}\">{}</action>", exec.tool, exec.args),
                     });
                 }
@@ -660,7 +688,7 @@ pub async fn send<R: tauri::Runtime>(
                         cmd.clone()
                     };
 
-                    let reply = ask_approval(gw, &chan, &approval_id(), idx as u32, &what).await;
+                    let reply = ask_approval(gw, sink, &approval_id(), idx as u32, &what).await;
                     allow = reply.allow;
                     denied = !allow;
 
@@ -671,7 +699,7 @@ pub async fn send<R: tauri::Runtime>(
                     }
 
                     if denied && is_term {
-                        let _ = chan.send(StreamEvent::TermEnd {
+                        sink.emit(StreamEvent::TermEnd {
                             idx: idx as u32,
                             code: DENIED_CODE,
                         });
@@ -696,7 +724,7 @@ pub async fn send<R: tauri::Runtime>(
                         &perm,
                         web,
                         allow,
-                        Some((&chan, idx as u32)),
+                        sink.term_chan().map(|c| (c, idx as u32)),
                     )
                     .await;
                     exec.elapsed_ms = t0.elapsed().as_millis();
@@ -709,7 +737,7 @@ pub async fn send<R: tauri::Runtime>(
                             if exec.is_browser_tool()
                                 && err.contains("Chrome is not connected to Argus")
                             {
-                                let _ = chan.send(StreamEvent::Notice {
+                                sink.emit(StreamEvent::Notice {
                                     msg: "the agent needs your real Chrome once: open \
                                         chrome://extensions, enable Developer mode, click \
                                         Load unpacked and pick the Argus extension folder, \
@@ -759,7 +787,7 @@ pub async fn send<R: tauri::Runtime>(
                 let terminal_failed = exec.status == tools::ToolStatus::Failed;
                 if status == "ok" || terminal_failed {
                     let term_code = if denied { DENIED_CODE } else { code };
-                    let _ = chan.send(StreamEvent::TermEnd {
+                    sink.emit(StreamEvent::TermEnd {
                         idx: idx as u32,
                         code: term_code,
                     });
@@ -866,7 +894,7 @@ pub async fn send<R: tauri::Runtime>(
         acts_run += pending.len();
 
         if trunc_overflow {
-            let _ = chan.send(StreamEvent::Notice {
+            sink.emit(StreamEvent::Notice {
                 msg: "the model's reply was cut off at its output limit twice — \
                       partial work above is saved; send 'continue' to resume"
                     .into(),
@@ -877,7 +905,7 @@ pub async fn send<R: tauri::Runtime>(
     }
 
     if !finished {
-        let _ = chan.send(StreamEvent::Notice {
+        sink.emit(StreamEvent::Notice {
             msg: format!(
                 "paused mid-task after {MAX_STEPS} steps — everything above is saved; \
                  send 'continue' to resume"
@@ -945,6 +973,11 @@ pub async fn send<R: tauri::Runtime>(
         });
     }
 
+    let _ = app.emit(
+        "argus://session-activity",
+        serde_json::json!({"session_id": session_id, "kind": "turn-done"}),
+    );
+
     Ok(())
 }
 
@@ -964,7 +997,7 @@ pub async fn sess_chat_stream(
 
     let out = tokio::select! {
         _ = notify.notified() => Err("stopped".into()),
-        out = crate::tools::shell::CANCEL.scope(notify.clone(), crate::tools::notepad::SESSION_ID.scope(Some(session_id.clone()), send(&gw, &app, &session_id, &content, &on_event))) => out,
+        out = crate::tools::shell::CANCEL.scope(notify.clone(), crate::tools::notepad::SESSION_ID.scope(Some(session_id.clone()), send(&gw, &app, &session_id, &content, &on_event, "user"))) => out,
     };
 
     if let Ok(mut tasks) = gw.tasks.lock() {

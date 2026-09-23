@@ -142,7 +142,8 @@ async fn eval_real_terminal_task() {
         }
     });
 
-    let status = argus_lib::sessions::chat::send(&gw, &handle, &session_id, USER_TASK, &chan).await;
+    let status =
+        argus_lib::sessions::chat::send(&gw, &handle, &session_id, USER_TASK, &chan, "user").await;
 
     let msgs = {
         let conn = gw.conn.lock().unwrap();
@@ -343,7 +344,8 @@ async fn eval_real_copy_task() {
     });
 
     let status =
-        argus_lib::sessions::chat::send(&gw, &handle, &session_id, USER_TASK_2, &chan).await;
+        argus_lib::sessions::chat::send(&gw, &handle, &session_id, USER_TASK_2, &chan, "user")
+            .await;
 
     let msgs = {
         let conn = gw.conn.lock().unwrap();

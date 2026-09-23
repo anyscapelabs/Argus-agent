@@ -399,7 +399,7 @@ async fn eval_real_web_browser_task() {
 
     let t0 = std::time::Instant::now();
     let status_run =
-        argus_lib::sessions::chat::send(&gw, &handle, &session_id, USER_TASK, &chan).await;
+        argus_lib::sessions::chat::send(&gw, &handle, &session_id, USER_TASK, &chan, "user").await;
     let elapsed = t0.elapsed();
 
     let msgs = {

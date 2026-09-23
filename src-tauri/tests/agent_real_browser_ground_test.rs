@@ -393,8 +393,15 @@ async fn eval_real_browser_ground_task() {
     let t0 = std::time::Instant::now();
     let (status_run, _) = tokio::join!(
         async {
-            let r =
-                argus_lib::sessions::chat::send(&gw, &handle, &session_id, &user_task, &chan).await;
+            let r = argus_lib::sessions::chat::send(
+                &gw,
+                &handle,
+                &session_id,
+                &user_task,
+                &chan,
+                "user",
+            )
+            .await;
             done.store(true, Ordering::SeqCst);
             r
         },

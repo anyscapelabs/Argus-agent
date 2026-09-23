@@ -281,6 +281,7 @@ impl Harness {
             &self.session_id,
             user_text,
             &self.chan,
+            "user",
         )
         .await
     }

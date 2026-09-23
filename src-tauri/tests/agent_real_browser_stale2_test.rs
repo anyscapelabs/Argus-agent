@@ -446,7 +446,7 @@ async fn eval_real_browser_stale2_task() {
     });
 
     let status_run =
-        argus_lib::sessions::chat::send(&gw, &handle, &session_id, &user_task, &chan).await;
+        argus_lib::sessions::chat::send(&gw, &handle, &session_id, &user_task, &chan, "user").await;
     let elapsed = t0.elapsed();
     let _ = watcher.await;
 

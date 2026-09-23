@@ -815,6 +815,13 @@ pub async fn send<R: tauri::Runtime>(
                     _ => append_blocks.push(blk),
                 }
             }
+
+            if exec.tool_call_id.is_some() && !is_term && !is_browser && exec.tool != "doc.create" {
+                append_blocks.push(format!(
+                    "<action tool=\"{}\">{}</action>",
+                    exec.tool, exec.args
+                ));
+            }
         }
 
         if !edits.is_empty() || !append_blocks.is_empty() {

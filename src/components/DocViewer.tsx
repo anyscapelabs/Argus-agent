@@ -138,17 +138,8 @@ export default function DocViewer() {
       : null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={close}
-      role="dialog"
-      aria-modal="true"
-    >
-      <div
-        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border-primary bg-bg-primary"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-3 border-b border-border-primary px-4 py-3">
+    <aside className="flex h-full w-[400px] min-w-0 max-w-[45%] shrink-0 flex-col border-l border-border-primary bg-bg-primary">
+      <div className="flex items-center gap-3 border-b border-border-primary px-4 py-3">
           <span className="shrink-0 text-text-primary">
             {preview ? (
               kindIcon(preview.ext, preview.kind)
@@ -271,7 +262,6 @@ export default function DocViewer() {
             <span className="truncate text-xs text-red-400">{err}</span>
           )}
         </div>
-      </div>
-    </div>
+    </aside>
   );
 }

@@ -88,6 +88,89 @@ fn links_form_graph_edges() {
 }
 
 #[test]
+fn autolink_connects_overlapping_memories_on_save() {
+    let conn = test_db();
+    let a = store::save(
+        &conn,
+        &NewMemory {
+            content: "SCANOVA patient portal needs offline sync for rural clinics".into(),
+            kind: Some("project".into()),
+            importance: None,
+            session_id: None,
+        },
+    )
+    .unwrap();
+    let b = store::save(
+        &conn,
+        &NewMemory {
+            content: "SCANOVA rural clinics pilot launches appointment reminders next quarter"
+                .into(),
+            kind: Some("project".into()),
+            importance: None,
+            session_id: None,
+        },
+    )
+    .unwrap();
+    let links: Vec<(String, String)> = conn
+        .prepare("SELECT from_id, to_id FROM memory_links")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .flatten()
+        .collect();
+    assert!(links.iter().any(|(f, t)| f == &b.id && t == &a.id));
+    let c = store::save(
+        &conn,
+        &NewMemory {
+            content: "pancake recipe extra vanilla warm milk".into(),
+            kind: Some("fact".into()),
+            importance: None,
+            session_id: None,
+        },
+    )
+    .unwrap();
+    let links: Vec<(String, String)> = conn
+        .prepare("SELECT from_id, to_id FROM memory_links WHERE from_id = ?1 OR to_id = ?1")
+        .unwrap()
+        .query_map([c.id.clone()], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .flatten()
+        .collect();
+    assert!(links.is_empty());
+}
+
+#[test]
+fn autolink_backfill_restores_links() {
+    let conn = test_db();
+    store::save(
+        &conn,
+        &NewMemory {
+            content: "SCANOVA patient portal needs offline sync for rural clinics".into(),
+            kind: Some("project".into()),
+            importance: None,
+            session_id: None,
+        },
+    )
+    .unwrap();
+    store::save(
+        &conn,
+        &NewMemory {
+            content: "SCANOVA rural clinics pilot launches appointment reminders next quarter"
+                .into(),
+            kind: Some("project".into()),
+            importance: None,
+            session_id: None,
+        },
+    )
+    .unwrap();
+    conn.execute("DELETE FROM memory_links", []).unwrap();
+    let n = store::autolink_all(&conn).unwrap();
+    assert!(n >= 1);
+    let g = store::load_graph(&conn, 50).unwrap();
+    assert!(!g.edges.is_empty());
+}
+
+#[test]
 fn message_update_and_delete_keep_fts_usable() {
     let conn = test_db();
     conn.execute(

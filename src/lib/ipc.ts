@@ -579,6 +579,21 @@ export function memoryDelete(id: string): Promise<void> {
   return invoke<void>("memory_delete", { id });
 }
 
+export type MemoryLink = {
+  from_id: string;
+  to_id: string;
+  relation: string;
+  created_at: string;
+};
+
+export function memoryLink(fromId: string, toId: string, relation?: string): Promise<MemoryLink> {
+  return invoke<MemoryLink>("memory_link", { fromId, toId, relation: relation ?? null });
+}
+
+export function memoryUnlink(fromId: string, toId: string): Promise<void> {
+  return invoke<void>("memory_unlink", { fromId, toId });
+}
+
 export type LearningPreference = {
   id: string;
   scope: string;

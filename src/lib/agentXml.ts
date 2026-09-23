@@ -14,6 +14,7 @@ export const TAG_SCHEMA: readonly TagSchema[] = [
   { tag: "underline", selfClosing: false, attributes: [] },
   { tag: "strikethrough", selfClosing: false, attributes: [] },
   { tag: "code", selfClosing: false, attributes: [] },
+  { tag: "codeblock", selfClosing: false, attributes: [{ name: "language" }] },
   { tag: "link", selfClosing: false, attributes: [{ name: "href" }] },
   { tag: "h1", selfClosing: false, attributes: [] },
   { tag: "h2", selfClosing: false, attributes: [] },
@@ -456,6 +457,7 @@ function inlineMd(s: string): string {
   let t = s;
   t = t.replace(/\*\*([^*]+)\*\*/g, "<bold>$1</bold>");
   t = t.replace(/__([^_]+)__/g, "<bold>$1</bold>");
+  t = t.replace(/~~([^~]+)~~/g, "<strikethrough>$1</strikethrough>");
   t = t.replace(
     /(^|[\s(])\*([^*\s][^*]*?)\*(?=[\s).,!?;:]|$)/g,
     "$1<italic>$2</italic>",
@@ -466,22 +468,87 @@ function inlineMd(s: string): string {
   );
   t = t.replace(/`([^`]+)`/g, "<code>$1</code>");
   t = t.replace(
-    /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
-    '<link href="$2">$1</link>',
+    /!\[([^\]]*)\]\(([^)\s]+)\)/g,
+    (_m: string, alt: string, src: string) =>
+      /^https?:\/\//.test(src)
+        ? `<link href="${src}">${alt}</link>`
+        : `<link>${alt}</link>`,
+  );
+  t = t.replace(
+    /\[([^\]]+)\]\(([^)\s]+)\)/g,
+    (_m: string, txt: string, href: string) =>
+      /^https?:\/\//.test(href)
+        ? `<link href="${href}">${txt}</link>`
+        : `<link>${txt}</link>`,
   );
   return t;
 }
 
+// Markdown must never rewrite tag bodies: action JSON with backticks or
+// terminal output starting with `#` would corrupt commands and records.
+// Split each line into tag spans (kept raw) and prose spans (normalized).
+function inlineOutside(line: string): string {
+  return line
+    .split(/(<[^<>]*>)/g)
+    .map((seg, i) => (i % 2 === 1 ? seg : inlineMd(seg)))
+    .join("");
+}
+
+// Component tags whose multi-line bodies stay raw. Tables and headings are
+// prose-level and never counted; inline tags never span lines.
+const DEPTH_TAGS =
+  "thinking|plan|step|action|approval|diff|terminal|sandbox|email-draft|browser-action|memory-ref|warning|error|codeblock";
+// Attribute-safe: quoted `>` (common in terminal commands) must not end the tag.
+const TAG_ATTRS = `(?:"[^"]*"|'[^']*'|[^<>"'])*`;
+
+const DEPTH_RE = new RegExp(`</?(?:${DEPTH_TAGS})\\b${TAG_ATTRS}/?>`, "g");
+
+function depthDelta(line: string): number {
+  let d = 0;
+  let m: RegExpExecArray | null;
+  DEPTH_RE.lastIndex = 0;
+  while ((m = DEPTH_RE.exec(line)) !== null) {
+    const t = m[0];
+    if (t.startsWith("</")) d -= 1;
+    else if (!t.endsWith("/>")) d += 1;
+  }
+  return d;
+}
+
+// Complete single-line blocks (`<action>{...}</action>`) are shielded so
+// prose normalization never rewrites their bodies (backticks in commands
+// would otherwise break arg parsing and hide the step hint).
+const SINGLE_RE = new RegExp(
+  `<(${DEPTH_TAGS})\\b${TAG_ATTRS}>.*?</\\1>`,
+  "g",
+);
+
+function shieldLine(line: string): { text: string; restore: (s: string) => string } {
+  const saved: string[] = [];
+  const text = line.replace(SINGLE_RE, (m) => `\u0000${saved.push(m) - 1}\u0000`);
+  const restore = (s: string) =>
+    s.replace(/\u0000(\d+)\u0000/g, (mm: string, n: string) => saved[Number(n)] ?? mm);
+  return { text, restore };
+}
+
+function escCode(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function normalizeMdLine(line: string): string {
-  const h = line.match(/^(#{1,6})\s+(.*)$/);
+  const { text, restore } = shieldLine(line);
+  const h = text.match(/^(#{1,6})\s+(.*)$/);
   if (h !== null) {
     const tag = h[1].length <= 2 ? "h2" : "h3";
-    return `<${tag}>${inlineMd(h[2])}</${tag}>`;
+    return restore(`<${tag}>${inlineOutside(h[2])}</${tag}>`);
   }
 
-  if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) return "";
+  if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(text)) return "";
 
-  return inlineMd(line.replace(/^\s*>\s?/, ""));
+  return restore(inlineOutside(text.replace(/^\s*>\s?/, "")));
 }
 
 function tableRow(line: string): string[] | null {
@@ -502,14 +569,14 @@ function tryTable(lines: string[], i: number): { xml: string; next: number } | n
 
   let xml =
     "<table><tr>" +
-    head.map((c) => `<th>${inlineMd(c)}</th>`).join("") +
+    head.map((c) => `<th>${inlineOutside(c)}</th>`).join("") +
     "</tr>";
   let j = i + 2;
 
   while (j < lines.length) {
     const cells = tableRow(lines[j]);
     if (cells === null || cells.length !== head.length) break;
-    xml += "<tr>" + cells.map((c) => `<td>${inlineMd(c)}</td>`).join("") + "</tr>";
+    xml += "<tr>" + cells.map((c) => `<td>${inlineOutside(c)}</td>`).join("") + "</tr>";
     j++;
   }
 
@@ -517,31 +584,74 @@ function tryTable(lines: string[], i: number): { xml: string; next: number } | n
 }
 
 function normalizeMd(src: string): string {
-  const parts = src.split(/```[a-zA-Z0-9_-]*[^\S\n]*\n?/);
+  const lines = src.split("\n");
+  const out: string[] = [];
+  let depth = 0;
+  let inFence = false;
+  let fenceLang = "";
+  const fenceBody: string[] = [];
 
-  return parts
-    .map((seg, i) => {
-      if (i % 2 === 1) return seg;
+  const flushFence = (closed: boolean) => {
+    if (!closed) {
+      out.push("```" + (fenceLang ? fenceLang : ""));
+      out.push(...fenceBody);
+      return;
+    }
+    const lang = fenceLang ? ` language="${fenceLang}"` : "";
+    out.push(`<codeblock${lang}>${fenceBody.map(escCode).join("\n")}</codeblock>`);
+  };
 
-      const lines = seg.split("\n");
-      const out: string[] = [];
-      let k = 0;
+  let k = 0;
+  while (k < lines.length) {
+    if (depth > 0) {
+      out.push(lines[k]);
+      depth = Math.max(0, depth + depthDelta(lines[k]));
+      k++;
+      continue;
+    }
 
-      while (k < lines.length) {
-        const t = tryTable(lines, k);
-
-        if (t !== null) {
-          out.push(t.xml);
-          k = t.next;
-        } else {
-          out.push(normalizeMdLine(lines[k]));
-          k++;
-        }
+    const fence = lines[k].match(/^```([a-zA-Z0-9_-]*)[^\S\n]*$/);
+    if (fence !== null) {
+      if (!inFence) {
+        inFence = true;
+        fenceLang = fence[1];
+        fenceBody.length = 0;
+      } else {
+        inFence = false;
+        flushFence(true);
+        fenceLang = "";
       }
+      k++;
+      continue;
+    }
 
-      return out.join("\n");
-    })
-    .join("\n");
+    if (inFence) {
+      fenceBody.push(lines[k]);
+      k++;
+      continue;
+    }
+
+    const line = lines[k];
+    const d = depthDelta(line);
+
+    if (d > 0) {
+      out.push(line);
+    } else {
+      const t = tryTable(lines, k);
+      if (t !== null) {
+        out.push(t.xml);
+        k = t.next;
+        continue;
+      }
+      out.push(normalizeMdLine(line));
+    }
+    depth = Math.max(0, depth + d);
+    k++;
+  }
+
+  if (inFence) flushFence(false);
+
+  return out.join("\n");
 }
 
 export function parse(buf: string): XmlTree {

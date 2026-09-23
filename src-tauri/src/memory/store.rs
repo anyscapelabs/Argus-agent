@@ -66,7 +66,79 @@ pub fn save(conn: &Connection, m: &NewMemory) -> Result<Memory, String> {
         params![id, content, kind, importance, m.session_id],
     )
     .map_err(|err| err.to_string())?;
+    let _ = autolink(conn, &id, &content);
     get(conn, &id)
+}
+
+const LINK_STOP: &[&str] = &[
+    "the", "a", "an", "and", "or", "for", "with", "from", "that", "this", "have", "has", "are",
+    "was", "were", "will", "would", "could", "should", "can", "not", "but", "you", "your", "yours",
+    "about", "into", "over", "after", "before", "when", "what", "which", "their", "there", "they",
+    "them", "then", "than", "also", "just", "like", "user", "users", "using", "used", "does",
+    "did", "been", "being", "more", "most", "such", "only", "very", "well",
+];
+
+fn keywords(content: &str) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut out: Vec<String> = vec![];
+    for w in content.to_lowercase().split(|c: char| !c.is_alphanumeric()) {
+        if w.len() < 4 || LINK_STOP.contains(&w) || !seen.insert(w.to_string()) {
+            continue;
+        }
+        out.push(w.to_string());
+        if out.len() >= 8 {
+            break;
+        }
+    }
+    out
+}
+
+pub fn autolink(conn: &Connection, id: &str, content: &str) -> Result<usize, String> {
+    if content.chars().count() < 40 {
+        return Ok(0);
+    }
+    let terms = keywords(content);
+    if terms.len() < 2 {
+        return Ok(0);
+    }
+    let q = terms
+        .iter()
+        .map(|t| format!("\"{t}\""))
+        .collect::<Vec<_>>()
+        .join(" OR ");
+    let mut stmt = conn
+        .prepare(
+            "SELECT id FROM memories WHERE id != ?2 AND rowid IN \
+             (SELECT rowid FROM memory_fts WHERE memory_fts MATCH ?1 \
+              ORDER BY bm25(memory_fts) LIMIT 3)",
+        )
+        .map_err(|err| err.to_string())?;
+    let ids = stmt
+        .query_map(params![q, id], |r| r.get::<_, String>(0))
+        .map_err(|err| err.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())?;
+    let mut n = 0;
+    for other in ids {
+        link(conn, id, &other, "related")?;
+        n += 1;
+    }
+    Ok(n)
+}
+
+pub fn autolink_all(conn: &Connection) -> Result<usize, String> {
+    let rows: Vec<(String, String)> = conn
+        .prepare("SELECT id, content FROM memories")
+        .map_err(|err| err.to_string())?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(|err| err.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())?;
+    let mut total = 0;
+    for (id, content) in &rows {
+        total += autolink(conn, id, content)?;
+    }
+    Ok(total)
 }
 
 pub fn get(conn: &Connection, id: &str) -> Result<Memory, String> {

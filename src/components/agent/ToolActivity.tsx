@@ -10,22 +10,23 @@ import EmailDraftCard from "./EmailDraftCard";
 
 function argsOf(blk: BlockNode): Record<string, unknown> {
   try {
-    return JSON.parse(blk.children.map((c) => c.value).join("")) as Record<
-      string,
-      unknown
-    >;
+    const v: unknown = JSON.parse(blk.children.map((c) => c.value).join(""));
+    if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+      return v as Record<string, unknown>;
+    }
+    return {};
   } catch {
     return {};
   }
 }
 
-function strArg(args: Record<string, unknown>, key: string): string {
-  const v = args[key];
+function strArg(args: Record<string, unknown> | null, key: string): string {
+  const v = args?.[key];
   return typeof v === "string" ? v : "";
 }
 
-function numArg(args: Record<string, unknown>, key: string): string {
-  const v = args[key];
+function numArg(args: Record<string, unknown> | null, key: string): string {
+  const v = args?.[key];
   return typeof v === "number" ? String(v) : "";
 }
 

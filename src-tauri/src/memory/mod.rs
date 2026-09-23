@@ -70,6 +70,12 @@ pub fn memory_unlink(gw: State<'_, Gateway>, from_id: String, to_id: String) -> 
 }
 
 #[tauri::command]
+pub fn memory_autolink(gw: State<'_, Gateway>) -> Result<usize, String> {
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+    store::autolink_all(&conn)
+}
+
+#[tauri::command]
 pub fn memory_recall(
     gw: State<'_, Gateway>,
     query: String,

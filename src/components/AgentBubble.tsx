@@ -449,6 +449,25 @@ function renderBlk(blk: BlockNode, key: string): React.ReactNode {
       return <DiffBlock key={key} block={blk} />;
     case "document":
       return <DocumentCard key={key} block={blk} />;
+    case "codeblock": {
+      const code = blk.children.map((c) => c.value).join("");
+      const lang = blk.attrs.language ?? "";
+      return (
+        <div
+          key={key}
+          className="mt-2 overflow-hidden rounded-lg border border-border-primary first:mt-0"
+        >
+          {lang !== "" && (
+            <div className="border-b border-border-primary px-3 py-1 font-mono text-[10px] text-text-secondary">
+              {lang}
+            </div>
+          )}
+          <pre className="overflow-x-auto px-3 py-2 font-mono text-xs leading-5 text-text-primary">
+            {code}
+          </pre>
+        </div>
+      );
+    }
     case "email-draft":
       return (
         <EmailDraftCard

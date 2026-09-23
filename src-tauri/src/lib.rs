@@ -164,6 +164,7 @@ pub fn run() {
             memory::memory_search,
             memory::memory_link,
             memory::memory_unlink,
+            memory::memory_autolink,
             memory::memory_recall,
             memory::memory_graph,
             learning::learning_list,

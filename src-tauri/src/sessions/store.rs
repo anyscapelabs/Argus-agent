@@ -38,6 +38,23 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
         .map_err(|err| err.to_string())?;
     }
 
+    let has_reflect: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'reflect'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|n| n > 0)
+        .map_err(|err| err.to_string())?;
+
+    if !has_reflect {
+        conn.execute(
+            "ALTER TABLE sessions ADD COLUMN reflect INTEGER NOT NULL DEFAULT 0",
+            [],
+        )
+        .map_err(|err| err.to_string())?;
+    }
+
     let has_calls: bool = conn
         .query_row(
             "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'tool_calls'",
@@ -186,6 +203,16 @@ pub fn set_permission(conn: &Connection, id: &str, permission: &str) -> Result<(
     conn.execute(
         "UPDATE sessions SET permission=?2, updated_at=datetime('now') WHERE id=?1",
         params![id, permission],
+    )
+    .map_err(|err| err.to_string())?;
+
+    Ok(())
+}
+
+pub fn set_reflect(conn: &Connection, id: &str, on: bool) -> Result<(), String> {
+    conn.execute(
+        "UPDATE sessions SET reflect=?2, updated_at=datetime('now') WHERE id=?1",
+        params![id, on as i64],
     )
     .map_err(|err| err.to_string())?;
 

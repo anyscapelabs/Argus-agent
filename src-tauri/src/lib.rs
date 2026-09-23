@@ -112,6 +112,7 @@ pub fn run() {
             sessions::sess_list_sessions,
             sessions::sess_save_session,
             sessions::sess_set_permission,
+            sessions::sess_set_reflect,
             sessions::sess_set_model,
             sessions::sess_set_web_search,
             sessions::sess_delete_session,

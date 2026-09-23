@@ -41,6 +41,16 @@ pub fn sess_set_permission(
 }
 
 #[tauri::command]
+pub fn sess_set_reflect(
+    gw: State<'_, Gateway>,
+    session_id: String,
+    on: bool,
+) -> Result<(), String> {
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+    store::set_reflect(&conn, &session_id, on)
+}
+
+#[tauri::command]
 pub fn sess_set_model(
     gw: State<'_, Gateway>,
     session_id: String,

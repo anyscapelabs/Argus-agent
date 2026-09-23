@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -21,6 +21,7 @@ const TERM_TIMEOUT: u64 = 300;
 const DENIED_CODE: i64 = -2;
 const MAX_CLAIM_NUDGES: usize = 2;
 const MAX_TRUNC_CONTS: usize = 2;
+const MAX_REFLECT_NUDGES: usize = 1;
 
 const TITLE_SYS: &str =
     "You are the title generator for Argus, a personal AI agent the user chats with. \
@@ -58,6 +59,87 @@ pub fn claims_action(text: &str) -> bool {
 
 pub fn fakes_output(text: &str) -> bool {
     text.contains("<browser-action") || text.contains("<terminal")
+}
+
+pub fn should_reflect(reflect_on: bool, acts_run: usize, reflect_nudges: usize) -> bool {
+    reflect_on && acts_run > 0 && reflect_nudges < MAX_REFLECT_NUDGES
+}
+
+pub fn parse_reflection_verdict(text: &str) -> Option<String> {
+    let t = text.trim();
+    let upper = t.to_ascii_uppercase();
+
+    if upper == "PASS"
+        || upper.starts_with("PASS ")
+        || upper.starts_with("PASS\n")
+        || upper.starts_with("PASS.")
+        || upper.starts_with("PASS:")
+    {
+        return None;
+    }
+
+    Some(t.chars().take(2000).collect())
+}
+
+pub fn check_block(pass: bool) -> String {
+    if pass {
+        "<check status=\"pass\"/>".into()
+    } else {
+        "<check status=\"retry\"/>".into()
+    }
+}
+
+async fn run_reflection_check(
+    gw: &Gateway,
+    session_id: &str,
+    answer: &str,
+) -> Result<Option<String>, String> {
+    let (goal, model) = {
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+        let goal: Option<String> = conn
+            .query_row(
+                "SELECT content FROM messages WHERE session_id = ?1 AND role = 'user' \
+                 AND active = 1 AND content NOT LIKE '<tool-result%' \
+                 ORDER BY seq LIMIT 1",
+                params![session_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|err| err.to_string())?;
+        let Some(goal) = goal else {
+            return Ok(None);
+        };
+        let model = crate::prompt::compressor::utility_model(&conn)?;
+        (goal, model)
+    };
+
+    let instruction = format!(
+        "You are Argus's answer checker. Does the reply below actually satisfy the goal \
+         stated in the first message? Did any tool call actually fail without the reply \
+         acknowledging it? Reply with exactly PASS if yes to the first and no surprises, \
+         otherwise reply with one short corrective instruction.\n\
+         \n\
+         GOAL:\n\
+         {goal}\n\
+         \n\
+         REPLY:\n\
+         {answer}"
+    );
+
+    let request = ChatReq {
+        model,
+        msgs: vec![WireMsg {
+            role: "user".into(),
+            content: instruction,
+            ..Default::default()
+        }],
+        prefix_hash: None,
+        tools: vec![],
+    };
+
+    let response = crate::gateway::router::run_opts(gw, &request, 1).await?;
+
+    Ok(parse_reflection_verdict(&response.content))
 }
 
 async fn generate_title(gw: &Gateway, session_id: &str, content: &str) -> Result<(), String> {
@@ -477,6 +559,7 @@ pub async fn send<R: tauri::Runtime>(
     let mut act_base = 0usize;
     let mut nudge: Option<String> = None;
     let mut claim_nudges = 0usize;
+    let mut reflect_nudges = 0usize;
     let mut trunc_conts = 0usize;
     let mut empty_retries = 0usize;
     let mut finished = false;
@@ -612,6 +695,48 @@ pub async fn send<R: tauri::Runtime>(
                 tauri::async_runtime::spawn(async move {
                     run_skill_reflection(&app2, &sid).await;
                 });
+            }
+
+            let reflect_on: bool = gw
+                .conn
+                .lock()
+                .ok()
+                .and_then(|conn| {
+                    conn.query_row(
+                        "SELECT reflect FROM sessions WHERE id = ?1",
+                        params![session_id],
+                        |r| r.get::<_, i64>(0),
+                    )
+                    .ok()
+                })
+                .map(|v| v != 0)
+                .unwrap_or(false);
+
+            if should_reflect(reflect_on, acts_run, reflect_nudges) {
+                match run_reflection_check(gw, session_id, &text).await {
+                    Ok(None) => {
+                        if let Ok(conn) = gw.conn.lock() {
+                            let _ = conn.execute(
+                                "UPDATE messages SET content = content || ?2 WHERE id = ?1",
+                                params![&asst.id, format!("\n{}", check_block(true))],
+                            );
+                        }
+                    }
+                    Ok(Some(instruction)) => {
+                        reflect_nudges += 1;
+
+                        if let Ok(conn) = gw.conn.lock() {
+                            let _ = conn.execute(
+                                "UPDATE messages SET content = content || ?2 WHERE id = ?1",
+                                params![&asst.id, format!("\n{}", check_block(false))],
+                            );
+                        }
+
+                        nudge = Some(instruction);
+                        continue;
+                    }
+                    Err(_) => {}
+                }
             }
 
             {

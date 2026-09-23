@@ -328,6 +328,31 @@ export default function ChatDetailPage({ sessionId }: Props) {
             const showSummary = !live && workSteps.length > 0;
             const allText = assistants.map((a) => a.content).join("\n\n");
 
+            const proseParts: string[] = [];
+            for (const m of prior) {
+              let blocks;
+              try {
+                blocks = parseCached(m.content);
+              } catch {
+                continue;
+              }
+              for (const b of blocks) {
+                if (b.kind !== "paragraph" && b.kind !== "heading") {
+                  continue;
+                }
+                const t = b.children.map((c) => c.value).join("");
+                if (t.trim().length === 0) {
+                  continue;
+                }
+                proseParts.push(b.kind === "heading" ? `# ${t}` : t);
+              }
+            }
+            const priorProse = proseParts.join("\n\n");
+            const summaryText =
+              priorProse.length > 0
+                ? `${priorProse}\n\n${last?.content ?? ""}`
+                : last?.content;
+
             const startMs =
               parseDbTime(prior[0]?.created_at) ??
               parseDbTime(group.usr?.created_at);
@@ -361,7 +386,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
                       live={false}
                     />
                     <AgentBubble
-                      text={last?.content}
+                      text={summaryText}
                       hideToolActivity
                       attachments={docBlocks}
                       vote={voteOf(last?.id ?? "")}

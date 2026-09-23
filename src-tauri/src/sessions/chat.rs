@@ -33,6 +33,10 @@ const NUDGE: &str = "Continue: your last reply said you were acting, but it cont
 after it: <action tool=\"...\">{\"arg\":\"...\"}</action>. If you \
 cannot act, say so plainly — never describe an action without running it.";
 
+const SUMMARY_DEMAND: &str = "Your last replies kept describing actions that never ran. \
+Do not emit any more tool blocks. Reply now with a plain-text summary of what was \
+actually accomplished in this turn and what is still left to do, then stop.";
+
 const TRUNC_CONT: &str = "Your previous reply was cut off at the model's output limit. \
 Continue with the next step now. If a tool-result already arrived for an action, \
 that work is done — do not repeat it. Only if you were in the middle of an action \
@@ -59,6 +63,10 @@ pub fn claims_action(text: &str) -> bool {
 
 pub fn fakes_output(text: &str) -> bool {
     text.contains("<browser-action") || text.contains("<terminal")
+}
+
+pub fn has_faux_sandbox(text: &str) -> bool {
+    text.contains("<sandbox")
 }
 
 pub fn should_reflect(reflect_on: bool, acts_run: usize, reflect_nudges: usize) -> bool {
@@ -559,6 +567,7 @@ pub async fn send<R: tauri::Runtime>(
     let mut act_base = 0usize;
     let mut nudge: Option<String> = None;
     let mut claim_nudges = 0usize;
+    let mut forced_summary = false;
     let mut reflect_nudges = 0usize;
     let mut trunc_conts = 0usize;
     let mut empty_retries = 0usize;
@@ -668,10 +677,16 @@ pub async fn send<R: tauri::Runtime>(
             }
         } else if done {
             let orphaned = tools::has_orphaned_action_block(&base_text);
-            if claims_action(&text) || fakes_output(&text) || orphaned {
+            if claims_action(&text) || fakes_output(&text) || has_faux_sandbox(&text) || orphaned {
                 if claim_nudges < MAX_CLAIM_NUDGES {
                     claim_nudges += 1;
                     nudge = Some(NUDGE.into());
+                    continue;
+                }
+
+                if !forced_summary {
+                    forced_summary = true;
+                    nudge = Some(SUMMARY_DEMAND.into());
                     continue;
                 }
 
@@ -682,6 +697,15 @@ pub async fn send<R: tauri::Runtime>(
                 });
 
                 if let Ok(conn) = gw.conn.lock() {
+                    let _ = conn.execute(
+                        "UPDATE messages SET content = content || ?2 WHERE id = ?1",
+                        params![
+                            &asst.id,
+                            "\n<warning severity=\"medium\">the reply described actions \
+                             that never ran — nothing after the last tool-result was \
+                             executed; send 'continue' to let it retry</warning>"
+                        ],
+                    );
                     let _ = store::mark_final(&conn, &asst.id);
                 }
 

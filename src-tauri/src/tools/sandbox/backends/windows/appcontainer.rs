@@ -1,12 +1,12 @@
 use std::ffi::c_void;
 
-use windows::core::Free;
-use windows::Win32::Security::{
-    CreateWellKnownSid, PSID, SID_AND_ATTRIBUTES, SECURITY_CAPABILITIES, WELL_KNOWN_SID_TYPE,
-    WinNetworkSid,
-};
+use windows::Win32::Foundation::{LocalFree, HANDLE, HLOCAL};
 use windows::Win32::Security::Isolation::{
     CreateAppContainerProfile, DeriveAppContainerSidFromAppContainerName,
+};
+use windows::Win32::Security::{
+    CreateWellKnownSid, WinNetworkSid, PSID, SECURITY_CAPABILITIES, SID_AND_ATTRIBUTES,
+    WELL_KNOWN_SID_TYPE,
 };
 
 use crate::tools::sandbox::plan::{Capability, SandboxError, SandboxResult};
@@ -17,43 +17,75 @@ const HRESULT_ALREADY_EXISTS: i32 = 0x8007_00B7u32 as i32;
 
 pub const PROFILE_NAME: &str = "com.argus.sandbox";
 
-// Omitting this is the whole network deny. No capability, no route.
-fn net_capability_sid() -> SandboxResult<PSID> {
-    const CAP_SID_SIZE: usize = 68;
-    let mut buf = vec![0u8; CAP_SID_SIZE];
+// Owns the buffer a PSID points into, and remembers who has to free it.
+//
+// The two allocators are not interchangeable: `PSID::free` is FreeSid, which
+// only understands AllocateSid memory. A well-known SID lives in our own
+// buffer, and both AppContainer profile APIs hand back LocalAlloc memory, so
+// calling FreeSid on either is undefined behaviour.
+pub struct SidBuf {
+    sid: PSID,
+    local_alloc: bool,
+    _bytes: Option<Box<[u8]>>,
+}
 
-    let mut len = CAP_SID_SIZE as u32;
+impl SidBuf {
+    pub fn get(&self) -> PSID {
+        self.sid
+    }
+}
 
-    // SAFETY: buf is CAP_SID_SIZE bytes, which is the documented size for this
-    // well-known SID.
+impl Drop for SidBuf {
+    fn drop(&mut self) {
+        if !self.local_alloc || self.sid.is_invalid() {
+            return;
+        }
+
+        // SAFETY: only set for a SID one of the two allocating APIs returned,
+        // and released exactly once.
+        unsafe {
+            let _ = LocalFree(HLOCAL(self.sid.0 as *mut c_void));
+        }
+    }
+}
+
+fn ours(bytes: Box<[u8]>, sid: PSID) -> SidBuf {
+    SidBuf {
+        sid,
+        local_alloc: false,
+        _bytes: Some(bytes),
+    }
+}
+
+fn win32(sid: PSID) -> SidBuf {
+    SidBuf {
+        sid,
+        local_alloc: true,
+        _bytes: None,
+    }
+}
+
+// Omitting this capability is the entire network deny: no SID, no route.
+fn net_capability() -> SandboxResult<SidBuf> {
+    // CreateWellKnownSid's own minimum for WinNetworkSid, rounded up.
+    let mut bytes = vec![0u8; 68];
+    let mut len = bytes.len() as u32;
+
+    // SAFETY: bytes is at least the documented size for this well-known SID.
     unsafe {
         CreateWellKnownSid(
             WELL_KNOWN_SID_TYPE(WinNetworkSid.0),
             None,
-            PSID(buf.as_mut_ptr() as *mut c_void),
+            PSID(bytes.as_mut_ptr() as *mut c_void),
             &mut len,
         )
     }
-    .map_err(|err| SandboxError::Apply {
-        backend: NAME,
-        why: format!("CreateWellKnownSid(internetClient): {err}"),
-    })?;
+    .map_err(|err| fail("CreateWellKnownSid(internetClient)", err))?;
 
-    Ok(PSID(buf.into_boxed_slice().as_mut_ptr() as *mut c_void))
-}
+    // into_boxed_slice does not reallocate, so the pointer stays valid.
+    let sid = PSID(bytes.as_mut_ptr() as *mut c_void);
 
-pub struct Sid(pub PSID);
-
-// Both profile APIs allocate.
-impl Drop for Sid {
-    fn drop(&mut self) {
-        if !self.0.is_invalid() {
-            // SAFETY: the SID came from an allocating API and is freed once.
-            unsafe {
-                let _ = self.0.free();
-            }
-        }
-    }
+    Ok(ours(bytes.into_boxed_slice(), sid))
 }
 
 fn w(s: &str) -> Vec<u16> {
@@ -64,87 +96,89 @@ fn p(s: &[u16]) -> windows::core::PCWSTR {
     windows::core::PCWSTR(s.as_ptr())
 }
 
-pub fn profile_sid() -> SandboxResult<Sid> {
+pub fn profile_sid() -> SandboxResult<SidBuf> {
     let name = w(PROFILE_NAME);
     let display = w("Argus Sandbox");
 
     // SAFETY: all four pointers live until the call returns; the capability
     // slice is empty so the pointer is ignored.
-    let created = unsafe {
-        CreateAppContainerProfile(
-            p(&name),
-            p(&display),
-            windows::core::PCWSTR::null(),
-            None,
-        )
-    };
+    let created = unsafe { CreateAppContainerProfile(p(&name), p(&display), p(&[]), None) };
 
     if let Ok(sid) = created {
-        return Ok(Sid(sid));
+        return Ok(win32(sid));
     }
 
-    // Any other failure is real: a profile that cannot be created means no
-    // lowbox token, so there is no boundary to enforce.
+    // Any other failure is real: no profile means no lowbox token, so there is
+    // no boundary to enforce.
     let code = match created {
         Err(err) => err.code().0,
-        Ok(_) => unreachable!(),
+        Ok(_) => return Err(fail("CreateAppContainerProfile", "reported an error twice")),
     };
 
     if code != HRESULT_ALREADY_EXISTS {
-        return Err(SandboxError::Apply {
-            backend: NAME,
-            why: format!("CreateAppContainerProfile: {code:#x}"),
-        });
+        return Err(fail("CreateAppContainerProfile", format_args!("{code:#x}")));
     }
 
-    // SAFETY: name outlives the call.
-    let derived = unsafe { DeriveAppContainerSidFromAppContainerName(p(&name)) }.map_err(|err| {
-        SandboxError::Apply {
-            backend: NAME,
-            why: format!("DeriveAppContainerSidFromAppContainerName: {err}"),
-        }
-    })?;
+    // SAFETY: name outlives the call. The derived SID comes back in LocalAlloc
+    // memory, which LocalFree releases.
+    let derived = unsafe { DeriveAppContainerSidFromAppContainerName(p(&name)) }
+        .map_err(|err| fail("DeriveAppContainerSidFromAppContainerName", err))?;
 
-    Ok(Sid(derived))
+    Ok(win32(derived))
+}
+
+fn fail(call: &str, why: impl std::fmt::Display) -> SandboxError {
+    SandboxError::Apply {
+        backend: NAME,
+        why: format!("{call}: {why}"),
+    }
 }
 
 pub struct Capabilities {
-    sid: Sid,
-    net_sid: Option<PSID>,
-    _list: Vec<SID_AND_ATTRIBUTES>,
+    profile: SidBuf,
+    net: Option<SidBuf>,
+    list: Vec<SID_AND_ATTRIBUTES>,
     sec: SECURITY_CAPABILITIES,
 }
 
 impl Capabilities {
     pub fn new(caps: &[Capability]) -> SandboxResult<Self> {
-        let sid = profile_sid()?;
+        let profile = profile_sid()?;
 
-        let net_sid = match caps.contains(&Capability::InternetClient) {
-            true => Some(net_capability_sid()?),
+        let net = match caps.contains(&Capability::InternetClient) {
+            true => Some(net_capability()?),
             false => None,
         };
 
-        let mut list: Vec<SID_AND_ATTRIBUTES> = net_sid
+        let mut list: Vec<SID_AND_ATTRIBUTES> = net
             .iter()
-            .map(|s| SID_AND_ATTRIBUTES {
-                Sid: PSID(s.0),
+            .map(|n| SID_AND_ATTRIBUTES {
+                Sid: n.get(),
                 Attributes: 0,
             })
             .collect();
 
         let sec = SECURITY_CAPABILITIES {
-            AppContainerSid: sid.0,
+            AppContainerSid: profile.get(),
             Capabilities: list.as_mut_ptr(),
             CapabilityCount: list.len() as u32,
             Reserved: 0,
         };
 
         Ok(Self {
-            sid,
-            net_sid,
-            _list: list,
+            profile,
+            net,
+            list,
             sec,
         })
+    }
+
+    pub fn sid(&self) -> PSID {
+        self.profile.get()
+    }
+
+    pub fn net(&self) -> bool {
+        self.net.is_some()
     }
 
     pub fn as_ptr(&self) -> *const SECURITY_CAPABILITIES {
@@ -154,47 +188,45 @@ impl Capabilities {
     pub fn size(&self) -> usize {
         std::mem::size_of::<SECURITY_CAPABILITIES>()
     }
-
-    pub fn net(&self) -> bool {
-        self.net_sid.is_some()
-    }
 }
 
 pub struct AttrList {
+    // Kept alive because the kernel reads the handle array at CreateProcessW
+    // time, not when the attribute is set.
+    handles: Vec<HANDLE>,
     buf: Vec<u8>,
     ptr: windows::Win32::System::Threading::LPPROC_THREAD_ATTRIBUTE_LIST,
 }
 
 impl AttrList {
-    pub fn new(caps: &Capabilities) -> SandboxResult<Self> {
+    pub fn new(caps: &Capabilities, handles: &[HANDLE]) -> SandboxResult<Self> {
         use windows::Win32::System::Threading::{
-            InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
-            PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, UpdateProcThreadAttribute,
+            InitializeProcThreadAttributeList, UpdateProcThreadAttribute,
+            LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+            PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
         };
 
+        let count = 2;
         let mut size = 0usize;
 
         // Pass 1 asks how much room the list needs. A null pointer with a zero
-        // count is the documented way to do this.
+        // count is the documented way to ask.
         // SAFETY: the null pointer is never dereferenced on this call.
         unsafe {
             InitializeProcThreadAttributeList(
                 LPPROC_THREAD_ATTRIBUTE_LIST(std::ptr::null_mut()),
-                1,
+                count,
                 0,
                 &mut size,
             )
         }
-        .map_err(|err| SandboxError::Apply {
-            backend: NAME,
-            why: format!("InitializeProcThreadAttributeList(size): {err}"),
-        })?;
+        .map_err(|err| fail("InitializeProcThreadAttributeList(size)", err))?;
 
         if size == 0 {
-            return Err(SandboxError::Apply {
-                backend: NAME,
-                why: "the kernel reported a zero-sized attribute list".into(),
-            });
+            return Err(fail(
+                "InitializeProcThreadAttributeList",
+                "the kernel reported a zero-sized list",
+            ));
         }
 
         // The list is opaque and may need pointer alignment, so over-align the
@@ -209,12 +241,8 @@ impl AttrList {
 
         // SAFETY: ptr points at least `size` writable bytes.
         unsafe {
-            InitializeProcThreadAttributeList(ptr, 1, 0, &mut size).map_err(|err| {
-                SandboxError::Apply {
-                    backend: NAME,
-                    why: format!("InitializeProcThreadAttributeList: {err}"),
-                }
-            })?;
+            InitializeProcThreadAttributeList(ptr, count, 0, &mut size)
+                .map_err(|err| fail("InitializeProcThreadAttributeList", err))?;
             UpdateProcThreadAttribute(
                 ptr,
                 0,
@@ -225,12 +253,31 @@ impl AttrList {
                 None,
             )
         }
-        .map_err(|err| SandboxError::Apply {
-            backend: NAME,
-            why: format!("UpdateProcThreadAttribute(SECURITY_CAPABILITIES): {err}"),
-        })?;
+        .map_err(|err| fail("UpdateProcThreadAttribute(SECURITY_CAPABILITIES)", err))?;
 
-        Ok(Self { buf, ptr })
+        // bInheritHandle copies every inheritable handle in the process, not just
+        // the std ones. Argus holds its database and sockets on such handles, so
+        // a child that inherits them writes argus.db directly and the ACL
+        // boundary means nothing. The handle list narrows inheritance to exactly
+        // the three pipes.
+        let handles = handles.to_vec();
+
+        // SAFETY: handles outlives the CreateProcessW call, and the size is
+        // the byte length of that array.
+        unsafe {
+            UpdateProcThreadAttribute(
+                ptr,
+                0,
+                PROC_THREAD_ATTRIBUTE_HANDLE_LIST as usize,
+                Some(handles.as_ptr() as *const c_void),
+                handles.len() * std::mem::size_of::<HANDLE>(),
+                None,
+                None,
+            )
+        }
+        .map_err(|err| fail("UpdateProcThreadAttribute(HANDLE_LIST)", err))?;
+
+        Ok(Self { handles, buf, ptr })
     }
 
     pub fn as_ptr(&self) -> windows::Win32::System::Threading::LPPROC_THREAD_ATTRIBUTE_LIST {
@@ -238,7 +285,7 @@ impl AttrList {
     }
 }
 
-// Dropping this before CreateProcessW is a use-after-free.
+// Dropping this before CreateProcessW returns is a use-after-free.
 impl Drop for AttrList {
     fn drop(&mut self) {
         use windows::Win32::System::Threading::DeleteProcThreadAttributeList;

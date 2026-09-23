@@ -155,7 +155,27 @@ pub async fn run(
         let be = backends::current();
         let plan = be.plan(&policy)?;
 
-        let (b, a) = wrap_argv(&plan, binary, &args, req.command)?;
+        let (b, a) = wrap_argv(&plan, binary.clone(), &args, req.command)?;
+
+        // Windows cannot confine a tokio Command: the AppContainer token only
+        // exists if CreateProcessW is given the security capabilities, and
+        // tokio offers no hook that reaches that call. It refuses rather than
+        // dropping to an unconfined process.
+        #[cfg(target_os = "windows")]
+        {
+            if let plan::Plan::Windows(jp) = &plan {
+                let raw = backends::windows::spawn(
+                    &b,
+                    &a,
+                    &cwd,
+                    jp,
+                    backends::windows::env_keys(&policy),
+                )?;
+
+                return finish(gw, &req, &policy, raw.into(), on_term, backend).await;
+            }
+        }
+
         cmd = shell::command_argv(&b, &a, Some(&cwd));
 
         apply_env(&policy, &mut cmd);
@@ -181,7 +201,7 @@ pub async fn run(
         }
     }
 
-    finish(gw, &req, &policy, child, on_term, backend).await
+    finish(gw, &req, &policy, child.into(), on_term, backend).await
 }
 
 #[allow(unused_variables)]
@@ -207,7 +227,7 @@ async fn finish(
     gw: &Gateway,
     req: &Request<'_>,
     policy: &Policy,
-    child: tokio::process::Child,
+    child: shell::Child,
     on_term: Option<(&Channel<StreamEvent>, u32)>,
     backend: &'static str,
 ) -> SandboxResult<Outcome> {

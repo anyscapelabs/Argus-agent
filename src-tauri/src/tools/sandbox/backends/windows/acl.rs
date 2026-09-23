@@ -1,20 +1,19 @@
 use std::os::windows::ffi::OsStrExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use windows::Win32::Foundation::{HLOCAL, LocalFree};
+use windows::Win32::Foundation::{LocalFree, HLOCAL, WIN32_ERROR};
+use windows::Win32::Security::Authorization::{
+    GetNamedSecurityInfoW, SetEntriesInAclW, SetNamedSecurityInfoW, EXPLICIT_ACCESS_W,
+    GRANT_ACCESS, NO_MULTIPLE_TRUSTEE, SET_ACCESS, SE_FILE_OBJECT, TRUSTEE_IS_SID, TRUSTEE_IS_USER,
+    TRUSTEE_W,
+};
 use windows::Win32::Security::{
     ACL, DACL_SECURITY_INFORMATION, NO_INHERITANCE, PSECURITY_DESCRIPTOR, PSID,
-};
-use windows::Win32::Security::Authorization::{
-    DENY_ACCESS, EXPLICIT_ACCESS_W, GetNamedSecurityInfoW, GRANT_ACCESS, SE_FILE_OBJECT,
-    SetEntriesInAclW, SetNamedSecurityInfoW, TRUSTEE_IS_SID, TRUSTEE_IS_USER, TRUSTEE_W,
 };
 
 use crate::tools::sandbox::plan::{SandboxError, SandboxResult};
 
 use super::NAME;
-
-const FULL: u32 = 0x001F_01FF;
 
 fn w(path: &Path) -> Vec<u16> {
     path.as_os_str()
@@ -23,9 +22,27 @@ fn w(path: &Path) -> Vec<u16> {
         .collect()
 }
 
+fn why(call: &str, path: &Path, err: WIN32_ERROR) -> SandboxError {
+    SandboxError::Apply {
+        backend: NAME,
+        why: format!("{call}({}): {:#x}", path.display(), err.0),
+    }
+}
+
+fn free(sd: PSECURITY_DESCRIPTOR) {
+    if !sd.is_invalid() {
+        // SAFETY: only ever called on a descriptor GetNamedSecurityInfoW
+        // allocated, exactly once. The DACL pointer aliases into it, so it
+        // must not be freed separately.
+        unsafe {
+            let _ = LocalFree(HLOCAL(sd.0 as *mut std::ffi::c_void));
+        }
+    }
+}
+
 // Merge into the existing DACL. Replacing it would drop the user's own
-// permissions on their project directory.
-fn patch(path: &Path, sid: PSID, grant: bool) -> SandboxResult<()> {
+// permissions on their own project directory.
+fn patch(path: &Path, sid: PSID, mask: u32, grant: bool) -> SandboxResult<()> {
     let wide = w(path);
 
     let mut existing: *mut ACL = std::ptr::null_mut();
@@ -46,23 +63,26 @@ fn patch(path: &Path, sid: PSID, grant: bool) -> SandboxResult<()> {
         )
     };
 
-    if err != windows::Win32::Foundation::WIN32_ERROR(0) {
-        return Err(SandboxError::Apply {
-            backend: NAME,
-            why: format!("GetNamedSecurityInfoW({}): {:#x}", path.display(), err.0),
-        });
+    if err != WIN32_ERROR(0) {
+        return Err(why("GetNamedSecurityInfoW", path, err));
     }
 
+    // Revoking with DENY_ACCESS would leave a deny ACE behind, breaking the
+    // next run. SET_ACCESS with a zero mask is what actually deletes the ACEs
+    // this trustee holds.
     let entry = EXPLICIT_ACCESS_W {
-        grfAccessPermissions: FULL,
+        grfAccessPermissions: match grant {
+            true => mask,
+            false => 0,
+        },
         grfAccessMode: match grant {
             true => GRANT_ACCESS,
-            false => DENY_ACCESS,
+            false => SET_ACCESS,
         },
         grfInheritance: NO_INHERITANCE,
         Trustee: TRUSTEE_W {
             pMultipleTrustee: std::ptr::null_mut(),
-            MultipleTrusteeOperation: windows::Win32::Security::Authorization::NO_MULTIPLE_TRUSTEE,
+            MultipleTrusteeOperation: NO_MULTIPLE_TRUSTEE,
             TrusteeForm: TRUSTEE_IS_SID,
             TrusteeType: TRUSTEE_IS_USER,
             ptstrName: windows::core::PWSTR(sid.0 as *mut u16),
@@ -74,16 +94,17 @@ fn patch(path: &Path, sid: PSID, grant: bool) -> SandboxResult<()> {
     // SAFETY: `existing` came from GetNamedSecurityInfoW and the entry's
     // ptstrName points at `sid`, which outlives this call.
     let err = unsafe {
-        SetEntriesInAclW(Some(std::slice::from_ref(&entry)), Some(existing), &mut merged)
+        SetEntriesInAclW(
+            Some(std::slice::from_ref(&entry)),
+            Some(existing),
+            &mut merged,
+        )
     };
 
-    if err != windows::Win32::Foundation::WIN32_ERROR(0) {
-        free_descriptor(descriptor);
+    if err != WIN32_ERROR(0) {
+        free(descriptor);
 
-        return Err(SandboxError::Apply {
-            backend: NAME,
-            why: format!("SetEntriesInAclW({}): {:#x}", path.display(), err.0),
-        });
+        return Err(why("SetEntriesInAclW", path, err));
     }
 
     // SAFETY: `merged` is a valid ACL produced above.
@@ -99,47 +120,33 @@ fn patch(path: &Path, sid: PSID, grant: bool) -> SandboxResult<()> {
         )
     };
 
-    // SAFETY: both were allocated by Win32 with LocalAlloc and are freed once.
+    // SAFETY: both came from Win32 LocalAlloc and are freed once.
     unsafe {
         if !merged.is_null() {
             let _ = LocalFree(HLOCAL(merged as *mut std::ffi::c_void));
         }
 
-        free_descriptor(descriptor);
+        free(descriptor);
     }
 
-    if err != windows::Win32::Foundation::WIN32_ERROR(0) {
-        return Err(SandboxError::Apply {
-            backend: NAME,
-            why: format!("SetNamedSecurityInfoW({}): {:#x}", path.display(), err.0),
-        });
+    if err != WIN32_ERROR(0) {
+        return Err(why("SetNamedSecurityInfoW", path, err));
     }
 
     Ok(())
 }
 
-fn free_descriptor(sd: PSECURITY_DESCRIPTOR) {
-    if !sd.is_invalid() {
-        // SAFETY: only ever called on a descriptor GetNamedSecurityInfoW
-        // allocated, and exactly once. The DACL pointer aliases into it, so it
-        // must not be freed separately.
-        unsafe {
-            let _ = LocalFree(HLOCAL(sd.0 as *mut std::ffi::c_void));
-        }
-    }
+pub fn grant(path: &Path, sid: PSID, mask: u32) -> SandboxResult<()> {
+    patch(path, sid, mask, true)
 }
 
-pub fn grant(path: &Path, sid: PSID) -> SandboxResult<()> {
-    patch(path, sid, true)
-}
-
-// Not dropping this leaves the project readable after Argus exits.
+// Not dropping this leaves the project readable by a stale SID after Argus
+// exits, and a hard kill skips every Drop that would have cleaned up.
 pub fn revoke(path: &Path, sid: PSID) -> SandboxResult<()> {
-    patch(path, sid, false)
+    patch(path, sid, 0, false)
 }
 
-// A hard kill leaves ACEs no destructor would remove.
-pub fn revoke_all(paths: &[std::path::PathBuf], sid: PSID) -> Vec<String> {
+pub fn revoke_all(paths: &[PathBuf], sid: PSID) -> Vec<String> {
     paths
         .iter()
         .filter_map(|p| revoke(p, sid).err().map(|e| e.to_string()))

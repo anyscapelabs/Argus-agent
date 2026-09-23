@@ -1,12 +1,25 @@
 pub mod quote;
+
+#[cfg(target_os = "windows")]
+pub mod acl;
+#[cfg(target_os = "windows")]
+pub mod appcontainer;
+#[cfg(target_os = "windows")]
+pub mod job;
+#[cfg(target_os = "windows")]
+pub mod spawn;
+
+use std::path::PathBuf;
+
+use super::Probe;
 use crate::tools::sandbox::plan::{Capability, JobPlan, Plan, SandboxError, SandboxResult};
-use crate::tools::sandbox::policy::{FsPolicy, NetPolicy, Policy, Profile};
+use crate::tools::sandbox::policy::{FsAccess, FsPolicy, NetPolicy, Policy, Profile};
 
 pub const NAME: &str = "windows";
 
-// Job Objects carry limits and containment but cannot scope the filesystem.
-// Until the AppContainer spawn path is wired in, a filesystem policy is a
-// hard stop, not a downgrade.
+// FILE_GENERIC_READ / FILE_GENERIC_WRITE.
+pub const READ_MASK: u32 = 0x0012_0089;
+pub const WRITE_MASK: u32 = 0x0012_0116;
 
 pub fn job_plan(policy: &Policy) -> SandboxResult<Plan> {
     if policy.profile == Profile::Host {
@@ -35,18 +48,41 @@ pub fn job_plan(policy: &Policy) -> SandboxResult<Plan> {
     }))
 }
 
-pub fn require_container(plan: &JobPlan) -> SandboxResult<()> {
-    if plan.fs_grants.is_empty() {
-        return Ok(());
+/// Windows has no per-path deny, only per-path grant, so a write scope needs
+/// the write bit and a read scope does not.
+pub fn grant_mask(access: FsAccess) -> u32 {
+    match access {
+        FsAccess::Read => READ_MASK,
+        FsAccess::Write => READ_MASK | WRITE_MASK,
+    }
+}
+
+pub fn grant_list(plan: &JobPlan) -> Vec<(PathBuf, u32)> {
+    let mut out: Vec<(PathBuf, u32)> = Vec::new();
+
+    for rule in &plan.fs_grants {
+        let mask = grant_mask(rule.access);
+
+        match out.iter_mut().find(|(p, _)| *p == rule.path) {
+            // Two rules on one path must merge, or the second grant replaces
+            // the first and a write scope ends up read-only.
+            Some((_, m)) => *m |= mask,
+            None => out.push((rule.path.clone(), mask)),
+        }
     }
 
-    Err(SandboxError::Unsupported {
-        backend: NAME,
-        what: format!(
-            "a filesystem scope of {} path(s) — AppContainer needs a raw CreateProcessW spawn path",
-            plan.fs_grants.len()
-        ),
-    })
+    out
+}
+
+#[cfg(target_os = "windows")]
+use crate::tools::sandbox::policy::EnvPolicy;
+
+#[cfg(target_os = "windows")]
+pub fn env_keys(policy: &Policy) -> Option<&[String]> {
+    match &policy.env {
+        EnvPolicy::Inherit => None,
+        EnvPolicy::Only(keys) => Some(keys),
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -68,7 +104,32 @@ impl Backend for WinBackend {
         Ok(())
     }
 
+    fn selftest(&self) -> SandboxResult<Probe> {
+        use std::sync::OnceLock;
+
+        static CACHE: OnceLock<Result<Probe, String>> = OnceLock::new();
+
+        let cached = CACHE.get_or_init(|| match probe() {
+            Ok(p) => Ok(p),
+            Err(err) => Err(err.to_string()),
+        });
+
+        match cached {
+            Ok(p) => Ok(p.clone()),
+            Err(why) => Err(SandboxError::Unavailable {
+                backend: NAME,
+                why: why.clone(),
+            }),
+        }
+    }
+
     fn plan(&self, policy: &Policy) -> SandboxResult<Plan> {
+        self.available()?;
+
+        // An AppContainer profile that exists on disk is not a boundary that
+        // enforces. Refuse rather than pretend.
+        self.selftest()?;
+
         job_plan(policy)
     }
 
@@ -80,96 +141,142 @@ impl Backend for WinBackend {
             });
         };
 
-        let limits = jp.clone();
-        let job = create_job(&limits)?;
-
-        Ok(Guard::post(move |pid| assign_to_job(job, pid)))
+        // Containment is applied by the raw spawn path, not post-spawn: the
+        // token is minted at CreateProcessW, and there is no later hook that
+        // can add it. Reaching here means something asked for a Command we
+        // cannot confine.
+        Err(SandboxError::Apply {
+            backend: NAME,
+            why: format!(
+                "AppContainer spawns through CreateProcessW, not a Command ({} grant(s) pending)",
+                jp.fs_grants.len()
+            ),
+        })
     }
 }
 
 #[cfg(target_os = "windows")]
-mod ffi {
-    use windows::Win32::Foundation::{CloseHandle, HANDLE};
+pub fn spawn(
+    exe: &std::path::Path,
+    args: &[String],
+    cwd: &str,
+    jp: &JobPlan,
+    env: Option<&[String]>,
+) -> SandboxResult<spawn::RawChild> {
+    let job = job::create(jp)?;
+    let caps = appcontainer::Capabilities::new(&jp.capabilities)?;
+    let grants = grant_list(jp);
 
-    pub struct Job(pub HANDLE);
+    spawn::spawn_appcontainer(exe, args, cwd, &caps, job, &grants, env)
+}
 
-    impl Drop for Job {
-        fn drop(&mut self) {
-            unsafe {
-                let _ = CloseHandle(self.0);
-            }
-        }
+// Reads a path that exists on every Windows install, so a refusal is a
+// boundary decision and never a missing file.
+pub const CANARY_TARGET: &str = r"C:\Windows\System32\drivers\etc\hosts";
+pub const CANARY_SHELL: &str = r"C:\Windows\System32\cmd.exe";
+
+pub fn canary_verdict(control_ok: bool, with_grant: bool, sandboxed: bool) -> SandboxResult<Probe> {
+    if !control_ok {
+        return Err(SandboxError::Unavailable {
+            backend: NAME,
+            why: "the control run failed, so enforcement cannot be told from a broken system"
+                .into(),
+        });
     }
+
+    // Too tight to start at all: our bug, not the OS ignoring us.
+    if with_grant && !sandboxed {
+        return Err(SandboxError::Unavailable {
+            backend: NAME,
+            why: "AppContainer could not read a path it was explicitly granted".into(),
+        });
+    }
+
+    if !with_grant && sandboxed {
+        return Err(SandboxError::Unavailable {
+            backend: NAME,
+            why: format!("AppContainer read {CANARY_TARGET} with no ACE granting it"),
+        });
+    }
+
+    Ok(Probe {
+        backend: NAME,
+        enforcing: true,
+        detail: format!("AppContainer enforced a path denial on {CANARY_TARGET}"),
+    })
 }
 
 #[cfg(target_os = "windows")]
-fn create_job(plan: &JobPlan) -> SandboxResult<ffi::Job> {
-    use std::mem::size_of;
-
-    use windows::Win32::System::JobObjects::{
-        CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
-        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
+// True when the AppContainer process managed to read the canary target.
+fn read_target(grants: &[(PathBuf, u32)]) -> bool {
+    let jp = JobPlan {
+        memory_bytes: None,
+        max_procs: None,
+        cpu_secs: None,
+        app_container: true,
+        capabilities: Vec::new(),
+        fs_grants: Vec::new(),
+        net_coarse: false,
     };
 
-    let job = unsafe { CreateJobObjectW(None, None) }.map_err(|err| SandboxError::Apply {
-        backend: NAME,
-        why: format!("CreateJobObject: {err}"),
-    })?;
+    let Ok(job) = job::create(&jp) else {
+        return false;
+    };
 
-    let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+    let Ok(caps) = appcontainer::Capabilities::new(&[]) else {
+        return false;
+    };
 
-    // KILL_ON_JOB_CLOSE: an Argus crash must not orphan the tree.
-    let mut flags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    let args = vec![
+        "/c".to_string(),
+        "type".to_string(),
+        CANARY_TARGET.to_string(),
+    ];
 
-    if let Some(bytes) = plan.memory_bytes {
-        flags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY;
-        info.ProcessMemoryLimit = bytes as usize;
+    let Ok(child) = spawn::spawn_appcontainer(
+        std::path::Path::new(CANARY_SHELL),
+        &args,
+        r"C:\Windows\System32",
+        &caps,
+        job,
+        grants,
+        None,
+    ) else {
+        return false;
+    };
+
+    let code = child.wait_blocking();
+
+    if code != 0 {
+        return false;
     }
 
-    if let Some(n) = plan.max_procs {
-        flags |= JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
-        info.BasicLimitInformation.ActiveProcessLimit = n;
-    }
+    // Exit code alone cannot tell a read from an empty file, so the bytes have
+    // to be read too.
+    let mut child = child;
+    let mut text = String::new();
+    let Some(mut out) = child.out.take() else {
+        return false;
+    };
 
-    info.BasicLimitInformation.LimitFlags = flags;
+    let read = std::io::Read::read_to_string(&mut out, &mut text);
 
-    unsafe {
-        SetInformationJobObject(
-            job.0,
-            JobObjectExtendedLimitInformation,
-            &info as *const _ as *const core::ffi::c_void,
-            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-        )
-    }
-    .map_err(|err| SandboxError::Apply {
-        backend: NAME,
-        why: format!("SetInformationJobObject: {err}"),
-    })?;
-
-    Ok(ffi::Job(job.0))
+    matches!(read, Ok(n) if n > 0)
 }
 
 #[cfg(target_os = "windows")]
-fn assign_to_job(job: ffi::Job, pid: u32) -> SandboxResult<()> {
-    use windows::Win32::System::JobObjects::AssignProcessToJobObject;
-    use windows::Win32::System::Threading::{OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE};
+// Grant first: a boundary that cannot even read a path it was given is our
+// bug, and it must be reported as such rather than as "not enforcing".
+fn probe() -> SandboxResult<Probe> {
+    let control_ok = std::process::Command::new(CANARY_SHELL)
+        .args(["/c", "type", CANARY_TARGET])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
 
-    let proc = unsafe { OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, false, pid) }.map_err(
-        |err| SandboxError::Apply {
-            backend: NAME,
-            why: format!("OpenProcess({pid}): {err}"),
-        },
-    )?;
+    let granted = vec![(PathBuf::from(CANARY_TARGET), READ_MASK)];
+    let with_grant = read_target(&granted);
+    let without = read_target(&[]);
 
-    let res = unsafe { AssignProcessToJobObject(job.0, proc) };
-
-    unsafe {
-        let _ = windows::Win32::Foundation::CloseHandle(proc);
-    }
-
-    res.map_err(|err| SandboxError::Apply {
-        backend: NAME,
-        why: format!("AssignProcessToJobObject: {err}"),
-    })
+    canary_verdict(control_ok, with_grant, without)
 }

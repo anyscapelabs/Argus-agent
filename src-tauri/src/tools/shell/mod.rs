@@ -234,25 +234,101 @@ fn spawn_shell(
     spawn_argv(&binary, &args, cwd)
 }
 
-enum WaitOut {
-    Done(std::io::Result<std::process::ExitStatus>),
+pub enum WaitOut {
+    Done(i64),
     Cancelled,
 }
 
-async fn wait_hard(child: &mut tokio::process::Child) -> WaitOut {
-    let cancel = async {
-        if let Ok(n) = CANCEL.try_get() {
-            n.notified().await;
-        } else {
-            std::future::pending::<()>().await;
-        }
-    };
-    tokio::pin!(cancel);
+/// A running command. Linux and macOS hand back a tokio child; Windows has to
+/// build its own, because the AppContainer token is minted inside
+/// CreateProcessW and cannot be attached after the fact.
+pub enum Child {
+    Async(tokio::process::Child),
+    #[cfg(target_os = "windows")]
+    Raw(crate::tools::sandbox::backends::windows::spawn::RawChild),
+}
 
-    loop {
-        tokio::select! {
-            res = child.wait() => return WaitOut::Done(res),
-            _ = &mut cancel => return WaitOut::Cancelled,
+impl From<tokio::process::Child> for Child {
+    fn from(child: tokio::process::Child) -> Self {
+        Self::Async(child)
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl From<crate::tools::sandbox::backends::windows::spawn::RawChild> for Child {
+    fn from(child: crate::tools::sandbox::backends::windows::spawn::RawChild) -> Self {
+        Self::Raw(child)
+    }
+}
+
+type Stream = Box<dyn tokio::io::AsyncRead + Unpin + Send>;
+
+impl Child {
+    pub fn id(&self) -> Option<u32> {
+        match self {
+            Self::Async(c) => c.id(),
+            #[cfg(target_os = "windows")]
+            Self::Raw(c) => c.id(),
+        }
+    }
+
+    pub fn take_stdout(&mut self) -> Option<Stream> {
+        match self {
+            Self::Async(c) => c.stdout.take().map(|s| Box::new(s) as Stream),
+            #[cfg(target_os = "windows")]
+            Self::Raw(c) => c.take_stdout().map(|f| Box::new(f) as Stream),
+        }
+    }
+
+    pub fn take_stderr(&mut self) -> Option<Stream> {
+        match self {
+            Self::Async(c) => c.stderr.take().map(|s| Box::new(s) as Stream),
+            #[cfg(target_os = "windows")]
+            Self::Raw(c) => c.take_stderr().map(|f| Box::new(f) as Stream),
+        }
+    }
+
+    // Both variants leave nothing running: the job carries KILL_ON_JOB_CLOSE.
+    pub fn kill_tree(&mut self) {
+        match self {
+            Self::Async(c) => {
+                if let Some(pid) = c.id() {
+                    let _ = kill_process_group(pid);
+                }
+
+                let _ = c.start_kill();
+            }
+            #[cfg(target_os = "windows")]
+            Self::Raw(c) => c.kill_tree(),
+        }
+    }
+
+    pub async fn wait_hard(&mut self) -> WaitOut {
+        let cancel = async {
+            if let Ok(n) = CANCEL.try_get() {
+                n.notified().await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        };
+        tokio::pin!(cancel);
+
+        match self {
+            Self::Async(c) => loop {
+                tokio::select! {
+                    res = c.wait() => {
+                        return WaitOut::Done(res.map(|st| st.code().map_or(-1, |n| n as i64)).unwrap_or(-1));
+                    }
+                    _ = &mut cancel => return WaitOut::Cancelled,
+                }
+            },
+            #[cfg(target_os = "windows")]
+            Self::Raw(c) => {
+                tokio::select! {
+                    code = c.wait() => return WaitOut::Done(code),
+                    _ = &mut cancel => return WaitOut::Cancelled,
+                }
+            }
         }
     }
 }
@@ -270,16 +346,14 @@ pub struct RawRun {
 /// Shared by `terminal` and `sandbox` so there is one execution path: both
 /// stream through `chan`, drain both pipes, and tear the group down.
 pub async fn run_child(
-    mut child: tokio::process::Child,
+    mut child: Child,
     idx: u32,
     chan: Option<&Channel<StreamEvent>>,
     hard: Duration,
     cap: usize,
 ) -> Result<RawRun, String> {
-    let pid = child.id();
-
-    let out = child.stdout.take().ok_or("no stdout")?;
-    let err = child.stderr.take().ok_or("no stderr")?;
+    let out = child.take_stdout().ok_or("no stdout")?;
+    let err = child.take_stderr().ok_or("no stderr")?;
 
     let out_buf: Buf = Arc::new(StdMutex::new(String::new()));
     let err_buf: Buf = Arc::new(StdMutex::new(String::new()));
@@ -307,7 +381,7 @@ pub async fn run_child(
         budget.clone(),
     ));
 
-    let outcome = tokio::time::timeout(hard, wait_hard(&mut child)).await;
+    let outcome = tokio::time::timeout(hard, child.wait_hard()).await;
 
     let finish = |mut all: String, err_txt: String| -> String {
         if !err_txt.trim().is_empty() {
@@ -318,9 +392,7 @@ pub async fn run_child(
     };
 
     match outcome {
-        Ok(WaitOut::Done(Ok(st))) => {
-            let code = st.code().map(|c| c as i64).unwrap_or(-1);
-
+        Ok(WaitOut::Done(code)) => {
             let mut rx = eof_rx.clone();
             let _ = tokio::time::timeout(DRAIN, rx.wait_for(|n| *n >= 2)).await;
 
@@ -337,17 +409,8 @@ pub async fn run_child(
                 truncated: budget.dropped.load(Ordering::Relaxed) > 0,
             })
         }
-        Ok(WaitOut::Done(Err(err))) => {
-            t1.abort();
-            t2.abort();
-            Err(err.to_string())
-        }
         Ok(WaitOut::Cancelled) => {
-            if let Some(p) = pid {
-                let _ = kill_process_group(p);
-            }
-
-            let _ = child.start_kill();
+            child.kill_tree();
             t1.abort();
             t2.abort();
 
@@ -362,11 +425,7 @@ pub async fn run_child(
             })
         }
         Err(_) => {
-            if let Some(p) = pid {
-                let _ = kill_process_group(p);
-            }
-
-            let _ = child.start_kill();
+            child.kill_tree();
 
             let partial = take(&out_buf);
             t1.abort();
@@ -413,7 +472,7 @@ pub async fn run_stream(
 
     let hard = timeout_from(args, cmd);
     let child = spawn_shell(cmd, args["cwd"].as_str(), elevated)?;
-    let run = run_child(child, idx, chan, hard, DEFAULT_OUT_CAP).await?;
+    let run = run_child(child.into(), idx, chan, hard, DEFAULT_OUT_CAP).await?;
 
     if run.cancelled {
         return Err("stopped".into());

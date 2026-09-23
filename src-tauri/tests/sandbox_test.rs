@@ -4,9 +4,9 @@ use std::sync::Mutex;
 
 use argus_lib::gateway::Gateway;
 use argus_lib::tools::sandbox::backends::{linux, macos, windows};
-use argus_lib::tools::sandbox::plan::{Plan, SandboxError, SeccompProfile};
+use argus_lib::tools::sandbox::plan::{JobPlan, Plan, SandboxError, SeccompProfile};
 use argus_lib::tools::sandbox::policy::{
-    self, EnvPolicy, FsAccess, FsPolicy, NetPolicy, PolicyCtx, Profile,
+    self, EnvPolicy, FsAccess, FsPolicy, FsRule, NetPolicy, PolicyCtx, Profile,
 };
 use argus_lib::tools::sandbox::{
     classify, origin_of_tool, parse_profile, record_block, trust_of, Origin, Trust,
@@ -329,21 +329,79 @@ fn windows_job_plan_matches_the_profile() {
 }
 
 #[test]
-fn windows_refuses_what_it_cannot_enforce() {
-    let plan = windows::job_plan(&resolved(Profile::Restricted)).unwrap();
+fn windows_read_and_write_grants_cover_both_bits() {
+    let read = windows::grant_mask(FsAccess::Read);
+    let write = windows::grant_mask(FsAccess::Write);
 
-    let Plan::Windows(jp) = plan else {
-        panic!("expected a job plan");
+    assert_eq!(read, windows::READ_MASK);
+    assert_eq!(write, windows::READ_MASK | windows::WRITE_MASK);
+    assert_ne!(
+        read, write,
+        "a write scope that omits read breaks every build that reads its own sources"
+    );
+}
+
+#[test]
+fn windows_merges_two_rules_on_one_path_into_one_grant() {
+    let path = PathBuf::from("/p");
+
+    let jp = JobPlan {
+        memory_bytes: None,
+        max_procs: None,
+        cpu_secs: None,
+        app_container: true,
+        capabilities: Vec::new(),
+        fs_grants: vec![
+            FsRule {
+                path: path.clone(),
+                access: FsAccess::Read,
+            },
+            FsRule {
+                path: path.clone(),
+                access: FsAccess::Write,
+            },
+        ],
+        net_coarse: false,
     };
 
-    let err = windows::require_container(&jp).unwrap_err();
+    // A second SetEntriesInAclW grant for the same trustee replaces the first,
+    // so two ACL round-trips would leave the path read-only.
+    let grants = windows::grant_list(&jp);
 
-    assert!(matches!(err, SandboxError::Unsupported { .. }));
-    assert!(
-        err.to_string()
-            .contains("refusing to run this outside a sandbox"),
-        "{err}"
-    );
+    assert_eq!(grants.len(), 1, "{grants:?}");
+    assert_eq!(grants[0].0, path);
+    assert_eq!(grants[0].1, windows::READ_MASK | windows::WRITE_MASK);
+}
+
+#[test]
+fn windows_canary_rejects_a_boundary_that_ignores_us() {
+    // The tightening changed nothing: AppContainer is not enforcing.
+    let err = windows::canary_verdict(true, false, true).unwrap_err();
+
+    assert!(matches!(err, SandboxError::Unavailable { .. }));
+    assert!(err.to_string().contains("no ACE granting it"), "{err}");
+}
+
+#[test]
+fn windows_canary_reports_its_own_bugs_as_such() {
+    // Too tight to read what it was given: our bug, not the OS.
+    let err = windows::canary_verdict(true, true, false).unwrap_err();
+    assert!(err.to_string().contains("explicitly granted"), "{err}");
+
+    // A broken control run makes the whole verdict meaningless.
+    let err = windows::canary_verdict(false, true, false).unwrap_err();
+    assert!(err.to_string().contains("control run failed"), "{err}");
+
+    let err = windows::canary_verdict(false, false, true).unwrap_err();
+    assert!(err.to_string().contains("control run failed"), "{err}");
+}
+
+#[test]
+fn windows_canary_accepts_only_a_path_denial_under_a_working_grant() {
+    let probe = windows::canary_verdict(true, false, false).unwrap();
+    assert!(probe.enforcing);
+    assert_eq!(probe.backend, "windows");
+    assert!(probe.detail.contains(windows::CANARY_TARGET), "{probe:?}");
 }
 
 #[test]

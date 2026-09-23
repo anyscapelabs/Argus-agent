@@ -27,7 +27,7 @@ rusqlite = { version = "0.36", features = ["bundled"] }
 base64 = "0.22"
 reqwest = { version = "0.12", features = ["json", "stream", "gzip", "brotli"] }
 futures-util = "0.3"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "process", "net", "io-util", "io-std"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "process", "net", "io-util", "io-std", "fs"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 uuid = { version = "1", features = ["v4"] }
 url = "2"
@@ -47,7 +47,10 @@ seccompiler = "0.5"
 windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_IO",
     "Win32_System_JobObjects",
+    "Win32_System_Pipes",
     "Win32_System_Threading",
 ] }
 

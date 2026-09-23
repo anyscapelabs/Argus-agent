@@ -73,6 +73,15 @@ fn builds_zip_office_formats() {
 }
 
 #[test]
+fn docx_preview_extracts_title_and_body_as_markdown() {
+    let docx = doc::build("docx", "Title", &args("line one\nline two")).unwrap();
+    let md = doc::preview_docx(&docx.bytes).expect("preview");
+    assert!(md.contains("# Title"));
+    assert!(md.contains("line one"));
+    assert!(md.contains("line two"));
+}
+
+#[test]
 fn library_create_bytes_roundtrip() {
     let dir = std::env::temp_dir().join(format!("argus-lib-doc-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

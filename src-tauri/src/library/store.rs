@@ -291,6 +291,9 @@ pub fn preview(
                 Some(String::from_utf8_lossy(&b).into_owned())
             }
         }),
+        "docx" => fs::read(abs_path(dir, &item.path))
+            .ok()
+            .and_then(|b| super::doc::preview_docx(&b)),
         _ => None,
     };
     let (text, truncated) = match text {

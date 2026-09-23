@@ -67,7 +67,7 @@ pub fn library_preview(
     max_chars: Option<i64>,
 ) -> Result<LibPreview, String> {
     let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-    let max = max_chars.unwrap_or(12000).clamp(1000, 60000) as usize;
+    let max = max_chars.unwrap_or(200000).clamp(1000, 200000) as usize;
     store::preview(&conn, &gw.library_dir, &id, max)
 }
 

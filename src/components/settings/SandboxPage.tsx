@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   sandboxConfig,
+  sandboxRuns,
   sandboxSetConfig,
-  type SandboxConfig,
+  type SandboxProfile,
+  type SandboxRun,
 } from "../../lib/ipc";
 
 const INPUT =
@@ -12,22 +14,51 @@ const INPUT =
   "placeholder:text-text-secondary focus:outline-none " +
   "focus:ring-1 focus:ring-text-secondary";
 
+const PROFILES: { id: SandboxProfile; label: string; blurb: string }[] = [
+  {
+    id: "restricted",
+    label: "Restricted",
+    blurb: "No network. Writes only in its own scratch directory. 120s, 2 GB.",
+  },
+  {
+    id: "project",
+    label: "Project",
+    blurb: "Reads and writes the project. Outbound 80/443 only. 900s, 4 GB.",
+  },
+  {
+    id: "host",
+    label: "Host",
+    blurb:
+      "No isolation — full filesystem, full network. Only pick this for work you trust.",
+  },
+];
+
+function toPorts(text: string): number[] {
+  return text
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter((s) => s !== "")
+    .map((s) => Number(s))
+    .filter((n) => Number.isInteger(n) && n > 0 && n < 65536);
+}
+
 export default function SandboxPage() {
-  const [cfg, setCfg] = useState<SandboxConfig | null>(null);
+  const [profile, setProfile] = useState<SandboxProfile>("restricted");
   const [hosts, setHosts] = useState("");
-  const [images, setImages] = useState("");
-  const [def, setDef] = useState("");
+  const [ports, setPorts] = useState("");
+  const [runs, setRuns] = useState<SandboxRun[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState("");
 
   const refresh = useCallback(async () => {
     try {
-      const next = await sandboxConfig();
-      setCfg(next);
-      setHosts(next.hosts.join("\n"));
-      setImages(next.images.join("\n"));
-      setDef(next.defaultImage);
+      const [cfg, history] = await Promise.all([sandboxConfig(), sandboxRuns(25)]);
+
+      setProfile(cfg.defaultProfile);
+      setHosts(cfg.hosts.join("\n"));
+      setPorts(cfg.netAllow.join(", "));
+      setRuns(history);
       setErr(null);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "sandbox config failed");
@@ -44,13 +75,16 @@ export default function SandboxPage() {
     setNote("");
 
     try {
-      const next = await sandboxSetConfig(
-        hosts.split("\n").map((s) => s.trim()).filter((s) => s !== ""),
-        images.split("\n").map((s) => s.trim()).filter((s) => s !== ""),
-        def.trim(),
-      );
-      setCfg(next);
-      setNote("Saved — code.run uses these images, offline only.");
+      await sandboxSetConfig({
+        hosts: hosts.split("\n").map((s) => s.trim()).filter((s) => s !== ""),
+        defaultProfile: profile,
+        netAllow: toPorts(ports),
+      });
+
+      const next = await sandboxConfig();
+
+      setPorts(next.netAllow.join(", "));
+      setNote("Saved.");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "save failed");
     } finally {
@@ -59,46 +93,62 @@ export default function SandboxPage() {
   };
 
   return (
-    <div className="flex flex-col gap-4 px-2 py-3">
+    <div className="flex flex-col gap-5 px-2 py-3">
       <div>
         <h2 className="text-sm font-medium text-text-primary">Sandbox</h2>
         <p className="text-xs text-text-secondary">
-          Untrusted code runs offline in a container (read-only root, no
-          capabilities, 2 CPU / 2 GB). Nothing runs unless its image is listed
-          here with a digest pin.
+          Isolated commands run under a boundary the OS enforces directly —
+          Landlock, seccomp and rlimits on Linux, sandbox-exec on macOS, Job
+          Objects on Windows. No container, no image. If a profile cannot be
+          enforced the command is refused, never run unconfined.
         </p>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <span className="text-sm text-text-secondary">
+          Default profile{" "}
+          <span className="text-text-secondary/70">(used when a command names none)</span>
+        </span>
+
+        {PROFILES.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => setProfile(p.id)}
+            className={
+              "rounded-lg border px-3 py-2 text-left transition-colors " +
+              (profile === p.id
+                ? "border-accent bg-bg-hover-secondary"
+                : "border-border-primary hover:bg-bg-hover-secondary")
+            }
+          >
+            <div className="text-sm text-text-primary">{p.label}</div>
+            <div className="text-xs text-text-secondary">{p.blurb}</div>
+          </button>
+        ))}
       </div>
 
       <label className="flex flex-col gap-1.5">
         <span className="text-sm text-text-secondary">
-          Images <span className="text-text-secondary/70">(one per line, name:tag@sha256:…)</span>
-        </span>
-        <textarea
-          value={images}
-          rows={4}
-          placeholder={"docker.io/library/python:3.12@sha256:…"}
-          onChange={(e) => setImages(e.target.value)}
-          className={INPUT + " resize-y"}
-        />
-      </label>
-
-      <label className="flex flex-col gap-1.5">
-        <span className="text-sm text-text-secondary">
-          Default image <span className="text-text-secondary/70">(must be one of the above)</span>
+          Outbound ports{" "}
+          <span className="text-text-secondary/70">(Project profile only)</span>
         </span>
         <input
           type="text"
-          value={def}
-          placeholder="docker.io/library/python:3.12@sha256:…"
+          value={ports}
+          placeholder="80, 443"
           autoComplete="off"
-          onChange={(e) => setDef(e.target.value)}
+          onChange={(e) => setPorts(e.target.value)}
           className={INPUT}
         />
       </label>
 
       <label className="flex flex-col gap-1.5">
         <span className="text-sm text-text-secondary">
-          Trusted hosts <span className="text-text-secondary/70">(one per line — clones and fetches from these count as trusted)</span>
+          Trusted hosts{" "}
+          <span className="text-text-secondary/70">
+            (one per line — clones and fetches from these count as trusted)
+          </span>
         </span>
         <textarea
           value={hosts}
@@ -112,7 +162,7 @@ export default function SandboxPage() {
       {err && <p className="text-xs text-red-400">{err}</p>}
       {note && <p className="text-xs text-green-500">{note}</p>}
 
-      <div className="flex items-center gap-3">
+      <div>
         <button
           type="button"
           onClick={save}
@@ -125,12 +175,39 @@ export default function SandboxPage() {
         >
           {busy ? "Saving…" : "Save"}
         </button>
-        {cfg && (
-          <span className="text-xs text-text-secondary">
-            {cfg.images.length} image{cfg.images.length === 1 ? "" : "s"} ·{" "}
-            {cfg.hosts.length} host{cfg.hosts.length === 1 ? "" : "s"}
-          </span>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h3 className="text-sm font-medium text-text-primary">Recent runs</h3>
+
+        {runs.length === 0 ? (
+          <p className="text-xs text-text-secondary">Nothing has run yet.</p>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {runs.map((r) => (
+              <div
+                key={r.id}
+                className="flex items-baseline gap-2 rounded-md bg-bg-hover-secondary px-2 py-1"
+              >
+                <span className="font-mono text-xs text-text-secondary">
+                  {r.profile}
+                </span>
+                <span className="truncate font-mono text-xs text-text-primary">
+                  {r.command}
+                </span>
+                <span className="ml-auto shrink-0 text-xs text-text-secondary">
+                  exit {r.exit} · {r.termination} ·{" "}
+                  {(r.durationMs / 1000).toFixed(1)}s
+                  {r.truncated ? " · truncated" : ""}
+                </span>
+              </div>
+            ))}
+          </div>
         )}
+
+        <p className="text-xs text-text-secondary/70">
+          Command metadata and byte counts only — output is never written here.
+        </p>
       </div>
     </div>
   );

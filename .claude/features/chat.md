@@ -23,6 +23,7 @@ Code: `src-tauri/src/sessions/{chat.rs,mod.rs,store.rs,schema.rs,browser_import.
 - Tool blocks inside the final message itself are folded into the work steps and hidden inline (`AgentBubble hideToolActivity`), so commands never render outside the panel.
 - `document` record blocks collected across the turn render as full `DocumentCard`s after the final bubble — creation stays a compact step row, presentation is the card.
 - Native (non-XML) tool calls emit a synthetic `<action>` delta when execution starts, so live activity + approval matching work for them too (persisted records still come from the normal append path; the synthetic text is live-only).
+- Native calls without their own record block (anything but terminal/browser/doc.create) get a persisted `<action tool=args>` append, so work steps, approvals and history show them exactly like XML-origin calls.
 - `Turn{text,term:Record<idx,chunk>,termCode,approval,err}` mutated incrementally; `step` clears turn + reloads; `done` clears + reloads; `err` preserves retryable turn. Background turns fire `notifyDone` only when not watching (`App.tsx:45-70`).
 - Rendering: `AgentBubble` parses `lib/agentXml.ts` tags; `ApprovalBlock` Run/Deny; `SessionList` + `listen("sessions-changed")` in `App.tsx:75`.
 - Email drafts: `gmail.send`/`outlook.send` pending approvals render as interactive `EmailDraftCard` (editable To/Subject/Body) inside `ToolActivity` via `actionStep` email branch; Send → `resolveApproval(id, true, editedArgs)`, Discard → deny. History `<email-draft>` blocks render read-only.

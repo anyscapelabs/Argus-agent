@@ -17,6 +17,7 @@ import type { Session } from "./components/SessionList";
 import { sessExportJson, type ChatModel } from "./lib/ipc";
 import { notifyDone } from "./lib/notify";
 import { sessionStore, useSessions } from "./stores/sessions";
+import { useDocViewer } from "./stores/docViewer";
 import { toast } from "./stores/toast";
 
 export type View =
@@ -31,6 +32,7 @@ export type View =
 
 function App() {
   const { sessions, activeId, turns } = useSessions();
+  const { id: viewerId } = useDocViewer();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [view, setView] = useState<View>("new-agent");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -184,34 +186,37 @@ function App() {
             chatTitle={chatTitle}
             onSettings={() => setSettingsOpen(true)}
           />
-          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-            {view === "new-agent" && (
-              <NewAgentPage
-                onSend={startNew}
-                initialPrompt={pendingPrompt}
-                onPromptUsed={() => setPendingPrompt("")}
-              />
-            )}
-            {view === "chat" &&
-              (activeId !== null ? (
-                <ChatDetailPage sessionId={activeId} />
-              ) : (
+          <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+              {view === "new-agent" && (
                 <NewAgentPage
                   onSend={startNew}
                   initialPrompt={pendingPrompt}
                   onPromptUsed={() => setPendingPrompt("")}
                 />
-              ))}
-            {view === "memory" && <MemoryPage />}
-            {view === "skills" && <SkillsPage />}
-            {view === "library" && <LibraryPage />}
-            {view === "projects" && <ProjectsPage />}
-            {view === "connectors" && <ConnectorsPage />}
+              )}
+              {view === "chat" &&
+                (activeId !== null ? (
+                  <ChatDetailPage sessionId={activeId} />
+                ) : (
+                  <NewAgentPage
+                    onSend={startNew}
+                    initialPrompt={pendingPrompt}
+                    onPromptUsed={() => setPendingPrompt("")}
+                  />
+                ))}
+              {view === "memory" && <MemoryPage />}
+              {view === "skills" && <SkillsPage />}
+              {view === "library" && <LibraryPage />}
+              {view === "projects" && <ProjectsPage />}
+              {view === "connectors" && <ConnectorsPage />}
+            </div>
+            {viewerId !== null &&
+              (view === "chat" || view === "library") && <DocViewer />}
           </div>
         </div>
       </div>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      <DocViewer />
       <Toasts />
     </div>
   );

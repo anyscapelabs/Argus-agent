@@ -660,8 +660,8 @@ export type LibDownload = {
   dest: string;
 };
 
-export function libraryPreview(id: string): Promise<LibPreview> {
-  return invoke<LibPreview>("library_preview", { id });
+export function libraryPreview(id: string, maxChars?: number): Promise<LibPreview> {
+  return invoke<LibPreview>("library_preview", { id, maxChars });
 }
 
 export function libraryDownload(id: string): Promise<LibDownload> {

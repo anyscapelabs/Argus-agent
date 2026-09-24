@@ -204,7 +204,7 @@ export default function Dropdown({
                 onPointerDown={onThumbDown}
                 onPointerMove={onThumbMove}
                 onPointerUp={onThumbUp}
-                className="absolute right-[3px] top-2 h-6 w-[5px] cursor-default rounded-full bg-[#3f3f3f]"
+                className="absolute right-[3px] top-2 h-6 w-[5px] cursor-default rounded-full bg-scrollbar-thumb"
               />
             )}
           </div>

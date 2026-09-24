@@ -487,7 +487,7 @@ async fn eval_terminal_task() {
                     ),
                     calls: vec![],
                 },
-                _ => turn("Done. The file is written."),
+                _ => turn("Done. The file is written.\n<final/>"),
             }
         },
     );
@@ -530,7 +530,7 @@ async fn eval_multi_tool_task() {
                     text: "Looking it up.\n<action tool=\"memory.search\">{\"query\":\"BLUEBIRD\"}</action>".into(),
                     calls: vec![],
                 },
-                _ => turn("Found it: BLUEBIRD-42."),
+                _ => turn("Found it: BLUEBIRD-42.\n<final/>"),
             }
         },
     );
@@ -630,7 +630,7 @@ async fn eval_web_task() {
                         )],
                     }
                 }
-                _ => turn("The eval fact is QUOKKA-7."),
+                _ => turn("The eval fact is QUOKKA-7.\n<final/>"),
             }
         });
 
@@ -771,9 +771,9 @@ async fn eval_browser_task() {
                             format!(r#"{{"ref":{r},"snapshot":{g}}}"#),
                         )],
                     },
-                    None => turn("TASK-FAILED: no ref in snapshot"),
+                    None => turn("TASK-FAILED: no ref in snapshot\n<final/>"),
                 },
-                _ => turn("Reached the second page."),
+                _ => turn("Reached the second page.\n<final/>"),
             }
         });
 

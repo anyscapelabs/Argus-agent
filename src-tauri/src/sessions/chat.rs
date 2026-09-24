@@ -28,14 +28,17 @@ const TITLE_SYS: &str =
 Write a short session title for the user's message. Reply with only the title: \
 3 to 6 words, no quotes, no trailing punctuation.";
 
-const NUDGE: &str = "Continue: your last reply said you were acting, but it contained no \
-<action> block, so nothing actually ran. Emit the block now and end your reply right \
-after it: <action tool=\"...\">{\"arg\":\"...\"}</action>. If you \
-cannot act, say so plainly — never describe an action without running it.";
+const NUDGE: &str = "Your last reply neither ran a tool nor closed the turn. A reply ends \
+one of exactly two ways: with one or more <action> blocks, or with the final answer \
+followed by <final/> on its own last line. If you meant to act, emit the block now and \
+end the reply right after it: <action tool=\"...\">{\"arg\":\"...\"}</action>. If you \
+cannot act, say so plainly and end with <final/> — never describe an action without \
+running it.";
 
-const SUMMARY_DEMAND: &str = "Your last replies kept describing actions that never ran. \
+const SUMMARY_DEMAND: &str = "Your last replies kept ending without closing the turn. \
 Do not emit any more tool blocks. Reply now with a plain-text summary of what was \
-actually accomplished in this turn and what is still left to do, then stop.";
+actually accomplished in this turn and what is still left to do, then close it with \
+<final/> on its own last line.";
 
 const TRUNC_CONT: &str = "Your previous reply was cut off at the model's output limit. \
 Continue with the next step now. If a tool-result already arrived for an action, \
@@ -52,14 +55,6 @@ pub const SKILL_NUDGE: &str =
 save it as a skill now: first skill.search for overlap, then skill.create with a kebab-case name, \
 a one-line description, and a body of When to use, Steps, and Pitfalls sections. \
 If nothing here is worth reusing, say so in one line and finish.";
-
-pub fn claims_action(text: &str) -> bool {
-    let re = regex::Regex::new(
-        r"(?i)\b(i'?m|i am|i'?ll|i will|let me|going to)\s+(open|click|type|run|search|navigat|check|launch|browse|download|fetch|creat|read|retry|try)\w*|\b(trying|running|fetching|downloading|uploading|searching|creating|checking|opening|typing|clicking|launching|reading)\b",
-    );
-
-    re.map(|r| r.is_match(text)).unwrap_or(false)
-}
 
 pub fn fakes_output(text: &str) -> bool {
     text.contains("<browser-action") || text.contains("<terminal")
@@ -618,7 +613,8 @@ pub async fn send<R: tauri::Runtime>(
             return Err("model returned an empty reply — try again".into());
         }
 
-        let base_text = sanitize_tags(&tools::normalize_actions(&stats.text));
+        let normalized = sanitize_tags(&tools::normalize_actions(&stats.text));
+        let (closed, base_text) = tools::split_commit(&normalized);
         let mut pending = tools::build_executions(&base_text, &stats.tool_calls, act_base);
 
         let done = pending.is_empty();
@@ -677,7 +673,8 @@ pub async fn send<R: tauri::Runtime>(
             }
         } else if done {
             let orphaned = tools::has_orphaned_action_block(&base_text);
-            if claims_action(&text) || fakes_output(&text) || has_faux_sandbox(&text) || orphaned {
+
+            if !closed || fakes_output(&text) || has_faux_sandbox(&text) || orphaned {
                 if claim_nudges < MAX_CLAIM_NUDGES {
                     claim_nudges += 1;
                     nudge = Some(NUDGE.into());

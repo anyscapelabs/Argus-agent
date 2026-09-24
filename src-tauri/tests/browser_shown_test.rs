@@ -503,7 +503,7 @@ async fn tokenless_steady_flow_succeeds() {
         Arc::new(|t, _| match t {
             0 => turn(&open_action("https://shown.test/steady")),
             1 => turn(&click_action(0)),
-            _ => turn("done"),
+            _ => turn("done\n<final/>"),
         });
     let h = setup("steady", "mock/shown-steady", respond).await;
     h.send("open the probe and press it").await.expect("send");
@@ -536,11 +536,11 @@ async fn tokenless_drift_rejected_with_bounded_recovery() {
     let respond: Arc<dyn Fn(usize, &serde_json::Value) -> LlmTurn + Send + Sync> =
         Arc::new(|t, _| match t {
             0 => turn(&open_action("https://shown.test/drift")),
-            1 => turn("observing"),
+            1 => turn("observing\n<final/>"),
             2 => turn(&click_action(0)),
-            3 => turn("noting recovery"),
+            3 => turn("noting recovery\n<final/>"),
             4 => turn(&click_action(0)),
-            _ => turn("done"),
+            _ => turn("done\n<final/>"),
         });
     let h = setup("drift", "mock/shown-drift", respond).await;
     h.send("open the probe page").await.expect("first send");
@@ -604,7 +604,7 @@ async fn same_turn_read_then_tokenless_click_is_stale() {
                 r#"<action tool="browser.read">{{}}</action>{}"#,
                 click_action(0)
             )),
-            _ => turn("done"),
+            _ => turn("done\n<final/>"),
         });
     let h = setup("sameturn", "mock/shown-sameturn", respond).await;
     h.send("open the probe page").await.expect("first send");
@@ -634,9 +634,9 @@ async fn tokenless_type_drift_is_stale() {
     let respond: Arc<dyn Fn(usize, &serde_json::Value) -> LlmTurn + Send + Sync> =
         Arc::new(|t, _| match t {
             0 => turn(&open_action("https://shown.test/type")),
-            1 => turn("watching"),
+            1 => turn("watching\n<final/>"),
             2 => turn(r#"<action tool="browser.type">{"ref":1,"text":"hi"}</action>"#),
-            _ => turn("done"),
+            _ => turn("done\n<final/>"),
         });
     let h = setup("typedrift", "mock/shown-typedrift", respond).await;
     h.send("open the probe page").await.expect("first send");
@@ -745,9 +745,9 @@ async fn profile_isolation_for_shown_watermark() {
     let respond: Arc<dyn Fn(usize, &serde_json::Value) -> LlmTurn + Send + Sync> =
         Arc::new(move |t, _| match t {
             0 => turn(&format!("{open_a}{open_b}")),
-            1 => turn("watching both"),
+            1 => turn("watching both\n<final/>"),
             2 => turn(&format!("{click_a}{click_b}")),
-            _ => turn("done"),
+            _ => turn("done\n<final/>"),
         });
     let h = setup("profiles", "mock/shown-profiles", respond).await;
     h.send("open the probe in two windows")

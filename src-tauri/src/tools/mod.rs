@@ -345,6 +345,22 @@ pub fn has_orphaned_action_block(text: &str) -> bool {
     parse_actions(text).is_empty()
 }
 
+pub const FINAL_MARKER: &str = "<final/>";
+
+pub fn split_commit(text: &str) -> (bool, String) {
+    let t = text.trim_end();
+
+    if let Some(head) = t.strip_suffix(FINAL_MARKER) {
+        return (true, head.trim_end().to_string());
+    }
+
+    if let Some(head) = t.strip_suffix("<final />") {
+        return (true, head.trim_end().to_string());
+    }
+
+    (false, text.to_string())
+}
+
 pub fn parse_actions(text: &str) -> Vec<Action> {
     let mut out = vec![];
     let mut rest = text;
@@ -1018,6 +1034,10 @@ Work in steps:\n\
 <tool-result tool=\"...\" status=\"ok|err\">output</tool-result>\n\
 Until it arrives you know nothing about the outcome — never describe a result first.\n\
 4. Then continue: act again, or write the final answer with no action block.\n\
+Every reply ends one of exactly two ways: with one or more <action> blocks, \
+or with the final answer followed by <final/> on its own last line. Nothing \
+else closes a turn — a reply that ends with neither is unfinished and will be \
+sent back to you.\n\
 \n\
 A full round looks like this. You write:\n\
 I will check the file.\n\
@@ -1025,6 +1045,7 @@ I will check the file.\n\
 The next message is:\n\
 <tool-result tool=\"terminal\" status=\"ok\">exit 0\nhello</tool-result>\n\
 So your reply is: The file says hello.\n\
+<final/>\n\
 \n\
 Rules:\n\
 - Batch every independent action into one reply: open once, then click, type, scroll and read in the fewest replies possible, reusing the same tab. Never dribble one action per reply when several are needed.\n\
@@ -1042,7 +1063,10 @@ an action block nested inside another tag.\n\
 action blocks — no findings, no tables, no conclusions mid-task.\n\
 - Only in a turn with NO action blocks, write the complete final answer: every finding, \
 table and conclusion in that one reply. Never put the answer in a turn that also \
-starts more actions.\n\
+starts more actions. Close it with <final/>.\n\
+- Never announce an action you are about to take and then stop. If you mean to \
+act, the <action> block is in the same reply; if you mean to answer, the reply \
+ends with <final/>.\n\
 Available tools:\n",
     );
 

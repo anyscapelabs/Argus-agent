@@ -5,6 +5,7 @@ import ProvidersPage from "./settings/ProvidersPage";
 import SettingsSidebar, { type SettingsTab } from "./settings/SettingsSidebar";
 import SandboxPage from "./settings/SandboxPage";
 import TerminalPage from "./settings/TerminalPage";
+import ThemePage from "./settings/ThemePage";
 
 type SettingsCardProps = {
   title: string;
@@ -152,6 +153,7 @@ export default function SettingsModal({
           {activeTab === "providers" && <ProvidersPage />}
           {activeTab === "terminal" && <TerminalPage />}
           {activeTab === "sandbox" && <SandboxPage />}
+          {activeTab === "theme" && <ThemePage />}
         </div>
       </div>
     </div>

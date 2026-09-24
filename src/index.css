@@ -89,7 +89,7 @@
 }
 
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme]) {
     color-scheme: light;
 
     --bg-primary: #ffffff;
@@ -102,6 +102,27 @@
     --accent: #161616;
     --scrollbar-thumb: #c4c4bf;
   }
+}
+
+/* An explicit choice outranks the OS. Same specificity as the rule above, so
+   source order decides, and the attribute selector only ever matches a
+   deliberate pick. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-primary: #ffffff;
+  --bg-secondary: #f4f4f2;
+  --border-primary: #0000001a;
+  --text-primary: #161616;
+  --text-secondary: #6b6b6b;
+  --bg-hover-primary: #ededea;
+  --bg-hover-secondary: #e4e4e0;
+  --accent: #161616;
+  --scrollbar-thumb: #c4c4bf;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 html,

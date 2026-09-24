@@ -1,7 +1,8 @@
 import { IoSparklesOutline } from "react-icons/io5";
-import { LuServer, LuShield, LuTerminal } from "react-icons/lu";
+import { LuPalette, LuServer, LuShield, LuTerminal } from "react-icons/lu";
 
-export type SettingsTab = "models" | "providers" | "terminal" | "sandbox";
+export type SettingsTab =
+  "models" | "providers" | "terminal" | "sandbox" | "theme";
 
 type SettingsSidebarProps = {
   activeTab: SettingsTab;
@@ -100,6 +101,26 @@ export default function SettingsSidebar({
             }
           />
           <span>Sandbox</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onTabChange("theme")}
+          aria-current={activeTab === "theme" ? "page" : undefined}
+          className={`flex items-center gap-2 rounded-md px-2 py-1 text-sm font-medium transition-colors ${
+            activeTab === "theme"
+              ? "bg-bg-hover-secondary text-text-primary"
+              : "text-text-secondary hover:bg-bg-hover-secondary hover:text-text-primary"
+          }`}
+        >
+          <LuPalette
+            size={16}
+            className={
+              activeTab === "theme"
+                ? "text-text-primary"
+                : "text-text-secondary"
+            }
+          />
+          <span>Appearance</span>
         </button>
       </nav>
     </aside>

@@ -8,6 +8,16 @@
     <link rel="preload" href="/fonts/Inter-Medium.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/Inter-SemiBold.woff2" as="font" type="font/woff2" crossorigin />
     <title>Argus</title>
+    <script>
+      // Runs before first paint. Without this the window shows the dark
+      // palette for a frame, then repaints light once React mounts.
+      try {
+        var t = localStorage.getItem("argus.theme");
+        if (t === "light" || t === "dark") {
+          document.documentElement.setAttribute("data-theme", t);
+        }
+      } catch (e) {}
+    </script>
   </head>
 
   <body>

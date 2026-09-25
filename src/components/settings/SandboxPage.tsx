@@ -129,7 +129,7 @@ export default function SandboxPage() {
       <div className="flex flex-col gap-2">
         <span className="text-sm text-text-secondary">
           Default profile{" "}
-          <span className="text-text-secondary/70">(used when a command names none)</span>
+          <span className="text-text-tertiary">(used when a command names none)</span>
         </span>
 
         {PROFILES.map((p) => (
@@ -153,7 +153,7 @@ export default function SandboxPage() {
       <label className="flex flex-col gap-1.5">
         <span className="text-sm text-text-secondary">
           Outbound ports{" "}
-          <span className="text-text-secondary/70">(Project profile only)</span>
+          <span className="text-text-tertiary">(Project profile only)</span>
         </span>
         <input
           type="text"
@@ -168,7 +168,7 @@ export default function SandboxPage() {
       <label className="flex flex-col gap-1.5">
         <span className="text-sm text-text-secondary">
           Trusted hosts{" "}
-          <span className="text-text-secondary/70">
+          <span className="text-text-tertiary">
             (one per line — clones and fetches from these count as trusted)
           </span>
         </span>
@@ -269,7 +269,7 @@ export default function SandboxPage() {
           </div>
         )}
 
-        <p className="text-xs text-text-secondary/70">
+        <p className="text-xs text-text-tertiary">
           Command metadata and byte counts only — output is never written here.
         </p>
       </div>

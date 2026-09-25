@@ -213,7 +213,7 @@ function ThoughtRow({ step }: { step: ToolStep }) {
           {step.label}
         </span>
         {step.body && (
-          <span className="shrink-0 text-xs text-text-secondary/70">
+          <span className="shrink-0 text-xs text-text-tertiary">
             {show ? "Hide ↑" : "Show →"}
           </span>
         )}
@@ -336,7 +336,7 @@ function TerminalActivity({
         )}
       </div>
       {step.detail && (
-        <span className="truncate font-mono text-xs text-text-secondary/70">
+        <span className="truncate font-mono text-xs text-text-tertiary">
           {step.detail}
         </span>
       )}
@@ -484,7 +484,7 @@ export default function ToolActivity({
                 {step.label}
               </span>
               {step.detail && (
-                <span className="truncate font-mono text-xs text-text-secondary/70">
+                <span className="truncate font-mono text-xs text-text-tertiary">
                   {step.detail}
                 </span>
               )}

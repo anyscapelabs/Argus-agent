@@ -400,7 +400,7 @@ function renderBlk(blk: BlockNode, key: string): React.ReactNode {
         return (
           <ol
             key={key}
-            className="mt-2 ml-4 flex list-decimal flex-col gap-1 marker:text-text-secondary/60 first:mt-0"
+            className="mt-2 ml-4 flex list-decimal flex-col gap-1 marker:text-text-tertiary first:mt-0"
           >
             {items.map((it, idx) => (
               <li
@@ -417,7 +417,7 @@ function renderBlk(blk: BlockNode, key: string): React.ReactNode {
       return (
         <ul
           key={key}
-          className="mt-2 ml-4 flex list-disc flex-col gap-1 marker:text-text-secondary/60 first:mt-0"
+          className="mt-2 ml-4 flex list-disc flex-col gap-1 marker:text-text-tertiary first:mt-0"
         >
           {items.map((it, idx) => (
             <li

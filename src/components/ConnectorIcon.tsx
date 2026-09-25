@@ -34,6 +34,12 @@ const ICONS: Record<string, string> = {
   trello,
 };
 
+const MONO_TINT: Record<string, string> = {
+  chrome: "text-[#4285F4]",
+  github: "text-text-primary",
+  notion: "text-text-primary",
+};
+
 type Props = {
   id: string;
   size?: number;
@@ -56,7 +62,12 @@ export default function ConnectorIcon({ id, size = 20, className }: Props) {
 
   return (
     <span
-      className={"inline-flex shrink-0 items-center justify-center " + (className ?? "")}
+      className={
+        "inline-flex shrink-0 items-center justify-center " +
+        (MONO_TINT[id] ?? "") +
+        " " +
+        (className ?? "")
+      }
       style={{ width: size, height: size }}
       dangerouslySetInnerHTML={{
         __html: svg.replace(

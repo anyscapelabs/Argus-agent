@@ -21,7 +21,7 @@ export default function MemoryRefChip({ block }: Props) {
           {isCommit ? "Commit" : source}
         </span>
         {date && (
-          <span className="text-xs text-text-secondary/60">· {date}</span>
+          <span className="text-xs text-text-tertiary">· {date}</span>
         )}
       </div>
       {body && <div className="text-sm text-text-primary">{body}</div>}

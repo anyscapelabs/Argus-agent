@@ -18,7 +18,7 @@ export default function AlertBanner({ block }: Props) {
       <div className="font-sans text-[16px] font-medium text-text-primary">
         Things to note:
       </div>
-      <ul className="mt-1.5 ml-4 flex list-disc flex-col gap-1 marker:text-text-secondary/60">
+      <ul className="mt-1.5 ml-4 flex list-disc flex-col gap-1 marker:text-text-tertiary">
         {bullets.map((it, i) => (
           <li
             key={i}

@@ -189,14 +189,14 @@ export default function MemoryGraph({ data, mems }: { data: Graph; mems: Memory[
   return (
     <div ref={boxRef} className="relative min-h-0 flex-1 overflow-hidden bg-bg-primary">
       <svg
-        className="h-full w-full text-text-secondary"
+        className="h-full w-full text-text-primary"
         onPointerDown={onPanDown}
         onPointerMove={onPanMove}
         onPointerUp={onPanUp}
       >
         <defs>
           <pattern id="memdots" width="26" height="26" patternUnits="userSpaceOnUse">
-            <circle cx="1.5" cy="1.5" r="1.5" fill="currentColor" opacity="0.14" />
+            <circle cx="1.5" cy="1.5" r="1.5" fill="currentColor" opacity="0.12" />
           </pattern>
         </defs>
         <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
@@ -213,8 +213,8 @@ export default function MemoryGraph({ data, mems }: { data: Graph; mems: Memory[
                 x2={b.x}
                 y2={b.y}
                 stroke="currentColor"
-                strokeOpacity={hot ? 0.7 : 0.25}
-                strokeWidth={hot ? 1.5 : 1}
+                strokeOpacity={hot ? 0.55 : 0.3}
+                strokeWidth={hot ? 1.75 : 1.25}
               />
             );
           })}
@@ -242,7 +242,7 @@ export default function MemoryGraph({ data, mems }: { data: Graph; mems: Memory[
                   textAnchor="middle"
                   fontSize={11}
                   fill="currentColor"
-                  opacity={active ? 1 : 0.75}
+                  opacity={active ? 1 : 0.85}
                 >
                   {n.label.length > 26 ? `${n.label.slice(0, 26)}…` : n.label}
                 </text>
@@ -313,7 +313,7 @@ export default function MemoryGraph({ data, mems }: { data: Graph; mems: Memory[
           Reset
         </button>
       </div>
-      <p className="pointer-events-none absolute bottom-3 left-3 text-[11px] text-text-secondary/70">
+      <p className="pointer-events-none absolute bottom-3 left-3 text-[11px] text-text-tertiary">
         Drag to pan · Scroll to zoom · Drag nodes to arrange
       </p>
     </div>

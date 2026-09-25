@@ -34,7 +34,7 @@ export default function PlanBlock({ steps: stepsProp }: Props) {
         />
       </button>
       {open && (
-        <ul className="mt-1.5 ml-4 flex list-disc flex-col gap-1 marker:text-text-secondary/60">
+        <ul className="mt-1.5 ml-4 flex list-disc flex-col gap-1 marker:text-text-tertiary">
           {hasSteps ? (
             steps.map((s, idx) => {
               const txt = s.children.map((c) => c.value).join("").trim();

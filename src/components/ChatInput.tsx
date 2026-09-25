@@ -149,7 +149,7 @@ export default function ChatInput({
         ];
 
   return (
-    <div className="flex w-[700px] max-w-full flex-col rounded-2xl border border-border-primary bg-bg-secondary p-3 shadow-4xl">
+    <div className="flex w-[700px] max-w-full flex-col rounded-2xl border border-border-primary bg-bg-secondary p-3">
       <textarea
         ref={textareaRef}
         value={value}

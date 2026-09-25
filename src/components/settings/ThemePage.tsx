@@ -90,7 +90,7 @@ export default function ThemePage() {
         })}
       </div>
 
-      <p className="mt-1 text-xs text-text-secondary/70">
+      <p className="mt-1 text-xs text-text-tertiary">
         Showing the {live} palette.
       </p>
     </div>

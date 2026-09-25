@@ -55,13 +55,13 @@ export default function DocumentCard({ block }: Props) {
         </div>
         <div className="mt-1 flex items-baseline gap-2 whitespace-nowrap text-xs text-text-secondary">
           <span>Document</span>
-          <span aria-hidden className="text-text-secondary/60">
+          <span aria-hidden className="text-text-tertiary">
             ·
           </span>
           <span className="font-mono">{doctype}</span>
           {pages && (
             <>
-              <span aria-hidden className="text-text-secondary/60">
+              <span aria-hidden className="text-text-tertiary">
                 ·
               </span>
               <span>

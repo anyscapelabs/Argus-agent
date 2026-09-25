@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use petgraph::graph::{DiGraph, NodeIndex};
 use rusqlite::{params, Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::schema::{
@@ -431,6 +432,279 @@ pub fn recall(conn: &Connection, query: &str, limit: i64) -> Result<Vec<RecallHi
     }
     hits.truncate(limit.max(1) as usize);
     Ok(hits)
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct PastSession {
+    pub session_id: String,
+    pub title: String,
+    pub updated_at: String,
+    pub score: f64,
+    pub snippets: Vec<String>,
+}
+
+const SNIPPET_CHARS: usize = 220;
+const MAX_SNIPPETS: usize = 3;
+
+const STOP: &[&str] = &[
+    "a", "an", "and", "are", "as", "at", "be", "but", "by", "can", "did", "do", "does", "for",
+    "from", "had", "has", "have", "how", "i", "if", "in", "is", "it", "its", "me", "my", "of",
+    "on", "or", "our", "please", "so", "that", "the", "their", "them", "then", "there", "these",
+    "they", "this", "to", "up", "us", "was", "we", "were", "what", "when", "where", "which", "who",
+    "why", "will", "with", "you", "your",
+];
+
+fn query_terms(query: &str) -> Vec<String> {
+    let mut out: Vec<String> = vec![];
+
+    for raw in query.split_whitespace() {
+        let t = raw
+            .trim_matches(|c: char| !c.is_alphanumeric())
+            .to_lowercase();
+
+        if t.len() < 3 || STOP.contains(&t.as_str()) || out.contains(&t) {
+            continue;
+        }
+
+        out.push(t);
+    }
+
+    out
+}
+
+/// Space in FTS5 MATCH is AND, so a whole sentence finds nothing. Fall back to OR.
+fn fts_or_query(terms: &[String]) -> Option<String> {
+    if terms.is_empty() {
+        return None;
+    }
+
+    Some(
+        terms
+            .iter()
+            .map(|t| format!("\"{}\"", t.replace('"', "")))
+            .collect::<Vec<_>>()
+            .join(" OR "),
+    )
+}
+
+fn hits_to_past(
+    conn: &Connection,
+    hits: Vec<RecallHit>,
+    exclude: Option<&str>,
+) -> Vec<PastSession> {
+    let mut order: Vec<String> = vec![];
+    let mut by_sid: HashMap<String, Vec<String>> = HashMap::new();
+    let mut scores: HashMap<String, f64> = HashMap::new();
+
+    for h in hits {
+        let Some(sid) = h.session_id.clone() else {
+            continue;
+        };
+
+        if exclude.is_some_and(|x| x == sid) {
+            continue;
+        }
+
+        if !order.contains(&sid) {
+            order.push(sid.clone());
+        }
+
+        let bucket = by_sid.entry(sid.clone()).or_default();
+        if bucket.len() < MAX_SNIPPETS {
+            bucket.push(clip(&h.snippet, SNIPPET_CHARS));
+        }
+
+        let s = scores.entry(sid).or_insert(0.0);
+        if h.source == "summary" {
+            *s += 2.0;
+        } else {
+            *s += 1.0;
+        }
+    }
+
+    order
+        .into_iter()
+        .filter_map(|sid| {
+            let title: String = conn
+                .query_row(
+                    "SELECT title FROM sessions WHERE id = ?1",
+                    params![sid],
+                    |r| r.get(0),
+                )
+                .unwrap_or_else(|_| "(untitled)".into());
+            let updated_at: String = conn
+                .query_row(
+                    "SELECT updated_at FROM sessions WHERE id = ?1",
+                    params![sid],
+                    |r| r.get(0),
+                )
+                .unwrap_or_default();
+
+            Some(PastSession {
+                session_id: sid.clone(),
+                title,
+                updated_at,
+                score: scores.get(&sid).copied().unwrap_or(0.0),
+                snippets: by_sid.remove(&sid).unwrap_or_default(),
+            })
+        })
+        .collect()
+}
+
+/// Past sessions matching `query`, best first. Cross-session by design.
+pub fn recall_sessions(
+    conn: &Connection,
+    query: &str,
+    exclude: Option<&str>,
+    limit: i64,
+) -> Result<Vec<PastSession>, String> {
+    let terms = query_terms(query);
+    if terms.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let cap = limit.clamp(1, 12);
+    let and_q = match fts_query(&terms.join(" ")) {
+        Some(q) => q,
+        None => return Ok(vec![]),
+    };
+
+    let mut hits = search_messages(conn, &and_q, cap * 4);
+    hits.extend(search_summaries(conn, &and_q, cap * 2));
+
+    if hits.is_empty() {
+        if let Some(or_q) = fts_or_query(&terms) {
+            hits = search_messages(conn, &or_q, cap * 4);
+            hits.extend(search_summaries(conn, &or_q, cap * 2));
+        }
+    }
+
+    let mut out = hits_to_past(conn, hits, exclude);
+    out.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.updated_at.cmp(&a.updated_at))
+    });
+    out.truncate(cap as usize);
+
+    Ok(out)
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Turn {
+    pub seq: i64,
+    pub who: String,
+    pub text: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Transcript {
+    pub session_id: String,
+    pub title: String,
+    pub turns: Vec<Turn>,
+    pub next_seq: i64,
+    pub more: bool,
+}
+
+const TURN_CHARS: usize = 700;
+const STRIP_TAGS: &[&str] = &[
+    "terminal",
+    "browser-action",
+    "action",
+    "tool-result",
+    "document",
+    "sandbox",
+    "warning",
+    "check",
+    "thinking",
+];
+
+/// Tool output and rendered blocks are the bulk of a transcript and carry no
+/// meaning on replay. Keep the prose the two people actually exchanged.
+fn strip_blocks(s: &str) -> String {
+    let mut t = s.to_string();
+
+    for tag in STRIP_TAGS {
+        let Ok(re) = regex::Regex::new(&format!(r"(?s)<{tag}\b[^>]*>.*?</{tag}>|<{tag}\b[^>]*/>"))
+        else {
+            continue;
+        };
+
+        t = re.replace_all(&t, " ").into_owned();
+    }
+
+    t.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Read a past session as prose. `after_seq` pages through a long chat.
+pub fn read_session(
+    conn: &Connection,
+    session_id: &str,
+    after_seq: i64,
+    limit: i64,
+) -> Result<Transcript, String> {
+    let title: String = conn
+        .query_row(
+            "SELECT title FROM sessions WHERE id = ?1",
+            params![session_id],
+            |r| r.get(0),
+        )
+        .map_err(|_| format!("no session {session_id}"))?;
+
+    let page = limit.clamp(1, 40);
+    let cap = page + 1;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT seq, role, content FROM messages
+             WHERE session_id = ?1 AND active = 1 AND seq > ?2
+               AND (role = 'system' OR content NOT LIKE '<tool-result%')
+             ORDER BY seq LIMIT ?3",
+        )
+        .map_err(|err| err.to_string())?;
+
+    let rows: Vec<(i64, String, String)> = stmt
+        .query_map(params![session_id, after_seq, cap], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })
+        .map_err(|err| err.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())?;
+
+    let more = rows.len() > page as usize;
+    let mut turns: Vec<Turn> = vec![];
+
+    for (seq, role, content) in rows.into_iter().take(page as usize) {
+        let text = strip_blocks(&content);
+        if text.is_empty() {
+            continue;
+        }
+
+        turns.push(Turn {
+            seq,
+            who: if role == "user" {
+                "user".into()
+            } else {
+                "agent".into()
+            },
+            text: clip(&text, TURN_CHARS),
+        });
+    }
+
+    let next_seq = turns.last().map(|t| t.seq).unwrap_or(after_seq);
+
+    Ok(Transcript {
+        session_id: session_id.into(),
+        title,
+        turns,
+        next_seq,
+        more,
+    })
 }
 
 pub fn load_graph(conn: &Connection, limit: i64) -> Result<MemoryGraph, String> {

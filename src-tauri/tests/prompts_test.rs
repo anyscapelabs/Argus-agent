@@ -96,3 +96,37 @@ fn bash_run_is_hidden_from_the_model_but_still_runs() {
 
     assert!(tool_specs(false).iter().any(|t| t.name == "terminal"));
 }
+
+#[test]
+fn base_teaches_cross_conversation_retrieval() {
+    assert!(BASE.contains("conversation.search"), "{BASE}");
+    assert!(BASE.contains("conversation.read"), "{BASE}");
+    assert!(BASE.contains("past-conversations"), "{BASE}");
+    assert!(BASE.contains("Never claim to remember"), "{BASE}");
+}
+
+#[test]
+fn conversation_read_is_offered_and_is_read_only() {
+    let specs = tool_specs(false);
+    assert!(
+        specs.iter().any(|s| s.name == "conversation.read"),
+        "conversation.read must be offered to the model"
+    );
+    assert!(
+        !is_mutating("conversation.read"),
+        "recall never needs approval"
+    );
+}
+
+#[test]
+fn past_conversations_search_is_a_tool_and_is_read_only() {
+    let specs = tool_specs(false);
+    assert!(
+        specs.iter().any(|s| s.name == "conversation.search"),
+        "conversation.search must be offered to the model"
+    );
+    assert!(
+        !is_mutating("conversation.search"),
+        "recall never needs approval"
+    );
+}

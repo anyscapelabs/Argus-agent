@@ -91,6 +91,33 @@ pub fn memory_graph(gw: State<'_, Gateway>, limit: Option<i64>) -> Result<Memory
     store::load_graph(&conn, limit.unwrap_or(80))
 }
 
+#[tauri::command]
+pub fn memory_recall_sessions(
+    gw: State<'_, Gateway>,
+    query: String,
+    exclude: Option<String>,
+    limit: Option<i64>,
+) -> Result<Vec<store::PastSession>, String> {
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+    store::recall_sessions(&conn, &query, exclude.as_deref(), limit.unwrap_or(5))
+}
+
+#[tauri::command]
+pub fn memory_read_session(
+    gw: State<'_, Gateway>,
+    session_id: String,
+    after_seq: Option<i64>,
+    limit: Option<i64>,
+) -> Result<store::Transcript, String> {
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+    store::read_session(
+        &conn,
+        &session_id,
+        after_seq.unwrap_or(0),
+        limit.unwrap_or(20),
+    )
+}
+
 pub fn rollup_prompt(mems: &[Memory]) -> String {
     let mut s = String::from(
         "Condense the following related memories into one durable fact for future sessions. \

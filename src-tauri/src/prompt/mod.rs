@@ -48,6 +48,13 @@ MEMORY\n\
 Use memory.search when relevant information from previous sessions may be needed. \
 Use memory.read when a specific memory must be inspected. \
 Do not assume remembered information is relevant to the current task.\n\
+Use conversation.search to find earlier conversations with this user, then \
+conversation.read to get what was actually said in them. A <past-conversations> index \
+lists them by title only. When the user refers to something from before, search, read the \
+transcript, and answer from the real words — never from a title, a snippet, or a summary of \
+one. If a search returns a session that looks right, read it; the excerpt is not the answer. \
+If the user says you do not remember something, search and read before telling them you do not. \
+Never claim to remember something you have only read the title of.\n\
 \n\
 RECOVERY\n\
 When a tool fails: understand the error; determine whether it is recoverable; \
@@ -87,6 +94,78 @@ fn stable_layer(conn: &Connection, web: bool) -> Result<String, String> {
     }
 
     Ok(s)
+}
+
+const PAST_INDEX_MAX: usize = 12;
+const PAST_LINE_CHARS: usize = 90;
+
+fn clip_line(s: &str, n: usize) -> String {
+    let t = s.trim().replace(['\n', '\r'], " ");
+    if t.chars().count() <= n {
+        return t;
+    }
+
+    t.chars().take(n).collect::<String>().trim_end().to_string() + "…"
+}
+
+/// Titles only. Excerpts come from conversation.search.
+fn past_index(conn: &Connection, session_id: &str) -> Option<String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT s.id, s.title,
+                    (SELECT substr(m.content, 1, 200) FROM messages m
+                      WHERE m.session_id = s.id AND m.role = 'user'
+                        AND m.active = 1 AND m.content NOT LIKE '<tool-result%'
+                      ORDER BY m.seq LIMIT 1)
+             FROM sessions s
+             WHERE s.id != ?1
+               AND EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.id)
+             ORDER BY s.updated_at DESC
+             LIMIT ?2",
+        )
+        .ok()?;
+
+    let rows = stmt
+        .query_map(params![session_id, PAST_INDEX_MAX as i64], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Option<String>>(2)?,
+            ))
+        })
+        .ok()?;
+
+    let mut lines: Vec<String> = vec![];
+
+    for r in rows.flatten() {
+        let (id, title, first) = r;
+        let head = clip_line(first.as_deref().unwrap_or(&title), PAST_LINE_CHARS);
+
+        if head.is_empty() {
+            continue;
+        }
+
+        lines.push(format!("- {id} | {title} | {head}"));
+    }
+
+    drop(stmt);
+
+    if lines.is_empty() {
+        return None;
+    }
+
+    Some(format!(
+        "<past-conversations>\n\
+         These are your earlier conversations with this user, newest first. \
+         You do not have their contents — only that they happened.\n\
+         When the user refers to something from before (\"the Netflix case\", \
+         \"what we decided about X\", \"that bug we fixed\"), or when the task needs \
+         context you were not given, call conversation.search to locate it and then \
+         conversation.read to get what was actually said. Answer from the transcript.\n\
+         {}\n\
+         </past-conversations>",
+        lines.join("\n")
+    ))
 }
 
 pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String> {
@@ -132,6 +211,11 @@ pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String
     if let Some(notes) = crate::tools::notepad::prompt_include(session_id) {
         system.push_str("\n\n");
         system.push_str(&notes);
+    }
+
+    if let Some(index) = past_index(conn, session_id) {
+        system.push_str("\n\n");
+        system.push_str(&index);
     }
 
     let mut stmt = conn

@@ -598,6 +598,48 @@ export function memoryRecall(query: string): Promise<RecallHit[]> {
   return invoke<RecallHit[]>("memory_recall", { query });
 }
 
+export type PastSession = {
+  session_id: string;
+  title: string;
+  updated_at: string;
+  score: number;
+  snippets: string[];
+};
+
+export function memoryRecallSessions(
+  query: string,
+  exclude?: string,
+): Promise<PastSession[]> {
+  return invoke<PastSession[]>("memory_recall_sessions", {
+    query,
+    exclude: exclude ?? null,
+  });
+}
+
+export type TranscriptTurn = {
+  seq: number;
+  who: string;
+  text: string;
+};
+
+export type Transcript = {
+  session_id: string;
+  title: string;
+  turns: TranscriptTurn[];
+  next_seq: number;
+  more: boolean;
+};
+
+export function memoryReadSession(
+  sessionId: string,
+  afterSeq = 0,
+): Promise<Transcript> {
+  return invoke<Transcript>("memory_read_session", {
+    sessionId,
+    afterSeq,
+  });
+}
+
 export function memoryGraph(): Promise<MemoryGraph> {
   return invoke<MemoryGraph>("memory_graph", {});
 }

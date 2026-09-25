@@ -170,6 +170,8 @@ pub fn run() {
             memory::memory_autolink,
             memory::memory_recall,
             memory::memory_graph,
+            memory::memory_recall_sessions,
+            memory::memory_read_session,
             learning::learning_list,
             learning::learning_forget,
             learning::learning_record_correction,

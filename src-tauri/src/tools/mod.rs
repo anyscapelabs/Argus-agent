@@ -96,6 +96,25 @@ const TOOLS: &[ToolMeta] = &[
         args: "{\"id\":\"...\"}",
         mutating: false,
     },
+    ToolMeta {
+        name: "conversation.search",
+        desc: "Search your past conversations with the user — other sessions, not the current one. \
+Returns the sessions that discussed this, with excerpts. Use it whenever the user refers to \
+something from an earlier conversation (\"the Netflix case\", \"what did we decide about X\", \
+\"that bug we fixed\"), or when the task needs context you were not given. Search with concrete \
+keywords, not the whole sentence. To read what was actually said, follow up with \
+conversation.read on the session id.",
+        args: "{\"query\":\"...\"}",
+        mutating: false,
+    },
+    ToolMeta {
+        name: "conversation.read",
+        desc: "Read what was actually said in a past conversation, as the user and you wrote it — \
+not a summary. Pass the session id from conversation.search. Long chats are paged: if the result \
+says more remains, call again with the returned seq to continue.",
+        args: "{\"session_id\":\"...\",\"after_seq\":0}",
+        mutating: false,
+    },
 ];
 
 const WEB_TOOLS: &[ToolMeta] = &[
@@ -917,6 +936,62 @@ pub async fn exec(
             let conn = gw.conn.lock().map_err(|err| err.to_string())?;
             let m = crate::memory::store::get(&conn, id)?;
             Ok(m.content)
+        }
+        "conversation.search" => {
+            let query = args
+                .get("query")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+            let cur = crate::tools::notepad::current_session();
+            let hits = crate::memory::store::recall_sessions(&conn, &query, cur.as_deref(), 5)?;
+
+            if hits.is_empty() {
+                return Ok("no earlier conversation matched that".into());
+            }
+
+            Ok(hits
+                .iter()
+                .map(|p| {
+                    let body = p.snippets.join("\n  ");
+                    format!("[{}] {}\n  {}", p.session_id, p.title, body)
+                })
+                .collect::<Vec<_>>()
+                .join("\n"))
+        }
+        "conversation.read" => {
+            let sid = args
+                .get("session_id")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .ok_or("conversation.read needs a session_id")?;
+            let after_seq = args.get("after_seq").and_then(|v| v.as_i64()).unwrap_or(0);
+            let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+            let t = crate::memory::store::read_session(&conn, sid, after_seq, 20)?;
+
+            if t.turns.is_empty() && !t.more {
+                return Ok("that conversation has nothing readable in it".into());
+            }
+
+            let body = t
+                .turns
+                .iter()
+                .map(|x| format!("{}: {}", x.who, x.text))
+                .collect::<Vec<_>>()
+                .join("\n\n");
+
+            let more = if t.more {
+                format!(
+                    "\n\n(more remains — call again with after_seq {})",
+                    t.next_seq
+                )
+            } else {
+                String::new()
+            };
+
+            Ok(format!("[{}] {}\n\n{body}{more}", t.session_id, t.title))
         }
         "web.search" => web::search(&args).await,
         "web.read" => web::read(&args).await,

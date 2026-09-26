@@ -1,5 +1,6 @@
 use argus_lib::gateway::{approval_reply, ApprovalReply, Gateway};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Mutex;
 
 fn test_gw() -> Gateway {
@@ -13,6 +14,11 @@ fn test_gw() -> Gateway {
         logos_dir: std::env::temp_dir().join("argus-appr-logos"),
         approvals: Mutex::new(HashMap::new()),
         tasks: Mutex::new(HashMap::new()),
+        jobs_dir: std::env::temp_dir().join("argus-jobs"),
+        jobs: Mutex::new(HashMap::new()),
+        events: Mutex::new(HashMap::new()),
+        turns: Mutex::new(HashSet::new()),
+        watching: Mutex::new(None),
     }
 }
 

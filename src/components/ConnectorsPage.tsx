@@ -314,7 +314,7 @@ function BrowserCard() {
         >
           <span
             className={
-              "absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all " +
+              "absolute top-0.5 h-5 w-5 rounded-full bg-bg-primary transition-all " +
               `${extOn ? "left-[22px]" : "left-0.5"}`
             }
           />

@@ -130,3 +130,45 @@ fn past_conversations_search_is_a_tool_and_is_read_only() {
         "recall never needs approval"
     );
 }
+
+#[test]
+fn base_teaches_background_work() {
+    for rule in [
+        "LONG RUNNING WORK",
+        "background true",
+        "do not wait for it and do not re-run it",
+        "job.list shows every job",
+        "job.read returns what one printed",
+        "Never background a command whose answer you need",
+        "A background job inherits this session's permission",
+        "refused outright rather than left hanging",
+    ] {
+        assert!(BASE.contains(rule), "missing: {rule}");
+    }
+}
+
+#[test]
+fn the_job_tools_are_offered_and_read_only_where_they_should_be() {
+    let specs = tool_specs(false);
+    let names: Vec<&str> = specs.iter().map(|s| s.name.as_str()).collect();
+
+    for want in ["job.list", "job.read", "job.kill"] {
+        assert!(names.contains(&want), "missing tool: {want}");
+    }
+
+    assert!(!is_mutating("job.list"), "listing must not need approval");
+    assert!(
+        !is_mutating("job.read"),
+        "reading a log must not need approval"
+    );
+    assert!(is_mutating("job.kill"), "killing a process is an action");
+}
+
+#[test]
+fn terminal_advertises_the_background_flag_and_stays_mutating() {
+    assert!(is_mutating("terminal"));
+
+    let section = section(false);
+    assert!(section.contains("background true"), "{section}");
+    assert!(section.contains("job.read"), "{section}");
+}

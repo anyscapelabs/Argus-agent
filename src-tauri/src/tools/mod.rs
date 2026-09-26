@@ -26,8 +26,26 @@ pub struct ToolMeta {
 const TOOLS: &[ToolMeta] = &[
     ToolMeta {
         name: "terminal",
-        desc: "Execute commands on the user's computer. Use for: inspecting the system and files; creating or modifying files; running programs; builds and tests; Git; package managers; system administration. Use user privilege by default. Use admin privilege only when root access is required. Admin authentication is handled by the operating system. Never ask for or handle the user's sudo password. Set profile \"project\" to confine the command to this project's directory and its dependency caches, or \"restricted\" for code you do not trust.",
-        args: "{\"command\":\"...\",\"cwd\":\".\",\"label\":\"...\",\"privilege\":\"user\",\"profile\":\"host\"}",
+        desc: "Execute commands on the user's computer. Use for: inspecting the system and files; creating or modifying files; running programs; builds and tests; Git; package managers; system administration. Use user privilege by default. Use admin privilege only when root access is required. Admin authentication is handled by the operating system. Never ask for or handle the user's sudo password. Set profile \"project\" to confine the command to this project's directory and its dependency caches, or \"restricted\" for code you do not trust. Set background true for anything that outlives a few minutes — a long build, a big download, a migration. A backgrounded call returns a job id at once instead of waiting; check on it with job.list and read what it printed with job.read. Do not background a command you need the answer from before you can continue.",
+        args: "{\"command\":\"...\",\"cwd\":\".\",\"label\":\"...\",\"privilege\":\"user\",\"profile\":\"host\",\"background\":false,\"timeout\":120}",
+        mutating: true,
+    },
+    ToolMeta {
+        name: "job.list",
+        desc: "List background jobs, newest first, with their state (running, done, failed, killed, interrupted) and exit code. Filter to one session with session_id. Call this instead of sleeping or re-running a command to find out how it went.",
+        args: "{\"session_id\":\"...\",\"limit\":20}",
+        mutating: false,
+    },
+    ToolMeta {
+        name: "job.read",
+        desc: "Read the tail of a background job's output. Returns the last part of what it printed, oldest-first within the tail. Read it before deciding whether the work succeeded — the exit code alone rarely says. Output is trimmed from the front when it is long.",
+        args: "{\"id\":\"...\",\"max_chars\":8000}",
+        mutating: false,
+    },
+    ToolMeta {
+        name: "job.kill",
+        desc: "Stop a running background job. Use when it is clearly going the wrong way and the user did not ask for it to finish.",
+        args: "{\"id\":\"...\"}",
         mutating: true,
     },
     ToolMeta {
@@ -713,7 +731,8 @@ fn collect_spans(body: &str, open: &str, close: &str) -> Vec<String> {
     out
 }
 
-pub async fn exec(
+pub async fn exec<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
     gw: &crate::gateway::Gateway,
     name: &str,
     args_json: &str,
@@ -750,18 +769,56 @@ pub async fn exec(
             let profile = sandbox::parse_profile(&args, sandbox::Profile::Host)
                 .map_err(|err| err.to_string())?;
             let origin = sandbox::origin_of_tool(name, args_json);
+            let command = args["command"].as_str().ok_or("terminal needs a command")?;
+            let elevated = args.get("privilege").and_then(|v| v.as_str()) == Some("admin");
+
+            if args.get("background").and_then(|v| v.as_bool()) == Some(true) {
+                let sid = crate::tools::notepad::current_session();
+
+                let job = crate::jobs::spawn(
+                    app,
+                    gw,
+                    crate::jobs::Spec {
+                        session_id: sid.clone(),
+                        command: command.to_string(),
+                        cwd: args["cwd"].as_str().map(str::to_string),
+                        profile,
+                        privileged: elevated,
+                        permission: permission.to_string(),
+                        label: args["label"]
+                            .as_str()
+                            .filter(|s| !s.trim().is_empty())
+                            .unwrap_or(command)
+                            .chars()
+                            .take(120)
+                            .collect(),
+                        wake: args.get("wake").and_then(|v| v.as_bool()).unwrap_or(true),
+                        timeout_secs: args["timeout"].as_u64(),
+                    },
+                )?;
+
+                return Ok(format!(
+                    "started in the background as job {}. It is running now and you do not \
+                     need to wait for it. Check job.list for its state and job.read for what \
+                     it printed. When it finishes you will be told, in this same session, \
+                     with the tail of its output — carry on with other work in the meantime.",
+                    job.id
+                ));
+            }
 
             let out = sandbox::run(
                 gw,
                 sandbox::Request {
                     tool: name,
-                    command: args["command"].as_str().ok_or("terminal needs a command")?,
+                    command,
                     profile,
                     cwd: args["cwd"].as_str(),
-                    elevated: args.get("privilege").and_then(|v| v.as_str()) == Some("admin"),
+                    elevated,
                     permission,
                     timeout_secs: args["timeout"].as_u64(),
                     origin: origin.as_ref(),
+                    background: false,
+                    log: None,
                 },
                 on_term,
             )
@@ -769,6 +826,65 @@ pub async fn exec(
             .map_err(|err| err.to_string())?;
 
             Ok(format!("exit {}\n{}", out.exit, out.combined()))
+        }
+        "job.list" => {
+            let sid = args.get("session_id").and_then(|v| v.as_str());
+            let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+            let jobs = crate::jobs::list(&conn, sid, args["limit"].as_u64().unwrap_or(20) as i64)?;
+
+            if jobs.is_empty() {
+                return Ok("no background jobs".into());
+            }
+
+            Ok(jobs
+                .iter()
+                .map(|j| {
+                    format!(
+                        "{} | {} | {} | exit {:?} | {}",
+                        j.id,
+                        j.state,
+                        j.label,
+                        j.exit,
+                        crate::tools::clip_ends(j.command.clone())
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n"))
+        }
+        "job.read" => {
+            let id = args["id"].as_str().ok_or("job.read needs an id")?;
+            let max = args["max_chars"]
+                .as_u64()
+                .unwrap_or(8_000)
+                .clamp(200, 60_000) as usize;
+            let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+            let job = crate::jobs::get(&conn, id)?;
+
+            drop(conn);
+
+            let body = crate::jobs::tail(&crate::jobs::log_path(gw, id), max)?;
+
+            Ok(format!(
+                "job {} — {} — exit {:?} — {}\n{}",
+                job.id,
+                job.state,
+                job.exit,
+                job.label,
+                if body.trim().is_empty() {
+                    "(it printed nothing)".to_string()
+                } else {
+                    body
+                }
+            ))
+        }
+        "job.kill" => {
+            let id = args["id"].as_str().ok_or("job.kill needs an id")?;
+
+            if crate::jobs::kill(gw, id)? {
+                Ok(format!("job {id} is being stopped"))
+            } else {
+                Ok(format!("job {id} was not running"))
+            }
         }
         "code.run" => {
             let command = args
@@ -789,6 +905,8 @@ pub async fn exec(
                     permission,
                     timeout_secs: args["timeout"].as_u64(),
                     origin: origin.as_ref(),
+                    background: false,
+                    log: None,
                 },
                 None,
             )

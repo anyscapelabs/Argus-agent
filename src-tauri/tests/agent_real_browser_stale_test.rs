@@ -315,6 +315,11 @@ async fn eval_real_browser_stale_task() {
         logos_dir: gtmp.join("logos"),
         approvals: StdMutex::new(HashMap::new()),
         tasks: StdMutex::new(HashMap::new()),
+        jobs_dir: std::env::temp_dir().join("argus-jobs"),
+        jobs: StdMutex::new(HashMap::new()),
+        events: StdMutex::new(HashMap::new()),
+        turns: StdMutex::new(HashSet::new()),
+        watching: StdMutex::new(None),
     };
     let session_id = {
         let conn = gw.conn.lock().unwrap();

@@ -16,6 +16,8 @@ import {
   sessSetVote,
   sessSetWebSearch,
   sessSupersedeFrom,
+  sessUnwatch,
+  sessWatchEvents,
   type MsgRow,
   type SessionRow,
   type StreamEvent,
@@ -90,8 +92,7 @@ class SessionStore {
 
   onTurnStart: ((sessionId: string) => void) | null = null;
   onTurnDone:
-    | ((sessionId: string, ok: boolean, snippet: string) => void)
-    | null = null;
+    ((sessionId: string, ok: boolean, snippet: string) => void) | null = null;
 
   async loadSessions() {
     try {
@@ -114,6 +115,7 @@ class SessionStore {
   }
 
   async select(sessionId: string | null) {
+    if (this.state.activeId !== sessionId) this.unwatch(this.state.activeId);
     this.set({ activeId: sessionId });
 
     if (sessionId === null) return;
@@ -126,6 +128,7 @@ class SessionStore {
     }
 
     await this.loadMsgs(sessionId);
+    this.watch(sessionId);
   }
 
   async create(
@@ -194,12 +197,9 @@ class SessionStore {
     try {
       await apply();
     } catch (err) {
-
-
       try {
         await apply();
       } catch (err2) {
-
         this.set({
           sessions: this.state.sessions.map((s) =>
             s.id === sessionId ? { ...s, [field]: row[field] } : s,
@@ -250,6 +250,101 @@ class SessionStore {
     this.set({ turns });
   }
 
+  private apply(sessionId: string, ev: StreamEvent) {
+    const patch = (fn: (prev: Turn) => Turn) => {
+      const prev = this.state.turns[sessionId] ?? blankTurn();
+      this.set({ turns: { ...this.state.turns, [sessionId]: fn(prev) } });
+    };
+
+    if (ev.type === "delta") {
+      patch((prev) => ({ ...prev, text: prev.text + ev.text, err: null }));
+      return;
+    }
+
+    if (ev.type === "reset") {
+      patch((prev) => ({ ...blankTurn(), err: prev.err }));
+      return;
+    }
+
+    if (ev.type === "step") {
+      this.set({ turns: { ...this.state.turns, [sessionId]: blankTurn() } });
+      void this.loadMsgs(sessionId);
+      return;
+    }
+
+    if (ev.type === "term") {
+      patch((prev) => ({
+        ...prev,
+        term: { ...prev.term, [ev.idx]: (prev.term[ev.idx] ?? "") + ev.chunk },
+      }));
+      return;
+    }
+
+    if (ev.type === "term_end") {
+      patch((prev) => ({
+        ...prev,
+        termCode: { ...prev.termCode, [ev.idx]: ev.code },
+        approval: prev.approval?.idx === ev.idx ? null : prev.approval,
+      }));
+      return;
+    }
+
+    if (ev.type === "approval") {
+      patch((prev) => ({
+        ...prev,
+        approval: { id: ev.id, idx: ev.idx, command: ev.command },
+      }));
+      return;
+    }
+
+    if (ev.type === "notice") {
+      patch((prev) => ({
+        ...prev,
+        text: prev.text + `\n\n<warning severity="medium">${ev.msg}</warning>`,
+      }));
+      return;
+    }
+
+    if (ev.type === "err") {
+      patch((prev) => ({ ...prev, err: ev.msg }));
+      return;
+    }
+
+    if (ev.type === "turn_end") {
+      this.clearTurn(sessionId);
+      void this.loadMsgs(sessionId);
+      void this.loadSessions();
+    }
+  }
+
+  private watching = new Map<string, number>();
+  private watchSeq = 0;
+
+  watch(sessionId: string) {
+    if (this.watching.has(sessionId)) return;
+
+    const gen = ++this.watchSeq;
+    this.watching.set(sessionId, gen);
+
+    const chan = new Channel<StreamEvent>();
+
+    chan.onmessage = (ev) => {
+      if (this.watching.get(sessionId) !== gen) return;
+      this.apply(sessionId, ev);
+    };
+
+    void sessWatchEvents(sessionId, chan).finally(() => {
+      if (this.watching.get(sessionId) === gen) this.watching.delete(sessionId);
+    });
+  }
+
+  unwatch(sessionId: string | null) {
+    if (sessionId !== null) this.watching.delete(sessionId);
+    else this.watching.clear();
+
+    void sessUnwatch().catch(() => {});
+  }
+
   async send(sessionId: string, content: string) {
     const prev = this.state.turns[sessionId];
     if (prev !== undefined && prev.err === null) return;
@@ -276,7 +371,11 @@ class SessionStore {
 
     const row = this.state.sessions.find((s) => s.id === sessionId);
     if (row !== undefined && row.title === DEF_TITLE) {
-      const tempTitle = content.trim().split("\n")[0].trim().slice(0, TITLE_CLIP);
+      const tempTitle = content
+        .trim()
+        .split("\n")[0]
+        .trim()
+        .slice(0, TITLE_CLIP);
       if (tempTitle.length > 0) {
         this.set({
           sessions: this.state.sessions.map((s) =>
@@ -288,71 +387,9 @@ class SessionStore {
 
     const chan = new Channel<StreamEvent>();
 
-    chan.onmessage = (ev) => {
-      if (ev.type === "delta") {
-        this.patchTurn(sessionId, (prev) => ({
-          ...prev,
-          text: prev.text + ev.text,
-          err: null,
-        }));
-        return;
-      }
+    chan.onmessage = (ev) => this.apply(sessionId, ev);
 
-      if (ev.type === "reset") {
-        this.patchTurn(sessionId, (prev) => ({ ...blankTurn(), err: prev.err }));
-        return;
-      }
-
-      if (ev.type === "step") {
-        this.set({
-          turns: { ...this.state.turns, [sessionId]: blankTurn() },
-        });
-        void this.loadMsgs(sessionId);
-        return;
-      }
-
-      if (ev.type === "term") {
-        this.patchTurn(sessionId, (prev) => ({
-          ...prev,
-          term: {
-            ...prev.term,
-            [ev.idx]: (prev.term[ev.idx] ?? "") + ev.chunk,
-          },
-        }));
-        return;
-      }
-
-      if (ev.type === "term_end") {
-        this.patchTurn(sessionId, (prev) => ({
-          ...prev,
-          termCode: { ...prev.termCode, [ev.idx]: ev.code },
-          approval: prev.approval?.idx === ev.idx ? null : prev.approval,
-        }));
-        return;
-      }
-
-      if (ev.type === "approval") {
-        this.patchTurn(sessionId, (prev) => ({
-          ...prev,
-          approval: { id: ev.id, idx: ev.idx, command: ev.command },
-        }));
-        return;
-      }
-
-      if (ev.type === "notice") {
-        this.patchTurn(sessionId, (prev) => ({
-          ...prev,
-          text:
-            prev.text +
-            `\n\n<warning severity="medium">${ev.msg}</warning>`,
-        }));
-        return;
-      }
-
-      if (ev.type === "err") {
-        this.patchTurn(sessionId, (prev) => ({ ...prev, err: ev.msg }));
-      }
-    };
+    this.unwatch(sessionId);
 
     this.set({
       turns: { ...this.state.turns, [sessionId]: blankTurn() },
@@ -383,6 +420,8 @@ class SessionStore {
       });
       this.onTurnDone?.(sessionId, false, String(err).slice(0, 120));
     }
+
+    if (this.state.activeId === sessionId) this.watch(sessionId);
   }
 
   async resolveApproval(sessionId: string, allow: boolean, args?: string) {

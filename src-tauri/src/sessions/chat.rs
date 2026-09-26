@@ -18,6 +18,11 @@ const DEFAULT_TITLE: &str = "New chat";
 const MAX_STEPS: usize = 24;
 const RESULT_CLIP: usize = 4000;
 const TERM_TIMEOUT: u64 = 300;
+
+const WATCH_IDLE: std::time::Duration = std::time::Duration::from_millis(150);
+
+const WAKE_SLOTS: u32 = 240;
+const WAKE_SLOT_MS: u64 = 500;
 const DENIED_CODE: i64 = -2;
 const MAX_CLAIM_NUDGES: usize = 2;
 const MAX_TRUNC_CONTS: usize = 2;
@@ -286,6 +291,10 @@ pub trait ChatSink: Send + Sync {
     fn term_chan(&self) -> Option<&Channel<StreamEvent>> {
         None
     }
+
+    fn detached(&self) -> bool {
+        false
+    }
 }
 
 impl ChatSink for Channel<StreamEvent> {
@@ -302,6 +311,109 @@ pub struct NullSink;
 
 impl ChatSink for NullSink {
     fn emit(&self, _ev: StreamEvent) {}
+}
+
+pub struct BusSink<'a> {
+    pub gw: &'a Gateway,
+    pub session_id: String,
+}
+
+impl ChatSink for BusSink<'_> {
+    fn emit(&self, ev: StreamEvent) {
+        self.gw.publish(&self.session_id, ev);
+    }
+
+    fn detached(&self) -> bool {
+        !self.gw.watched(&self.session_id)
+    }
+}
+
+pub fn attr_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+pub fn announce<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    gw: &Gateway,
+    session_id: &str,
+    body: &str,
+    wake: bool,
+) {
+    if !wake {
+        if let Ok(conn) = gw.conn.lock() {
+            let _ = store::add_msg(
+                &conn,
+                &NewMsg {
+                    session_id: session_id.into(),
+                    role: "system".into(),
+                    content: body.into(),
+                    model_id: None,
+                    provider_id: None,
+                    tok_in: None,
+                    tok_out: None,
+                    tool_calls: None,
+                    tool_call_id: None,
+                },
+            );
+        }
+
+        return;
+    }
+
+    let app2 = app.clone();
+    let sid = session_id.to_string();
+    let body2 = body.to_string();
+
+    tauri::async_runtime::spawn(async move {
+        for _ in 0..WAKE_SLOTS {
+            let gw = app2.state::<Gateway>();
+
+            if gw.claim_turn(&sid) {
+                let sink = BusSink {
+                    gw: gw.inner(),
+                    session_id: sid.clone(),
+                };
+
+                let _ = crate::tools::shell::CANCEL
+                    .scope(
+                        std::sync::Arc::new(tokio::sync::Notify::new()),
+                        crate::tools::notepad::SESSION_ID.scope(
+                            Some(sid.clone()),
+                            send(gw.inner(), &app2, &sid, &body2, &sink, "system"),
+                        ),
+                    )
+                    .await;
+
+                gw.release_turn(&sid);
+                return;
+            }
+
+            tokio::time::sleep(std::time::Duration::from_millis(WAKE_SLOT_MS)).await;
+        }
+
+        let gw = app2.state::<Gateway>();
+        let conn = gw.conn.lock();
+
+        if let Ok(conn) = conn {
+            let _ = store::add_msg(
+                &conn,
+                &NewMsg {
+                    session_id: sid.clone(),
+                    role: "system".into(),
+                    content: body2.clone(),
+                    model_id: None,
+                    provider_id: None,
+                    tok_in: None,
+                    tok_out: None,
+                    tool_calls: None,
+                    tool_call_id: None,
+                },
+            );
+        }
+    });
 }
 
 async fn ask_approval(
@@ -378,9 +490,10 @@ async fn run_skill_reflection<R: tauri::Runtime>(app: &AppHandle<R>, session_id:
             continue;
         }
 
-        let _ =
-            tools::recover::exec_with_recovery(&gw, &e.tool, &e.args, "never", false, true, None)
-                .await;
+        let _ = tools::recover::exec_with_recovery(
+            app, &gw, &e.tool, &e.args, "never", false, true, None,
+        )
+        .await;
     }
 }
 
@@ -841,13 +954,28 @@ pub async fn send<R: tauri::Runtime>(
                         cmd.clone()
                     };
 
-                    let reply = ask_approval(gw, sink, &approval_id(), idx as u32, &what).await;
-                    allow = reply.allow;
-                    denied = !allow;
+                    let mut edited: Option<String> = None;
+
+                    if sink.detached() {
+                        sink.emit(StreamEvent::Notice {
+                            msg: format!(
+                                "skipped a step that needs your approval ({what}) — nothing was \
+                                 listening, so it was refused rather than guessed at. Open the \
+                                 session and ask again, or set it to never"
+                            ),
+                        });
+                        allow = false;
+                        denied = true;
+                    } else {
+                        let reply = ask_approval(gw, sink, &approval_id(), idx as u32, &what).await;
+                        edited = reply.args;
+                        allow = reply.allow;
+                        denied = !allow;
+                    }
 
                     if allow && !exec.is_browser_tool() {
-                        if let Some(edited) = reply.args {
-                            exec.args = edited;
+                        if let Some(args) = edited {
+                            exec.args = args;
                         }
                     }
 
@@ -871,6 +999,7 @@ pub async fn send<R: tauri::Runtime>(
                 } else {
                     let t0 = std::time::Instant::now();
                     let outcome = tools::recover::exec_with_recovery(
+                        app,
                         gw,
                         &exec.tool,
                         &exec.args,
@@ -1155,6 +1284,10 @@ pub async fn send<R: tauri::Runtime>(
         serde_json::json!({"session_id": session_id, "kind": "turn-done"}),
     );
 
+    sink.emit(StreamEvent::TurnEnd {
+        session_id: session_id.into(),
+    });
+
     Ok(())
 }
 
@@ -1168,20 +1301,98 @@ pub async fn sess_chat_stream(
 ) -> Result<(), String> {
     let notify = std::sync::Arc::new(tokio::sync::Notify::new());
 
+    if !gw.claim_turn(&session_id) {
+        return Err("this session is already answering — wait for it to finish".into());
+    }
+
     if let Ok(mut tasks) = gw.tasks.lock() {
         tasks.insert(session_id.clone(), notify.clone());
     }
 
+    gw.go_live(&session_id);
+
+    let mut rx = gw.subscribe(&session_id);
+    let fwd = tauri::async_runtime::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(StreamEvent::TurnEnd { .. }) => {
+                    let _ = on_event.send(StreamEvent::TurnEnd {
+                        session_id: String::new(),
+                    });
+                    break;
+                }
+                Ok(ev) => {
+                    if on_event.send(ev).is_err() {
+                        break;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+
+    let sink = BusSink {
+        gw: gw.inner(),
+        session_id: session_id.clone(),
+    };
+
     let out = tokio::select! {
         _ = notify.notified() => Err("stopped".into()),
-        out = crate::tools::shell::CANCEL.scope(notify.clone(), crate::tools::notepad::SESSION_ID.scope(Some(session_id.clone()), send(&gw, &app, &session_id, &content, &on_event, "user"))) => out,
+        out = crate::tools::shell::CANCEL.scope(notify.clone(), crate::tools::notepad::SESSION_ID.scope(Some(session_id.clone()), send(&gw, &app, &session_id, &content, &sink, "user"))) => out,
     };
+
+    let _ = fwd.await;
 
     if let Ok(mut tasks) = gw.tasks.lock() {
         tasks.remove(&session_id);
     }
 
+    gw.go_quiet(&session_id);
+    gw.drop_bus(&session_id);
+    gw.release_turn(&session_id);
+
     out
+}
+
+#[tauri::command]
+pub async fn sess_watch_events(
+    gw: State<'_, Gateway>,
+    session_id: String,
+    on_event: Channel<StreamEvent>,
+) -> Result<(), String> {
+    let mut rx = gw.subscribe(&session_id);
+    gw.set_watching(Some(&session_id));
+
+    while gw.watching(&session_id) {
+        if gw.turn_busy(&session_id) {
+            break;
+        }
+
+        let ev = match tokio::time::timeout(WATCH_IDLE, rx.recv()).await {
+            Ok(Ok(ev)) => ev,
+            Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => continue,
+            Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) => break,
+            Err(_) => continue,
+        };
+
+        if on_event.send(ev).is_err() {
+            break;
+        }
+    }
+
+    if gw.watching(&session_id) {
+        gw.set_watching(None);
+    }
+
+    gw.drop_bus(&session_id);
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn sess_unwatch(gw: State<'_, Gateway>) {
+    gw.set_watching(None);
 }
 
 #[tauri::command]

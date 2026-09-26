@@ -29,6 +29,7 @@ use argus_lib::tools::{
     build_executions, has_orphaned_action_block, normalize_actions, ToolExecution, ToolStatus,
 };
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Mutex;
 
 const RESULT_CLIP: usize = 4000;
@@ -66,6 +67,11 @@ fn test_gw(tag: &str) -> (argus_lib::gateway::Gateway, std::path::PathBuf) {
         logos_dir,
         approvals: Mutex::new(HashMap::new()),
         tasks: Mutex::new(HashMap::new()),
+        jobs_dir: std::env::temp_dir().join("argus-jobs"),
+        jobs: Mutex::new(HashMap::new()),
+        events: Mutex::new(HashMap::new()),
+        turns: Mutex::new(HashSet::new()),
+        watching: Mutex::new(None),
     };
 
     (gw, base)
@@ -139,6 +145,7 @@ fn extract_and_persist_assistant(
 /// Mirror of `send()` execution + persistence: exactly one terminal
 /// transition and exactly one `<tool-result>` row per execution, in order.
 async fn execute_and_persist_all(
+    app: &tauri::AppHandle<tauri::test::MockRuntime>,
     gw: &argus_lib::gateway::Gateway,
     session_id: &str,
     pending: &mut [ToolExecution],
@@ -146,7 +153,8 @@ async fn execute_and_persist_all(
 ) {
     for exec in pending.iter_mut() {
         exec.begin();
-        match argus_lib::tools::exec(gw, &exec.tool, &exec.args, perm, false, true, None).await {
+        match argus_lib::tools::exec(app, gw, &exec.tool, &exec.args, perm, false, true, None).await
+        {
             Ok(body) => exec.succeed(body),
             Err(err) => exec.fail(err),
         }
@@ -183,6 +191,7 @@ fn session_msgs(
 #[tokio::test]
 async fn chat_single_tool_one_exec_one_result_in_next_context() {
     let (gw, base) = test_gw("single");
+    let app = &tauri::test::mock_app().handle().clone();
     let sid = new_session(&gw, "never");
     add_user(&gw, &sid, "recall anything about pyq?");
 
@@ -197,7 +206,7 @@ async fn chat_single_tool_one_exec_one_result_in_next_context() {
     assert_eq!(pending[0].tool, "memory.search");
     assert_eq!(pending[0].tool_call_id.as_deref(), Some("call_1"));
 
-    execute_and_persist_all(&gw, &sid, &mut pending, "never").await;
+    execute_and_persist_all(&app, &gw, &sid, &mut pending, "never").await;
     assert_eq!(pending[0].status, ToolStatus::Succeeded);
 
     let msgs = session_msgs(&gw, &sid);
@@ -226,6 +235,7 @@ async fn chat_single_tool_one_exec_one_result_in_next_context() {
 #[tokio::test]
 async fn chat_multi_tool_deterministic_order_all_results_before_next_request() {
     let (gw, base) = test_gw("multi");
+    let app = &tauri::test::mock_app().handle().clone();
     let sid = new_session(&gw, "never");
     add_user(&gw, &sid, "check skills and memory");
 
@@ -241,7 +251,7 @@ async fn chat_multi_tool_deterministic_order_all_results_before_next_request() {
     assert_eq!(pending[0].tool, "memory.search");
     assert_eq!(pending[1].tool, "skill.search");
 
-    execute_and_persist_all(&gw, &sid, &mut pending, "never").await;
+    execute_and_persist_all(&app, &gw, &sid, &mut pending, "never").await;
     assert!(pending.iter().all(|e| e.status.is_terminal()));
 
     let msgs = session_msgs(&gw, &sid);
@@ -267,6 +277,7 @@ async fn chat_multi_tool_deterministic_order_all_results_before_next_request() {
 #[tokio::test]
 async fn chat_failed_tool_does_not_kill_loop_and_next_call_runs() {
     let (gw, base) = test_gw("fail-continue");
+    let app = &tauri::test::mock_app().handle().clone();
     let sid = new_session(&gw, "never");
     add_user(&gw, &sid, "read a skill");
 
@@ -278,7 +289,7 @@ async fn chat_failed_tool_does_not_kill_loop_and_next_call_runs() {
         &[native("call_1", "skill.read", "{}")],
         0,
     );
-    execute_and_persist_all(&gw, &sid, &mut r1, "never").await;
+    execute_and_persist_all(&app, &gw, &sid, &mut r1, "never").await;
     assert_eq!(r1[0].status, ToolStatus::Failed);
     let msgs = session_msgs(&gw, &sid);
     assert!(msgs.last().unwrap().content.contains(r#"status="err""#));
@@ -293,7 +304,7 @@ async fn chat_failed_tool_does_not_kill_loop_and_next_call_runs() {
         &[native("call_2", "skill.search", r#"{"query":""}"#)],
         r1.len(),
     );
-    execute_and_persist_all(&gw, &sid, &mut r2, "never").await;
+    execute_and_persist_all(&app, &gw, &sid, &mut r2, "never").await;
     assert_eq!(r2[0].status, ToolStatus::Succeeded);
 
     let msgs = session_msgs(&gw, &sid);
@@ -388,6 +399,7 @@ async fn chat_denied_tool_single_cancelled_result_no_side_effect_no_reexec() {
 #[tokio::test]
 async fn chat_native_authoritative_duplicate_xml_runs_once() {
     let (gw, base) = test_gw("dedup");
+    let app = &tauri::test::mock_app().handle().clone();
     let sid = new_session(&gw, "never");
     add_user(&gw, &sid, "search");
 
@@ -406,7 +418,7 @@ async fn chat_native_authoritative_duplicate_xml_runs_once() {
     );
     assert_eq!(pending[0].tool_call_id.as_deref(), Some("call_1"));
 
-    execute_and_persist_all(&gw, &sid, &mut pending, "never").await;
+    execute_and_persist_all(&app, &gw, &sid, &mut pending, "never").await;
     let msgs = session_msgs(&gw, &sid);
     let results: Vec<_> = msgs
         .iter()
@@ -419,6 +431,7 @@ async fn chat_native_authoritative_duplicate_xml_runs_once() {
 #[tokio::test]
 async fn chat_truncated_output_with_pending_is_executed_not_discarded() {
     let (gw, base) = test_gw("trunc");
+    let app = &tauri::test::mock_app().handle().clone();
     let sid = new_session(&gw, "never");
     add_user(&gw, &sid, "search truncated");
 
@@ -449,7 +462,7 @@ async fn chat_truncated_output_with_pending_is_executed_not_discarded() {
         .unwrap();
     }
     assert!(truncated);
-    execute_and_persist_all(&gw, &sid, &mut pending, "never").await;
+    execute_and_persist_all(&app, &gw, &sid, &mut pending, "never").await;
 
     let msgs = session_msgs(&gw, &sid);
     assert!(
@@ -489,6 +502,7 @@ fn chat_orphaned_syntax_nudges_without_invalid_execution() {
 #[tokio::test]
 async fn chat_two_step_result_a_visible_for_b_final_after_b() {
     let (gw, base) = test_gw("twostep");
+    let app = &tauri::test::mock_app().handle().clone();
     let sid = new_session(&gw, "never");
     add_user(&gw, &sid, "two things");
 
@@ -500,7 +514,7 @@ async fn chat_two_step_result_a_visible_for_b_final_after_b() {
         &[native("call_1", "memory.search", r#"{"query":"alpha"}"#)],
         0,
     );
-    execute_and_persist_all(&gw, &sid, &mut r1, "never").await;
+    execute_and_persist_all(&app, &gw, &sid, &mut r1, "never").await;
     assert_eq!(r1[0].status, ToolStatus::Succeeded);
 
     // Result A must already be in context before response 2 runs.
@@ -524,7 +538,7 @@ async fn chat_two_step_result_a_visible_for_b_final_after_b() {
         r1.len(),
     );
     assert_eq!(r2.len(), 1);
-    execute_and_persist_all(&gw, &sid, &mut r2, "never").await;
+    execute_and_persist_all(&app, &gw, &sid, &mut r2, "never").await;
     assert_eq!(r2[0].status, ToolStatus::Succeeded);
 
     // Final assistant response occurs after B.

@@ -116,10 +116,7 @@ export function gwSetModelEnabled(
   return invoke<void>(CMD_GW_SET_MOD, { modelId, enabled });
 }
 
-export function gwConnect(
-  providerId: string,
-  apiKey?: string,
-): Promise<void> {
+export function gwConnect(providerId: string, apiKey?: string): Promise<void> {
   return invoke<void>(CMD_GW_CONN, { providerId, tok: apiKey ?? null });
 }
 
@@ -191,7 +188,8 @@ export type StreamEvent =
   | { type: "term"; idx: number; chunk: string }
   | { type: "term_end"; idx: number; code: number }
   | { type: "approval"; id: string; idx: number; command: string }
-  | { type: "notice"; msg: string };
+  | { type: "notice"; msg: string }
+  | { type: "turn_end"; session_id: string };
 
 export function sessCreateSession(
   title: string,
@@ -307,8 +305,59 @@ export function sessChatStream(
   return invoke<void>(CMD_SESS_STREAM, { sessionId, content, onEvent });
 }
 
+export function sessWatchEvents(
+  sessionId: string,
+  onEvent: Channel<StreamEvent>,
+): Promise<void> {
+  return invoke<void>("sess_watch_events", { sessionId, onEvent });
+}
+
+export function sessUnwatch(): Promise<void> {
+  return invoke<void>("sess_unwatch");
+}
+
 export function sessCancelChat(sessionId: string): Promise<boolean> {
   return invoke<boolean>("sess_cancel_chat", { sessionId });
+}
+
+export type Job = {
+  id: string;
+  session_id: string | null;
+  label: string;
+  command: string;
+  cwd: string | null;
+  profile: string;
+  privilege: string;
+  state: string;
+  exit: number | null;
+  wake: boolean;
+  permission: string;
+  started_ms: number;
+  ended_ms: number | null;
+  duration_ms: number | null;
+  out_bytes: number;
+  truncated: boolean;
+  note: string | null;
+};
+
+export type JobRead = {
+  job: Job;
+  text: string;
+};
+
+export function jobList(sessionId?: string, limit?: number): Promise<Job[]> {
+  return invoke<Job[]>("job_list", {
+    sessionId: sessionId ?? null,
+    limit: limit ?? null,
+  });
+}
+
+export function jobRead(id: string, maxChars?: number): Promise<JobRead> {
+  return invoke<JobRead>("job_read", { id, maxChars: maxChars ?? null });
+}
+
+export function jobKill(id: string): Promise<boolean> {
+  return invoke<boolean>("job_kill", { id });
 }
 
 export type TermShellStatus = {
@@ -655,8 +704,16 @@ export type MemoryLink = {
   created_at: string;
 };
 
-export function memoryLink(fromId: string, toId: string, relation?: string): Promise<MemoryLink> {
-  return invoke<MemoryLink>("memory_link", { fromId, toId, relation: relation ?? null });
+export function memoryLink(
+  fromId: string,
+  toId: string,
+  relation?: string,
+): Promise<MemoryLink> {
+  return invoke<MemoryLink>("memory_link", {
+    fromId,
+    toId,
+    relation: relation ?? null,
+  });
 }
 
 export function memoryUnlink(fromId: string, toId: string): Promise<void> {
@@ -744,7 +801,10 @@ export type LibDownload = {
   dest: string;
 };
 
-export function libraryPreview(id: string, maxChars?: number): Promise<LibPreview> {
+export function libraryPreview(
+  id: string,
+  maxChars?: number,
+): Promise<LibPreview> {
   return invoke<LibPreview>("library_preview", { id, maxChars });
 }
 

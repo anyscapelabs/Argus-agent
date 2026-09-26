@@ -243,6 +243,11 @@ async fn rollup_with_model_end_to_end() {
         logos_dir: tmp.join("logos"),
         approvals: StdMutex::new(HashMap::new()),
         tasks: StdMutex::new(HashMap::new()),
+        jobs_dir: std::env::temp_dir().join("argus-jobs"),
+        jobs: StdMutex::new(HashMap::new()),
+        events: StdMutex::new(HashMap::new()),
+        turns: StdMutex::new(HashSet::new()),
+        watching: StdMutex::new(None),
     };
 
     let a = {

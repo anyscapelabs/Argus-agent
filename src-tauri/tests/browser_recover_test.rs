@@ -1,5 +1,7 @@
 use argus_lib::tools::browser::{self, extpipe};
+use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -25,7 +27,6 @@ fn sandbox() -> PathBuf {
 
 fn test_gw(tag: &str) -> (argus_lib::gateway::Gateway, PathBuf) {
     use std::collections::HashMap;
-    use std::sync::Mutex;
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     conn.execute_batch(argus_lib::gateway::schema::MIGRATE)
         .unwrap();
@@ -48,6 +49,11 @@ fn test_gw(tag: &str) -> (argus_lib::gateway::Gateway, PathBuf) {
         logos_dir,
         approvals: Mutex::new(HashMap::new()),
         tasks: Mutex::new(HashMap::new()),
+        jobs_dir: std::env::temp_dir().join("argus-jobs"),
+        jobs: Mutex::new(HashMap::new()),
+        events: Mutex::new(HashMap::new()),
+        turns: Mutex::new(HashSet::new()),
+        watching: StdMutex::new(None),
     };
     (gw, base)
 }
@@ -406,7 +412,11 @@ async fn approval_and_sensitive_checks_survive_recovery() {
         .await
     );
 
+    let mock = tauri::test::mock_app();
+    let mock = &mock.handle().clone();
+
     let err = argus_lib::tools::exec(
+        mock,
         &gw,
         "browser.click",
         &serde_json::json!({"ref": 0, "snapshot": g}).to_string(),
@@ -420,6 +430,7 @@ async fn approval_and_sensitive_checks_survive_recovery() {
     assert!(err.contains("asks before acting"), "got: {err}");
 
     argus_lib::tools::exec(
+        mock,
         &gw,
         "browser.click",
         &serde_json::json!({"ref": 0, "snapshot": g}).to_string(),

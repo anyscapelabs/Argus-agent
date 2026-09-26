@@ -1,5 +1,6 @@
 pub mod detect;
 
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -17,7 +18,7 @@ use crate::gateway::schema::StreamEvent;
 pub use detect::{ShellConfig, ShellKind};
 
 const TERM_TIMEOUT_MIN: u64 = 10;
-const TERM_TIMEOUT_MAX: u64 = 1800;
+pub const TERM_TIMEOUT_MAX: u64 = 1800;
 const TERM_TIMEOUT_DEF: u64 = 120;
 const TERM_TIMEOUT_LONG: u64 = 600;
 const DRAIN: Duration = Duration::from_secs(2);
@@ -40,6 +41,19 @@ tokio::task_local! {
 
 type Buf = Arc<StdMutex<String>>;
 
+pub type LogSink = Arc<StdMutex<std::fs::File>>;
+
+pub fn open_log(path: &std::path::Path) -> Result<LogSink, String> {
+    let f = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(path)
+        .map_err(|e| e.to_string())?;
+
+    Ok(Arc::new(StdMutex::new(f)))
+}
+
 struct Budget {
     left: AtomicUsize,
     dropped: AtomicUsize,
@@ -52,6 +66,7 @@ async fn pump<R>(
     buf: Buf,
     eof: watch::Sender<usize>,
     budget: Arc<Budget>,
+    log: Option<LogSink>,
 ) where
     R: tokio::io::AsyncRead + Unpin,
 {
@@ -87,6 +102,12 @@ async fn pump<R>(
 
         if let Ok(mut g) = buf.lock() {
             g.push_str(&s);
+        }
+
+        if let Some(l) = &log {
+            if let Ok(mut f) = l.lock() {
+                let _ = f.write_all(s.as_bytes());
+            }
         }
 
         if let Some(c) = &chan {
@@ -351,6 +372,7 @@ pub async fn run_child(
     chan: Option<&Channel<StreamEvent>>,
     hard: Duration,
     cap: usize,
+    log: Option<LogSink>,
 ) -> Result<RawRun, String> {
     let out = child.take_stdout().ok_or("no stdout")?;
     let err = child.take_stderr().ok_or("no stderr")?;
@@ -371,6 +393,7 @@ pub async fn run_child(
         out_buf.clone(),
         eof_tx.clone(),
         budget.clone(),
+        log.clone(),
     ));
     let t2 = tokio::spawn(pump(
         err,
@@ -379,6 +402,7 @@ pub async fn run_child(
         err_buf.clone(),
         eof_tx,
         budget.clone(),
+        log,
     ));
 
     let outcome = tokio::time::timeout(hard, child.wait_hard()).await;
@@ -472,7 +496,7 @@ pub async fn run_stream(
 
     let hard = timeout_from(args, cmd);
     let child = spawn_shell(cmd, args["cwd"].as_str(), elevated)?;
-    let run = run_child(child.into(), idx, chan, hard, DEFAULT_OUT_CAP).await?;
+    let run = run_child(child.into(), idx, chan, hard, DEFAULT_OUT_CAP, None).await?;
 
     if run.cancelled {
         return Err("stopped".into());

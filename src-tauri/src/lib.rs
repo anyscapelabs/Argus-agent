@@ -1,5 +1,6 @@
 pub mod connectors;
 pub mod gateway;
+pub mod jobs;
 pub mod learning;
 pub mod library;
 pub mod mcp;
@@ -9,7 +10,7 @@ pub mod sessions;
 pub mod skills;
 pub mod tools;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use tauri::Manager;
@@ -48,6 +49,8 @@ pub fn run() {
             learning::migrate(&conn)?;
             connectors::store::migrate(&conn)?;
             tools::sandbox::schema::migrate(&conn)?;
+            jobs::schema::migrate(&conn)?;
+            jobs::reconcile(&conn)?;
 
             let _ = mcp::sync_from(&conn);
 
@@ -61,6 +64,9 @@ pub fn run() {
 
             let logos_dir = dir.join("logos");
             std::fs::create_dir_all(&logos_dir)?;
+
+            let jobs_dir = dir.join("jobs");
+            std::fs::create_dir_all(&jobs_dir)?;
 
             tools::browser::init(dir.join("browser-profiles"));
             tools::browser::extpipe::start_listener(dir.clone());
@@ -83,6 +89,11 @@ pub fn run() {
                 logos_dir,
                 approvals: Mutex::new(HashMap::new()),
                 tasks: Mutex::new(HashMap::new()),
+                jobs: Mutex::new(HashMap::new()),
+                events: Mutex::new(HashMap::new()),
+                turns: Mutex::new(HashSet::new()),
+                watching: Mutex::new(None),
+                jobs_dir,
             });
 
             let handle = app.handle().clone();
@@ -90,6 +101,8 @@ pub fn run() {
                 let gw = handle.state::<Gateway>();
                 gateway::maybe_sync_catalog(gw.inner()).await;
             });
+
+            let _ = jobs::cleanup(&app.state::<Gateway>(), 200);
 
             Ok(())
         })
@@ -128,6 +141,11 @@ pub fn run() {
             sessions::newagent_prefs,
             sessions::set_newagent_prefs,
             sessions::chat::sess_chat_stream,
+            sessions::chat::sess_watch_events,
+            sessions::chat::sess_unwatch,
+            jobs::job_list,
+            jobs::job_read,
+            jobs::job_kill,
             sessions::chat::sess_cancel_chat,
             sessions::chat::sess_resolve_approval,
             sessions::browser_import::sess_browser_import,

@@ -34,6 +34,22 @@ After a terminal operation: inspect the result; determine whether it succeeded; 
 continue if work remains; recover if there is a concrete recovery path; \
 finish when the task is complete.\n\
 \n\
+LONG RUNNING WORK\n\
+A command that will take more than a few minutes — a build, a large download, a \
+migration, a long test suite — must be started with background true. That returns a \
+job id at once instead of blocking you on it.\n\
+Once a command is in the background, do not wait for it and do not re-run it. Get on \
+with other work. When it finishes you are given the job id and the tail of its output; \
+read that before you say anything about how it went. job.list shows every job and its \
+state, job.read returns what one printed, job.kill stops one.\n\
+Never background a command whose answer you need before you can take the next step. If a \
+job is still running, say plainly that it is still running rather than guessing.\n\
+A background job inherits this session's permission. Starting one is approved in front of \
+the user like any other write, so the command itself is settled before it detaches. But the \
+turn that picks the job up when it finishes may run with nobody watching: under ask, a step \
+that would need approval is refused outright rather than left hanging. If the user wants a \
+finished job acted on unattended, they set the session to never.\n\
+\n\
 TOOL SELECTION\n\
 Choose the most direct tool for the task. Use one tool when it is sufficient. \
 Do not perform unnecessary exploratory actions. \

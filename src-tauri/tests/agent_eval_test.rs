@@ -20,6 +20,7 @@
 
 use argus_lib::gateway::schema::{Avail, ModelEntry, Provider};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -348,6 +349,11 @@ async fn setup(
         logos_dir,
         approvals: StdMutex::new(HashMap::new()),
         tasks: StdMutex::new(HashMap::new()),
+        jobs_dir: std::env::temp_dir().join("argus-jobs"),
+        jobs: StdMutex::new(HashMap::new()),
+        events: StdMutex::new(HashMap::new()),
+        turns: StdMutex::new(HashSet::new()),
+        watching: StdMutex::new(None),
     };
 
     let session_id = {

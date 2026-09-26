@@ -227,7 +227,8 @@ pub struct RetryOutcome {
     pub kind: Option<RecoveryKind>,
 }
 
-pub async fn exec_with_recovery(
+pub async fn exec_with_recovery<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
     gw: &crate::gateway::Gateway,
     name: &str,
     args_json: &str,
@@ -237,7 +238,8 @@ pub async fn exec_with_recovery(
     on_term: Option<(&Channel<StreamEvent>, u32)>,
 ) -> RetryOutcome {
     let (result, attempts) =
-        run_bounded(|| super::exec(gw, name, args_json, permission, web, approved, on_term)).await;
+        run_bounded(|| super::exec(app, gw, name, args_json, permission, web, approved, on_term))
+            .await;
 
     let kind = match &result {
         Ok(_) => None,

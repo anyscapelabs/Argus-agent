@@ -253,6 +253,9 @@ pub enum StreamEvent {
     Notice {
         msg: String,
     },
+    TurnEnd {
+        session_id: String,
+    },
 }
 
 #[derive(Debug, Default)]

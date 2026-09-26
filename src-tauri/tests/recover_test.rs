@@ -7,6 +7,7 @@
 
 use argus_lib::tools::recover::{classify, exec_with_recovery, run_bounded, RecoveryKind};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Mutex;
 
 fn test_gw(tag: &str) -> (argus_lib::gateway::Gateway, std::path::PathBuf) {
@@ -34,6 +35,11 @@ fn test_gw(tag: &str) -> (argus_lib::gateway::Gateway, std::path::PathBuf) {
         logos_dir,
         approvals: Mutex::new(HashMap::new()),
         tasks: Mutex::new(HashMap::new()),
+        jobs_dir: std::env::temp_dir().join("argus-jobs"),
+        jobs: Mutex::new(HashMap::new()),
+        events: Mutex::new(HashMap::new()),
+        turns: Mutex::new(HashSet::new()),
+        watching: Mutex::new(None),
     };
 
     (gw, base)
@@ -273,21 +279,33 @@ async fn repeated_failure_stops_after_retry_budget() {
 #[tokio::test]
 async fn real_tool_failures_do_not_retry() {
     let (gw, base) = test_gw("no-retry");
+    let app = tauri::test::mock_app();
+    let app = &app.handle().clone();
 
     // Fatal: unknown tool.
-    let out = exec_with_recovery(&gw, "nope.tool", "{}", "never", false, true, None).await;
+    let out = exec_with_recovery(app, &gw, "nope.tool", "{}", "never", false, true, None).await;
     assert!(out.result.is_err());
     assert_eq!(out.attempts, 1);
     assert_eq!(out.kind, Some(RecoveryKind::ToolNotFound));
 
     // Invalid arguments: malformed JSON.
-    let out = exec_with_recovery(&gw, "skill.read", "not-json", "never", false, true, None).await;
+    let out = exec_with_recovery(
+        app,
+        &gw,
+        "skill.read",
+        "not-json",
+        "never",
+        false,
+        true,
+        None,
+    )
+    .await;
     assert!(out.result.is_err());
     assert_eq!(out.attempts, 1);
     assert_eq!(out.kind, Some(RecoveryKind::InvalidArguments));
 
     // Invalid arguments: missing required field.
-    let out = exec_with_recovery(&gw, "skill.read", "{}", "never", false, true, None).await;
+    let out = exec_with_recovery(app, &gw, "skill.read", "{}", "never", false, true, None).await;
     assert!(out.result.is_err());
     assert_eq!(out.attempts, 1);
     assert_eq!(out.kind, Some(RecoveryKind::InvalidArguments));
@@ -304,7 +322,18 @@ async fn real_denied_write_does_not_retry_and_reports_once() {
     // otherwise any unwritable path still proves attempts == 1.
     let proc_target = "/proc/argus-recover-must-not-exist-zzz/out.txt";
     let args = serde_json::json!({ "path": proc_target, "content": "x" }).to_string();
-    let out = exec_with_recovery(&gw, "fs.write", &args, "never", false, true, None).await;
+    let app = tauri::test::mock_app();
+    let out = exec_with_recovery(
+        &app.handle().clone(),
+        &gw,
+        "fs.write",
+        &args,
+        "never",
+        false,
+        true,
+        None,
+    )
+    .await;
     assert!(out.result.is_err());
     assert_eq!(
         out.attempts, 1,
@@ -332,7 +361,10 @@ async fn real_denied_write_does_not_retry_and_reports_once() {
 #[tokio::test]
 async fn real_success_uses_single_attempt() {
     let (gw, base) = test_gw("success");
+    let app = tauri::test::mock_app();
+    let app = &app.handle().clone();
     let out = exec_with_recovery(
+        app,
         &gw,
         "skill.search",
         r#"{"query":""}"#,

@@ -273,10 +273,10 @@ export default function ChatInput({
               "transition-colors focus:outline-none focus-visible:bg-bg-hover-primary " +
               `${
                 running
-                  ? "bg-white text-bg-primary hover:opacity-90"
+                  ? "bg-text-primary text-bg-primary hover:opacity-90"
                   : "bg-bg-hover-secondary text-text-secondary hover:bg-bg-hover-primary " +
-                    "disabled:bg-bg-hover-secondary disabled:text-text-secondary " +
-                    "enabled:bg-white enabled:text-bg-primary enabled:hover:opacity-90"
+                    "disabled:bg-bg-hover-secondary disabled:text-text-tertiary " +
+                    "enabled:bg-accent enabled:text-bg-primary enabled:hover:opacity-90"
               }`
             }
           >

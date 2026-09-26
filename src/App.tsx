@@ -75,8 +75,25 @@ function App() {
       sessionStore.loadSessions();
     });
 
+    const unJob = listen<{ label: string; state: string; exit: number | null }>(
+      "job-done",
+      (e) => {
+        const { label, state } = e.payload;
+        const ok = state === "done";
+
+        void notifyDone(
+          ok ? `Finished: ${label}` : `${label} — ${state}`,
+          ok
+            ? "The background job you started is done."
+            : "The background job did not finish cleanly. Open the session to see why.",
+        );
+        sessionStore.loadSessions();
+      },
+    );
+
     return () => {
       void un.then((f) => f());
+      void unJob.then((f) => f());
     };
   }, []);
 

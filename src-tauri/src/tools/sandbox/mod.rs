@@ -38,6 +38,8 @@ pub struct Request<'a> {
     pub permission: &'a str,
     pub timeout_secs: Option<u64>,
     pub origin: Option<&'a Origin>,
+    pub background: bool,
+    pub log: Option<shell::LogSink>,
 }
 
 pub fn parse_profile(args: &Value, default: Profile) -> SandboxResult<Profile> {
@@ -241,11 +243,17 @@ async fn finish(
         .or(policy.limits.wall_secs)
         .unwrap_or_else(|| shell::default_timeout_for(req.command));
 
-    let hard = Duration::from_secs(asked.clamp(1, 1800));
+    let ceiling = if req.background {
+        crate::jobs::DEADMAN_MAX
+    } else {
+        shell::TERM_TIMEOUT_MAX
+    };
+
+    let hard = Duration::from_secs(asked.clamp(1, ceiling));
     let cap = policy.limits.output_bytes.unwrap_or(shell::DEFAULT_OUT_CAP);
 
     let started = Instant::now();
-    let ran = shell::run_child(child, idx, chan, hard, cap)
+    let ran = shell::run_child(child, idx, chan, hard, cap, req.log.clone())
         .await
         .map_err(SandboxError::Spawn)?;
 

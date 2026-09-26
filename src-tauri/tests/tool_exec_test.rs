@@ -1,6 +1,7 @@
 use argus_lib::gateway::schema::ToolCall;
 use argus_lib::tools::{build_executions, has_orphaned_action_block, ToolStatus};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Mutex;
 
 fn native(id: &str, name: &str, args: &str) -> ToolCall {
@@ -36,6 +37,11 @@ fn test_gw(tag: &str) -> (argus_lib::gateway::Gateway, std::path::PathBuf) {
         logos_dir,
         approvals: Mutex::new(HashMap::new()),
         tasks: Mutex::new(HashMap::new()),
+        jobs_dir: std::env::temp_dir().join("argus-jobs"),
+        jobs: Mutex::new(HashMap::new()),
+        events: Mutex::new(HashMap::new()),
+        turns: Mutex::new(HashSet::new()),
+        watching: Mutex::new(None),
     };
 
     (gw, base)
@@ -147,7 +153,9 @@ fn multiple_distinct_calls_keep_text_then_native_order() {
 #[tokio::test]
 async fn one_successful_tool_call_yields_ok_result() {
     let (gw, base) = test_gw("success");
+    let app = &tauri::test::mock_app().handle().clone();
     let out = argus_lib::tools::exec(
+        app,
         &gw,
         "skill.search",
         r#"{"query":""}"#,
@@ -164,7 +172,8 @@ async fn one_successful_tool_call_yields_ok_result() {
 #[tokio::test]
 async fn unknown_tool_becomes_structured_error() {
     let (gw, base) = test_gw("unknown");
-    let err = argus_lib::tools::exec(&gw, "nope.tool", "{}", "ask", false, true, None)
+    let app = &tauri::test::mock_app().handle().clone();
+    let err = argus_lib::tools::exec(&app, &gw, "nope.tool", "{}", "ask", false, true, None)
         .await
         .expect_err("unknown tool must fail");
     assert!(err.contains("unknown tool"), "got: {err}");
@@ -183,9 +192,19 @@ async fn unknown_tool_becomes_structured_error() {
 #[tokio::test]
 async fn malformed_args_become_error_result() {
     let (gw, base) = test_gw("malformed");
-    let err = argus_lib::tools::exec(&gw, "skill.read", "not-json", "ask", false, true, None)
-        .await
-        .expect_err("invalid JSON must fail");
+    let app = &tauri::test::mock_app().handle().clone();
+    let err = argus_lib::tools::exec(
+        &app,
+        &gw,
+        "skill.read",
+        "not-json",
+        "ask",
+        false,
+        true,
+        None,
+    )
+    .await
+    .expect_err("invalid JSON must fail");
     assert!(
         err.contains("not valid JSON"),
         "malformed args must surface as JSON error, got: {err}"
@@ -196,8 +215,9 @@ async fn malformed_args_become_error_result() {
 #[tokio::test]
 async fn tool_returning_error_surfaces_message() {
     let (gw, base) = test_gw("tool-err");
+    let app = &tauri::test::mock_app().handle().clone();
     // Valid JSON but missing required field -> tool-level error.
-    let err = argus_lib::tools::exec(&gw, "skill.read", "{}", "ask", false, true, None)
+    let err = argus_lib::tools::exec(&app, &gw, "skill.read", "{}", "ask", false, true, None)
         .await
         .expect_err("missing name must fail");
     assert!(err.contains("missing name"), "got: {err}");
@@ -207,6 +227,7 @@ async fn tool_returning_error_surfaces_message() {
 #[tokio::test]
 async fn two_step_results_append_in_order() {
     let (gw, base) = test_gw("twostep");
+    let app = &tauri::test::mock_app().handle().clone();
     // Round 1: two accepted calls, executed sequentially in order.
     let mut round1 = build_executions(
         r#"<action tool="skill.search">{"query":"a"}</action>"#,
@@ -218,7 +239,7 @@ async fn two_step_results_append_in_order() {
     let mut results: Vec<String> = vec![];
     for e in round1.iter_mut() {
         e.begin();
-        match argus_lib::tools::exec(&gw, &e.tool, &e.args, "ask", false, true, None).await {
+        match argus_lib::tools::exec(&app, &gw, &e.tool, &e.args, "ask", false, true, None).await {
             Ok(body) => e.succeed(body),
             Err(err) => e.fail(err),
         }
@@ -262,7 +283,8 @@ async fn code_run_is_gated_and_needs_a_command() {
     assert!(is_mutating("code.run"));
 
     let (gw, _base) = test_gw("code-run");
-    let err = exec(&gw, "code.run", "{}", "never", false, true, None)
+    let app = &tauri::test::mock_app().handle().clone();
+    let err = exec(app, &gw, "code.run", "{}", "never", false, true, None)
         .await
         .unwrap_err();
     assert_eq!(err, "missing command");

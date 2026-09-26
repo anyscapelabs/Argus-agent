@@ -11,6 +11,7 @@
 
 use argus_lib::gateway::schema::{Avail, ModelEntry, Provider};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex as StdMutex};
 
 const REAL_BASE: &str = "http://127.0.0.1:11435/v1";
@@ -107,6 +108,11 @@ async fn eval_real_terminal_task() {
         logos_dir,
         approvals: StdMutex::new(HashMap::new()),
         tasks: StdMutex::new(HashMap::new()),
+        jobs_dir: std::env::temp_dir().join("argus-jobs"),
+        jobs: StdMutex::new(HashMap::new()),
+        events: StdMutex::new(HashMap::new()),
+        turns: StdMutex::new(HashSet::new()),
+        watching: StdMutex::new(None),
     };
 
     let session_id = {
@@ -310,6 +316,11 @@ async fn eval_real_copy_task() {
         logos_dir,
         approvals: StdMutex::new(HashMap::new()),
         tasks: StdMutex::new(HashMap::new()),
+        jobs_dir: std::env::temp_dir().join("argus-jobs"),
+        jobs: StdMutex::new(HashMap::new()),
+        events: StdMutex::new(HashMap::new()),
+        turns: StdMutex::new(HashSet::new()),
+        watching: StdMutex::new(None),
     };
 
     let session_id = {

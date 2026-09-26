@@ -4,16 +4,27 @@ pub mod router;
 pub mod schema;
 pub mod store;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use reqwest::Client;
 use rusqlite::Connection;
 use tauri::State;
-use tokio::sync::oneshot;
+use tokio::sync::{broadcast, oneshot, Notify};
 
-use schema::{Avail, ChatModel, ChatReq, ChatResp, ModelEntry, Provider, ProviderModel, SyncStats};
+use schema::{
+    Avail, ChatModel, ChatReq, ChatResp, ModelEntry, Provider, ProviderModel, StreamEvent,
+    SyncStats,
+};
+
+pub const BUS_CAP: usize = 512;
+
+pub struct Bus {
+    pub tx: broadcast::Sender<StreamEvent>,
+    pub live: Arc<AtomicBool>,
+}
 
 #[derive(Debug)]
 pub struct ApprovalReply {
@@ -27,8 +38,105 @@ pub struct Gateway {
     pub skills_dir: PathBuf,
     pub library_dir: PathBuf,
     pub logos_dir: PathBuf,
+    pub jobs_dir: PathBuf,
     pub approvals: Mutex<HashMap<String, oneshot::Sender<ApprovalReply>>>,
-    pub tasks: Mutex<HashMap<String, std::sync::Arc<tokio::sync::Notify>>>,
+    pub tasks: Mutex<HashMap<String, Arc<Notify>>>,
+    pub jobs: Mutex<HashMap<String, Arc<Notify>>>,
+    pub events: Mutex<HashMap<String, Bus>>,
+    pub turns: Mutex<HashSet<String>>,
+    pub watching: Mutex<Option<String>>,
+}
+
+impl Gateway {
+    pub fn claim_turn(&self, session_id: &str) -> bool {
+        let mut set = self.turns.lock().unwrap_or_else(|p| p.into_inner());
+        set.insert(session_id.to_string())
+    }
+
+    pub fn release_turn(&self, session_id: &str) {
+        if let Ok(mut set) = self.turns.lock() {
+            set.remove(session_id);
+        }
+    }
+
+    pub fn watching(&self, session_id: &str) -> bool {
+        self.watching
+            .lock()
+            .map(|w| w.as_deref() == Some(session_id))
+            .unwrap_or(false)
+    }
+
+    pub fn set_watching(&self, session_id: Option<&str>) {
+        if let Ok(mut w) = self.watching.lock() {
+            *w = session_id.map(|s| s.to_string());
+        }
+    }
+
+    pub fn turn_busy(&self, session_id: &str) -> bool {
+        self.turns
+            .lock()
+            .map(|s| s.contains(session_id))
+            .unwrap_or(false)
+    }
+
+    pub fn watched(&self, session_id: &str) -> bool {
+        self.events
+            .lock()
+            .map(|m| {
+                m.get(session_id)
+                    .is_some_and(|b| b.live.load(Ordering::Relaxed))
+            })
+            .unwrap_or(false)
+    }
+}
+
+impl Gateway {
+    pub fn publish(&self, session_id: &str, ev: StreamEvent) {
+        if let Ok(map) = self.events.lock() {
+            if let Some(tx) = map.get(session_id) {
+                let _ = tx.tx.send(ev);
+            }
+        }
+    }
+
+    pub fn subscribe(&self, session_id: &str) -> broadcast::Receiver<StreamEvent> {
+        self.bus(session_id).0.subscribe()
+    }
+
+    pub fn go_live(&self, session_id: &str) {
+        self.bus(session_id).1.store(true, Ordering::Relaxed);
+    }
+
+    pub fn go_quiet(&self, session_id: &str) {
+        if let Ok(map) = self.events.lock() {
+            if let Some(b) = map.get(session_id) {
+                b.live.store(false, Ordering::Relaxed);
+            }
+        }
+    }
+
+    fn bus(&self, session_id: &str) -> (broadcast::Sender<StreamEvent>, Arc<AtomicBool>) {
+        let mut map = self.events.lock().unwrap_or_else(|p| p.into_inner());
+        let b = map.entry(session_id.to_string()).or_insert_with(|| {
+            let (tx, _rx) = broadcast::channel(BUS_CAP);
+            Bus {
+                tx,
+                live: Arc::new(AtomicBool::new(false)),
+            }
+        });
+
+        (b.tx.clone(), b.live.clone())
+    }
+
+    pub fn drop_bus(&self, session_id: &str) {
+        if let Ok(mut map) = self.events.lock() {
+            if let Some(tx) = map.get(session_id) {
+                if tx.tx.receiver_count() == 0 {
+                    map.remove(session_id);
+                }
+            }
+        }
+    }
 }
 
 pub fn approval_reply(allow: bool, args: Option<String>) -> Result<ApprovalReply, String> {

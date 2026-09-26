@@ -134,7 +134,7 @@
    theme only — the plate itself must not be flipped with it, hence the target
    is the mark inside the plate, not the plate. */
 .logo-plate {
-  background: var(--bg-primary);
+  background: var(--bg-secondary);
   box-shadow: inset 0 0 0 1px var(--border-primary);
 }
 

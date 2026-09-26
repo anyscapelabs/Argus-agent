@@ -23,8 +23,7 @@ export function Card({
   return (
     <div
       className={
-        "overflow-hidden rounded-xl border border-border-primary " +
-        "bg-bg-secondary" +
+        "overflow-hidden rounded-xl border border-border-primary" +
         (flush ? "" : " divide-y divide-border-primary")
       }
     >
@@ -150,7 +149,7 @@ export function Btn({
 }
 
 export const INPUT =
-  "w-full rounded-lg border border-border-primary bg-bg-primary px-3 " +
+  "w-full rounded-lg border border-border-primary bg-bg-secondary px-3 " +
   "py-2 text-sm text-text-primary outline-none placeholder:text-" +
   "tertiary focus:border-text-tertiary disabled:opacity-50";
 
@@ -169,7 +168,7 @@ export function Segmented<T extends string>({
     <div
       className={
         "flex h-8 items-center rounded-full border border-border-primary " +
-        "bg-bg-primary p-0.5 text-xs"
+        "bg-bg-secondary p-0.5 text-xs"
       }
     >
       {opts.map((opt) => {

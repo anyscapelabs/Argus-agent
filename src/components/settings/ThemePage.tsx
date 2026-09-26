@@ -7,7 +7,7 @@ import {
   THEME_MODES,
   type ThemeMode,
 } from "../../lib/theme";
-import { Card, Note, Page, Section } from "./kit";
+import { Page, Section } from "./kit";
 
 /// A miniature of the window, drawn in the palette it stands for. Three grey
 /// bars and a sidebar beat a sun-and-moon icon every time: you can see what you
@@ -71,9 +71,6 @@ export default function ThemePage() {
     setTheme(next);
   }
 
-  const live: ThemeMode =
-    mode === "system" ? (sysDark ? "dark" : "light") : mode;
-
   return (
     <Page>
       <Section label="Theme">
@@ -108,12 +105,6 @@ export default function ThemePage() {
                   }
                 >
                   {opt.label}
-                  {opt.value === "system" && (
-                    <span className="text-text-tertiary">
-                      {" "}
-                      · {sysDark ? "dark" : "light"}
-                    </span>
-                  )}
                 </span>
               </button>
             );
@@ -121,16 +112,6 @@ export default function ThemePage() {
         </div>
       </Section>
 
-      <Section label="Now showing">
-        <Card>
-          <div className="px-4 py-3.5">
-            <Note>
-              The {live} palette. Argus repaints immediately — nothing reloads
-              and no work is lost.
-            </Note>
-          </div>
-        </Card>
-      </Section>
     </Page>
   );
 }

@@ -604,3 +604,28 @@ fn a_child_with_no_state_recorded_is_history_not_a_live_turn() {
     assert_eq!(agents::cleanup(&conn, 3).unwrap(), 1);
     assert_eq!(store::children_of(&conn, &pid).unwrap().len(), 3);
 }
+
+#[test]
+fn a_failed_sub_agent_tells_the_parent_why_even_when_it_wrote_a_lot() {
+    let said = Some("I read four files and here is what I found.".to_string());
+
+    let quiet = agents::report(&None, &Err("boom".into()), "did not finish");
+    assert!(quiet.contains("did not finish: boom"));
+
+    let loud = agents::report(&said, &Err("boom".into()), "did not finish");
+    assert!(
+        loud.contains("did not finish: boom"),
+        "the reason vanished under a chatty answer: {loud}"
+    );
+    assert!(loud.contains("I read four files"));
+
+    let stopped = agents::report(&said, &Err("stopped".into()), "was stopped");
+    assert!(stopped.contains("was stopped: stopped"));
+
+    let clean = agents::report(&said, &Ok(()), "finished");
+    assert!(
+        !clean.contains("<warning"),
+        "a clean run warns about nothing"
+    );
+    assert!(!clean.contains("It finished: "));
+}

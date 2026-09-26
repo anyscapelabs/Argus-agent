@@ -194,6 +194,24 @@ pub fn spawn<R: tauri::Runtime>(
     get(&conn, &child_id)
 }
 
+/// What the parent is told. A child that failed halfway has usually written
+/// plenty — dropping the reason because there was an answer to show is how a
+/// turn dies with nobody able to say why.
+pub fn report(answer: &Option<String>, outcome: &Result<(), String>, verdict: &str) -> String {
+    let said = match answer {
+        Some(a) => clip(a, SUMMARY_MAX),
+        None => "It finished without saying anything.".to_string(),
+    };
+
+    match outcome {
+        Ok(()) => said,
+        Err(e) => format!(
+            "{said}\n\n<warning severity=\"medium\">It {verdict}: \
+             {e}</warning>"
+        ),
+    }
+}
+
 async fn supervise<R: tauri::Runtime>(
     app: &AppHandle<R>,
     child_id: &str,
@@ -243,14 +261,7 @@ async fn supervise<R: tauri::Runtime>(
         let _ = store::set_agent_state(&conn, child_id, state, None);
     }
 
-    let summary = match &answer {
-        Some(a) => clip(a, SUMMARY_MAX),
-        None => match outcome {
-            Ok(()) => "It finished without saying anything.".to_string(),
-            Err(ref e) => format!("It {verdict}: {e}"),
-        },
-    };
-
+    let summary = report(&answer, &outcome, verdict);
     let body = format!(
         "<agent-done id=\"{child_id}\" name=\"{}\" state=\"{state}\">\n\
          The sub-agent you called {name} {verdict}. Its answer follows; its full \

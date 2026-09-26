@@ -72,6 +72,16 @@ impl Gateway {
         }
     }
 
+    /// Is a window on this session right now — a tail, not necessarily a turn
+    /// somebody is typing into. A sub-agent's approvals are rendered in its
+    /// parent's window, so this is what says a human could actually answer.
+    pub fn attached(&self, session_id: &str) -> bool {
+        self.events
+            .lock()
+            .map(|m| m.get(session_id).is_some_and(|b| b.tx.receiver_count() > 0))
+            .unwrap_or(false)
+    }
+
     pub fn turn_busy(&self, session_id: &str) -> bool {
         self.turns
             .lock()

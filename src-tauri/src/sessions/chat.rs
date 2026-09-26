@@ -328,6 +328,30 @@ impl ChatSink for BusSink<'_> {
     }
 }
 
+/// A sub-agent runs in its own session but answers to the chat that spawned
+/// it. Its text, its tools and its approval prompts all land in the parent's
+/// stream, because that is the window a human opened to watch this work.
+///
+/// The one thing it will not do is ask when nobody is there. `detached` keys
+/// off the parent being attached, so the moment that window closes the agent
+/// fails closed exactly like any other unattended turn.
+pub struct FanSink<'a> {
+    pub gw: &'a Gateway,
+    pub child_id: String,
+    pub parent_id: String,
+}
+
+impl ChatSink for FanSink<'_> {
+    fn emit(&self, ev: StreamEvent) {
+        self.gw.publish(&self.child_id, ev.clone());
+        self.gw.publish(&self.parent_id, ev);
+    }
+
+    fn detached(&self) -> bool {
+        !self.gw.attached(&self.parent_id)
+    }
+}
+
 pub fn attr_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")

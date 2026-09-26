@@ -364,7 +364,7 @@ class SessionStore {
     if (sessionId !== null) this.watching.delete(sessionId);
     else this.watching.clear();
 
-    void sessUnwatch().catch(() => {});
+    void sessUnwatch(sessionId ?? undefined).catch(() => {});
   }
 
   async send(sessionId: string, content: string) {

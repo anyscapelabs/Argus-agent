@@ -347,8 +347,8 @@ export function agentSetKeep(n: number): Promise<number> {
   return invoke<number>("agent_set_keep", { n });
 }
 
-export function sessUnwatch(): Promise<void> {
-  return invoke<void>("sess_unwatch");
+export function sessUnwatch(sessionId?: string): Promise<void> {
+  return invoke<void>("sess_unwatch", { sessionId: sessionId ?? null });
 }
 
 export function sessCancelChat(sessionId: string): Promise<boolean> {

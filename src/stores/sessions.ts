@@ -37,7 +37,10 @@ export type Turn = {
   term: Record<number, string>;
   termCode: Record<number, number>;
   approval: PendingApproval | null;
+  status: TurnStatus | null;
 };
+
+export type TurnStatus = { providerId: string; attempt: number };
 
 const EMPTY_TXT = "";
 const DEF_TITLE = "New chat";
@@ -54,6 +57,7 @@ function blankTurn(err: string | null = null): Turn {
     term: {},
     termCode: {},
     approval: null,
+    status: null,
   };
 }
 
@@ -278,6 +282,14 @@ class SessionStore {
       const prev = this.state.turns[sessionId] ?? blankTurn();
       this.set({ turns: { ...this.state.turns, [sessionId]: fn(prev) } });
     };
+
+    if (ev.type === "status") {
+      patch((prev) => ({
+        ...prev,
+        status: { providerId: ev.provider_id, attempt: ev.attempt },
+      }));
+      return;
+    }
 
     if (ev.type === "delta") {
       patch((prev) => ({ ...prev, text: prev.text + ev.text, err: null }));

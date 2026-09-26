@@ -3,6 +3,7 @@ use std::sync::Mutex;
 
 use argus_lib::agents;
 use argus_lib::gateway::Gateway;
+use argus_lib::sessions::chat;
 use argus_lib::sessions::schema::NewSession;
 use argus_lib::sessions::store;
 use tauri::Manager;
@@ -326,6 +327,78 @@ fn the_prune_is_counted_per_parent_not_globally() {
         1,
         "a busy chat does not spend a quiet one's history"
     );
+}
+
+#[test]
+fn a_sub_agents_output_stays_out_of_the_chat_that_started_it() {
+    use argus_lib::gateway::schema::StreamEvent;
+    use argus_lib::sessions::chat::ChatSink;
+
+    let app = app();
+    let pid = parent(&app);
+    let gw = app.state::<Gateway>();
+    let child = "child-1";
+
+    let mut parent_rx = gw.subscribe(&pid);
+    let mut child_rx = gw.subscribe(child);
+
+    let sink = chat::FanSink {
+        gw: gw.inner(),
+        child_id: child.into(),
+        parent_id: pid.clone(),
+    };
+
+    sink.emit(StreamEvent::Delta {
+        text: "raw terminal noise".into(),
+    });
+    sink.emit(StreamEvent::Term {
+        idx: 0,
+        chunk: "/home/brnx/Desktop/Argus/src".into(),
+    });
+    sink.emit(StreamEvent::TurnEnd {
+        session_id: child.into(),
+    });
+
+    assert!(
+        parent_rx.try_recv().is_err(),
+        "the parent chat must not see a sub-agent's stream"
+    );
+
+    let mut seen = 0;
+    while child_rx.try_recv().is_ok() {
+        seen += 1;
+    }
+    assert_eq!(seen, 3, "its own page still gets all of it");
+}
+
+#[test]
+fn only_an_approval_crosses_into_the_chat_that_started_it() {
+    use argus_lib::gateway::schema::StreamEvent;
+    use argus_lib::sessions::chat::ChatSink;
+
+    let app = app();
+    let pid = parent(&app);
+    let gw = app.state::<Gateway>();
+    let child = "child-1";
+
+    let mut parent_rx = gw.subscribe(&pid);
+
+    let sink = chat::FanSink {
+        gw: gw.inner(),
+        child_id: child.into(),
+        parent_id: pid.clone(),
+    };
+
+    sink.emit(StreamEvent::Approval {
+        id: "a1".into(),
+        idx: 0,
+        command: "rm -rf build".into(),
+    });
+
+    match parent_rx.try_recv() {
+        Ok(StreamEvent::Approval { command, .. }) => assert_eq!(command, "rm -rf build"),
+        other => panic!("a human has to be able to answer this, got: {other:?}"),
+    }
 }
 
 #[test]

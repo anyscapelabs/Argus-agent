@@ -144,6 +144,23 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
     )
     .map_err(|err| err.to_string())?;
 
+    let has_reach: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('agent_profiles') WHERE name = 'reach_all'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|n| n > 0)
+        .map_err(|err| err.to_string())?;
+
+    if !has_reach {
+        conn.execute(
+            "ALTER TABLE agent_profiles ADD COLUMN reach_all INTEGER NOT NULL DEFAULT 0",
+            [],
+        )
+        .map_err(|err| err.to_string())?;
+    }
+
     conn.pragma_update(None, "foreign_keys", true)
         .map_err(|err| err.to_string())?;
 

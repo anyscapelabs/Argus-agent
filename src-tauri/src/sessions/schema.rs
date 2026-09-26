@@ -56,7 +56,15 @@ CREATE TABLE IF NOT EXISTS agent_profiles (
   id           TEXT PRIMARY KEY,
   name         TEXT NOT NULL DEFAULT '',
   instructions TEXT NOT NULL DEFAULT '',
+  reach_all    INTEGER NOT NULL DEFAULT 0,
   created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS profile_grants (
+  profile_id TEXT NOT NULL REFERENCES agent_profiles(id) ON DELETE CASCADE,
+  capability TEXT NOT NULL,
+  target_id  TEXT NOT NULL,
+  PRIMARY KEY (profile_id, capability, target_id)
 );
 "#;
 

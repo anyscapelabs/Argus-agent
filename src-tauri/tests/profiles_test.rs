@@ -3,6 +3,7 @@ use std::sync::Mutex;
 
 use argus_lib::gateway::Gateway;
 use argus_lib::profiles;
+use argus_lib::profiles::schema::Grant;
 use argus_lib::sessions::schema::{NewMsg, NewSession};
 use argus_lib::sessions::store;
 use tauri::Manager;
@@ -416,4 +417,216 @@ fn a_pick_that_names_a_missing_profile_is_refused() {
 
     profiles::store::create(&conn, "Manager").unwrap();
     profiles::store::set_active(&conn, "ghost").unwrap_err();
+}
+
+fn grant(capability: &str, target_id: &str) -> Grant {
+    Grant {
+        capability: capability.into(),
+        target_id: target_id.into(),
+    }
+}
+
+#[test]
+fn a_new_profile_reaches_nothing() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let p = profiles::store::create(&conn, "Manager").unwrap();
+    let r = profiles::store::reach(&conn, &p.id).unwrap();
+
+    // Off by default. A profile that could see everything the moment it was
+    // created would be a profile the user never agreed to.
+    assert!(!r.reach_all);
+    assert!(r.grants.is_empty());
+}
+
+#[test]
+fn grants_survive_being_read_back() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let a = profiles::store::create(&conn, "Manager").unwrap();
+    let b = profiles::store::create(&conn, "Accountant").unwrap();
+
+    profiles::store::set_reach(
+        &conn,
+        &a.id,
+        false,
+        vec![grant("see_activity", &b.id), grant("read_chats", &b.id)],
+    )
+    .unwrap();
+
+    let r = profiles::store::reach(&conn, &a.id).unwrap();
+
+    assert!(!r.reach_all);
+    assert_eq!(r.grants.len(), 2);
+    assert!(r.grants.contains(&grant("see_activity", &b.id)));
+    assert!(r.grants.contains(&grant("read_chats", &b.id)));
+}
+
+#[test]
+fn reach_all_keeps_the_matrix_underneath_it() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let a = profiles::store::create(&conn, "Manager").unwrap();
+    let b = profiles::store::create(&conn, "Accountant").unwrap();
+    let custom = vec![grant("see_activity", &b.id)];
+
+    profiles::store::set_reach(&conn, &a.id, false, custom.clone()).unwrap();
+    profiles::store::set_reach(&conn, &a.id, true, custom).unwrap();
+
+    // "All profiles" is a switch, not a deletion. Turning it off again must
+    // give back exactly what was there before.
+    let all = profiles::store::reach(&conn, &a.id).unwrap();
+    assert!(all.reach_all);
+    assert_eq!(all.grants.len(), 1);
+
+    profiles::store::set_reach(&conn, &a.id, false, all.grants).unwrap();
+    let back = profiles::store::reach(&conn, &a.id).unwrap();
+
+    assert!(!back.reach_all);
+    assert_eq!(back.grants.len(), 1);
+}
+
+#[test]
+fn setting_the_matrix_replaces_it_rather_than_adding_to_it() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let a = profiles::store::create(&conn, "Manager").unwrap();
+    let b = profiles::store::create(&conn, "Accountant").unwrap();
+    let c = profiles::store::create(&conn, "Writer").unwrap();
+
+    profiles::store::set_reach(&conn, &a.id, false, vec![grant("read_chats", &b.id)]).unwrap();
+    profiles::store::set_reach(&conn, &a.id, false, vec![grant("see_activity", &c.id)]).unwrap();
+
+    // A revoked permission is gone, not shadowed by a stale row.
+    let r = profiles::store::reach(&conn, &a.id).unwrap();
+    assert_eq!(r.grants, vec![grant("see_activity", &c.id)]);
+}
+
+#[test]
+fn the_same_cell_twice_is_one_permission() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let a = profiles::store::create(&conn, "Manager").unwrap();
+    let b = profiles::store::create(&conn, "Accountant").unwrap();
+
+    profiles::store::set_reach(
+        &conn,
+        &a.id,
+        false,
+        vec![grant("read_chats", &b.id), grant("read_chats", &b.id)],
+    )
+    .unwrap();
+
+    assert_eq!(
+        profiles::store::reach(&conn, &a.id).unwrap().grants.len(),
+        1
+    );
+}
+
+#[test]
+fn a_capability_that_is_not_on_the_ladder_is_refused() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let a = profiles::store::create(&conn, "Manager").unwrap();
+    let b = profiles::store::create(&conn, "Accountant").unwrap();
+
+    // A capability the code has never heard of would sit in the table forever
+    // and enforce nothing.
+    let err =
+        profiles::store::set_reach(&conn, &a.id, false, vec![grant("delete_everything", &b.id)])
+            .unwrap_err();
+
+    assert!(err.contains("unknown capability"), "got: {err}");
+    assert!(profiles::store::reach(&conn, &a.id)
+        .unwrap()
+        .grants
+        .is_empty());
+}
+
+#[test]
+fn a_profile_is_never_a_target_of_itself() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let a = profiles::store::create(&conn, "Manager").unwrap();
+
+    let err = profiles::store::set_reach(&conn, &a.id, false, vec![grant("change_access", &a.id)])
+        .unwrap_err();
+
+    assert!(err.contains("itself"), "got: {err}");
+}
+
+#[test]
+fn granting_to_a_profile_that_is_not_there_is_refused() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let a = profiles::store::create(&conn, "Manager").unwrap();
+
+    let err = profiles::store::set_reach(&conn, &a.id, false, vec![grant("read_chats", "ghost")])
+        .unwrap_err();
+
+    assert!(err.contains("not found"), "got: {err}");
+}
+
+#[test]
+fn reach_is_one_way() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let a = profiles::store::create(&conn, "Manager").unwrap();
+    let b = profiles::store::create(&conn, "Accountant").unwrap();
+
+    profiles::store::set_reach(&conn, &a.id, false, vec![grant("read_chats", &b.id)]).unwrap();
+
+    // The permission is the grantor's, not a mutual one. The other direction is
+    // a separate cell and it is still empty.
+    assert_eq!(
+        profiles::store::reach(&conn, &a.id).unwrap().grants.len(),
+        1
+    );
+    assert!(profiles::store::reach(&conn, &b.id)
+        .unwrap()
+        .grants
+        .is_empty());
+}
+
+#[test]
+fn deleting_a_profile_takes_its_grants_with_it() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let a = profiles::store::create(&conn, "Manager").unwrap();
+    let b = profiles::store::create(&conn, "Accountant").unwrap();
+
+    profiles::store::set_reach(&conn, &a.id, false, vec![grant("read_chats", &b.id)]).unwrap();
+    profiles::store::delete(&conn, &a.id).unwrap();
+
+    let left: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM profile_grants WHERE profile_id = ?1",
+            rusqlite::params![a.id],
+            |r| r.get(0),
+        )
+        .unwrap();
+
+    // b outlived a. Nothing may point at a profile that is gone.
+    assert_eq!(left, 0);
+    assert!(profiles::store::reach(&conn, &b.id).is_ok());
 }

@@ -147,6 +147,8 @@ pub fn run() {
             profiles::profile_list,
             profiles::profile_active,
             profiles::profile_set_active,
+            profiles::profile_reach_get,
+            profiles::profile_reach_set,
             profiles::profile_create,
             profiles::profile_edit,
             profiles::profile_delete,

@@ -3,26 +3,32 @@ use uuid::Uuid;
 
 use crate::gateway::store as gw_store;
 
-use super::schema::{Profile, DEFAULT_ID, MAX_PROFILES, NAME_MAX};
+use super::schema::{Grant, Profile, Reach, CAPABILITIES, DEFAULT_ID, MAX_PROFILES, NAME_MAX};
 
 fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Profile> {
     Ok(Profile {
         id: r.get(0)?,
         name: r.get(1)?,
         instructions: r.get::<_, Option<String>>(2)?.unwrap_or_default(),
-        created_at: r.get(3)?,
+        reach_all: r.get::<_, i64>(3)? != 0,
+        grants: r.get(4)?,
+        created_at: r.get(5)?,
     })
 }
+
+const COLS: &str = "id, name, instructions, reach_all, \
+                    (SELECT COUNT(*) FROM profile_grants g \
+                       WHERE g.profile_id = agent_profiles.id), created_at";
 
 /// The default first, then newest. A profile with no name reads as "Default"
 /// in the UI rather than as a blank row, so it belongs at the top where it is
 /// the answer to "which one am I on".
 pub fn list(conn: &Connection) -> Result<Vec<Profile>, String> {
     let mut stmt = conn
-        .prepare(
-            "SELECT id, name, instructions, created_at FROM agent_profiles \
-             ORDER BY (id = 'default') DESC, created_at DESC, rowid DESC",
-        )
+        .prepare(&format!(
+            "SELECT {COLS} FROM agent_profiles \
+             ORDER BY (id = 'default') DESC, created_at DESC, rowid DESC"
+        ))
         .map_err(|err| err.to_string())?;
 
     let rows = stmt
@@ -36,7 +42,7 @@ pub fn list(conn: &Connection) -> Result<Vec<Profile>, String> {
 
 pub fn get(conn: &Connection, id: &str) -> Result<Profile, String> {
     conn.query_row(
-        "SELECT id, name, instructions, created_at FROM agent_profiles WHERE id = ?1",
+        &format!("SELECT {COLS} FROM agent_profiles WHERE id = ?1"),
         params![id],
         row,
     )
@@ -173,4 +179,81 @@ pub fn active(conn: &Connection) -> String {
 pub fn set_active(conn: &Connection, id: &str) -> Result<(), String> {
     get(conn, id)?;
     gw_store::kv_set(conn, "profile.active", id)
+}
+
+/// What this profile may reach. Read on demand rather than shipped with every
+/// `list()` — a full matrix is sixty cells and the settings list does not draw
+/// them.
+pub fn reach(conn: &Connection, id: &str) -> Result<Reach, String> {
+    let p = get(conn, id)?;
+
+    let mut stmt = conn
+        .prepare("SELECT capability, target_id FROM profile_grants WHERE profile_id = ?1")
+        .map_err(|err| err.to_string())?;
+
+    let grants = stmt
+        .query_map(params![id], |r| {
+            Ok(Grant {
+                capability: r.get(0)?,
+                target_id: r.get(1)?,
+            })
+        })
+        .map_err(|err| err.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|err| err.to_string())?;
+
+    Ok(Reach {
+        reach_all: p.reach_all,
+        grants,
+    })
+}
+
+pub fn set_reach(
+    conn: &Connection,
+    id: &str,
+    reach_all: bool,
+    grants: Vec<Grant>,
+) -> Result<(), String> {
+    get(conn, id)?;
+
+    for g in &grants {
+        if !CAPABILITIES.contains(&g.capability.as_str()) {
+            return Err(format!("unknown capability: {}", g.capability));
+        }
+
+        // A profile is not a target of itself. Whatever it may do to others, it
+        // does not get a second, unchecked copy of the same permissions.
+        if g.target_id == id {
+            return Err("a profile cannot be granted access to itself".into());
+        }
+
+        get(conn, &g.target_id)?;
+    }
+
+    conn.execute(
+        "UPDATE agent_profiles SET reach_all = ?2 WHERE id = ?1",
+        params![id, i64::from(reach_all)],
+    )
+    .map_err(|err| err.to_string())?;
+
+    // Replaced wholesale. Editing one cell should not be a diff the caller has
+    // to get right, and a half-sent matrix would be a half-revoked one.
+    conn.execute(
+        "DELETE FROM profile_grants WHERE profile_id = ?1",
+        params![id],
+    )
+    .map_err(|err| err.to_string())?;
+
+    for g in &grants {
+        // INSERT OR IGNORE, because a matrix is a set of cells and a double
+        // click is not a request for two permissions.
+        conn.execute(
+            "INSERT OR IGNORE INTO profile_grants (profile_id, capability, target_id) \
+             VALUES (?1, ?2, ?3)",
+            params![id, g.capability, g.target_id],
+        )
+        .map_err(|err| err.to_string())?;
+    }
+
+    Ok(())
 }

@@ -64,3 +64,23 @@ pub fn profile_set_active(gw: State<'_, Gateway>, id: String) -> Result<(), Stri
     let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     store::set_active(&conn, &id)
 }
+
+#[tauri::command]
+pub fn profile_reach_get(
+    gw: State<'_, Gateway>,
+    profile_id: String,
+) -> Result<schema::Reach, String> {
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+    store::reach(&conn, &profile_id)
+}
+
+#[tauri::command]
+pub fn profile_reach_set(
+    gw: State<'_, Gateway>,
+    profile_id: String,
+    reach_all: bool,
+    grants: Vec<schema::Grant>,
+) -> Result<(), String> {
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+    store::set_reach(&conn, &profile_id, reach_all, grants)
+}

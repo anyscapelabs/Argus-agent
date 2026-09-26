@@ -33,9 +33,16 @@ pub struct AgentRun {
     pub created_at: String,
 }
 
-fn clip(s: &str, n: usize) -> String {
+/// One line. For a name or a title, which have no room for structure.
+fn flat(s: &str, n: usize) -> String {
     let t = s.trim().replace(['\n', '\r'], " ");
     t.chars().take(n).collect()
+}
+
+/// Structure kept. A report is markdown, and flattening its newlines turns a
+/// document into one unreadable wall of text.
+fn clip(s: &str, n: usize) -> String {
+    s.trim().chars().take(n).collect()
 }
 
 fn run_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<AgentRun> {
@@ -133,8 +140,8 @@ pub fn spawn<R: tauri::Runtime>(
         return Err("a sub-agent needs a prompt to work from".into());
     }
 
-    let name = clip(&spec.name, NAME_MAX);
-    let title = clip(&spec.title, TITLE_MAX);
+    let name = flat(&spec.name, NAME_MAX);
+    let title = flat(&spec.title, TITLE_MAX);
 
     if name.is_empty() {
         return Err("a sub-agent needs a name".into());

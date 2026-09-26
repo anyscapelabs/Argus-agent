@@ -181,19 +181,113 @@ function decodeEntities(str: string): string {
   return str.replace(/&([a-z]+);/g, (m, n: string) => ENTITY_MAP[n] ?? m);
 }
 
+const ATTR_NAME = /[a-zA-Z0-9_:.-]/;
+const ATTR_END = /^\s*(?:[a-zA-Z_][a-zA-Z0-9_:-]*\s*=|\/?\s*$)/;
+
 function parseAttributes(raw: string): Record<string, string> {
   const out: Record<string, string> = {};
-  const re =
-    /([a-zA-Z_][a-zA-Z0-9_:-]*)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'<>`]+))/gs;
-  let m: RegExpExecArray | null;
+  let i = 0;
 
-  while ((m = re.exec(raw)) !== null) {
-    const k = m[1];
-    const v = m[3] ?? m[4] ?? m[5] ?? "";
-    out[k] = decodeEntities(v);
+  while (i < raw.length) {
+    while (i < raw.length && /[\s/]/.test(raw[i])) {
+      i++;
+    }
+
+    const start = i;
+
+    while (i < raw.length && ATTR_NAME.test(raw[i])) {
+      i++;
+    }
+
+    if (i === start) {
+      i++;
+      continue;
+    }
+
+    const name = raw.slice(start, i);
+
+    while (i < raw.length && /\s/.test(raw[i])) {
+      i++;
+    }
+
+    if (raw[i] !== "=") {
+      continue;
+    }
+
+    i++;
+
+    while (i < raw.length && /\s/.test(raw[i])) {
+      i++;
+    }
+
+    const quote = raw[i];
+
+    if (quote !== '"' && quote !== "'") {
+      const v = i;
+
+      while (i < raw.length && !/[\s"'<>`]/.test(raw[i])) {
+        i++;
+      }
+
+      out[name] = decodeEntities(raw.slice(v, i));
+      continue;
+    }
+
+    i++;
+
+    const v = i;
+
+    while (i < raw.length) {
+      if (raw[i] !== quote) {
+        i++;
+        continue;
+      }
+
+      // A quote only ends the value when what follows is the next attribute
+      // or the end of the tag. `echo "hi" > f` carries quotes that are not
+      // the end of anything, and stopping at one truncates the command.
+      if (ATTR_END.test(raw.slice(i + 1))) {
+        break;
+      }
+
+      i++;
+    }
+
+    out[name] = decodeEntities(raw.slice(v, i));
+    i++;
   }
 
   return out;
+}
+
+/// Where the tag ends, which is the `>` that closes it and not the first one
+/// in sight. A terminal command is full of them — `2>&1`, `-gt`, `->` — and
+/// cutting a tag at one drops the rest of the command into the chat as prose.
+function findTagEnd(buf: string, from: number): number {
+  let quote: string | null = null;
+
+  for (let k = from; k < buf.length; k++) {
+    const ch = buf[k];
+
+    if (quote !== null) {
+      if (ch === quote) {
+        quote = null;
+      }
+
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+
+    if (ch === ">") {
+      return k;
+    }
+  }
+
+  return -1;
 }
 
 export function tokenize(buf: string): Token[] {
@@ -212,7 +306,7 @@ export function tokenize(buf: string): Token[] {
       continue;
     }
 
-    const end = buf.indexOf(">", i + 1);
+    const end = findTagEnd(buf, i + 1);
     if (end === -1) {
       i++;
       continue;

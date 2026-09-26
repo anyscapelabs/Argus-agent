@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { profileLabel } from "../../stores/profiles";
+
 type SettingsCardProps = {
   title: string;
   description: string;
@@ -95,5 +97,19 @@ export function Toggle({ checked, onChange, label }: ToggleProps) {
         }
       />
     </button>
+  );
+}
+
+export function ProfileAvatar({ name, size = 28 }: { name: string; size?: number }) {
+  return (
+    <span
+      className={
+        "flex shrink-0 items-center justify-center rounded-full " +
+        "bg-bg-hover-secondary font-medium uppercase text-text-secondary"
+      }
+      style={{ width: size, height: size, fontSize: size * 0.42 }}
+    >
+      {profileLabel({ name }).charAt(0)}
+    </span>
   );
 }

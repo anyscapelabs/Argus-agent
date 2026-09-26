@@ -354,6 +354,8 @@ export type ProfileRow = {
   id: string;
   name: string;
   instructions: string;
+  reach_all: boolean;
+  grants: number;
   created_at: string;
 };
 
@@ -397,6 +399,28 @@ export function sessSetProfile(
 
 export function sessGetProfile(sessionId: string): Promise<string | null> {
   return invoke<string | null>("sess_get_profile", { sessionId });
+}
+
+export type Grant = {
+  capability: string;
+  target_id: string;
+};
+
+export type Reach = {
+  reach_all: boolean;
+  grants: Grant[];
+};
+
+export function profileReachGet(profileId: string): Promise<Reach> {
+  return invoke<Reach>("profile_reach_get", { profileId });
+}
+
+export function profileReachSet(
+  profileId: string,
+  reachAll: boolean,
+  grants: Grant[],
+): Promise<void> {
+  return invoke<void>("profile_reach_set", { profileId, reachAll, grants });
 }
 
 export function sessUnwatch(sessionId?: string): Promise<void> {

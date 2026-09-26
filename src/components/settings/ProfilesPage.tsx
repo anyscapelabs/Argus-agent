@@ -1,171 +1,135 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { FiChevronRight, FiPlus } from "react-icons/fi";
+import { LuLock } from "react-icons/lu";
 
 import { profileStore, profileLabel, useProfiles } from "../../stores/profiles";
-import { toast } from "../../stores/toast";
+import { useSessions } from "../../stores/sessions";
+import { ProfileAvatar } from "./kit";
+import ProfileDetail from "./ProfileDetail";
 
 const DEFAULT_ID = "default";
-const NAME_MAX = 40;
 
-const INPUT =
-  "w-full rounded-lg border border-border-primary bg-bg-primary px-3 py-2 " +
-  "text-sm text-text-primary outline-none placeholder:text-text-tertiary " +
-  "focus:border-accent";
+const ADD =
+  "flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-text-secondary " +
+  "transition-colors hover:bg-bg-hover-primary hover:text-text-primary " +
+  "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent";
 
-function ProfileRow({ id }: { id: string }) {
-  const { profiles, activeId } = useProfiles();
-  const p = profiles.find((x) => x.id === id);
-
-  const [name, setName] = useState(p?.name ?? "");
-  const [body, setBody] = useState(p?.instructions ?? "");
-
-  useEffect(() => {
-    setName(p?.name ?? "");
-    setBody(p?.instructions ?? "");
-  }, [p?.name, p?.instructions]);
-
-  if (p === undefined) {
-    return null;
-  }
-
-  const isDefault = p.id === DEFAULT_ID;
-  const dirty = name !== p.name || body !== p.instructions;
-  const on = p.id === activeId;
-
-  const save = async (patch: { name?: string; instructions?: string }) => {
-    try {
-      await profileStore.edit(p.id, patch);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
-      setName(p.name);
-      setBody(p.instructions);
-    }
-  };
-
-  const remove = async () => {
-    try {
-      await profileStore.remove(p.id);
-      toast.success(`Deleted ${profileLabel(p)}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  return (
-    <div className="rounded-xl border border-border-primary p-4">
-      <div className="mb-3 flex items-center gap-2">
-        <h3 className="min-w-0 flex-1 truncate text-sm font-medium text-text-primary">
-          {profileLabel(p)}
-        </h3>
-        {on && (
-          <span className="rounded-full bg-bg-hover-secondary px-2 py-0.5 text-xs text-text-secondary">
-            In use
-          </span>
-        )}
-        {!isDefault && (
-          <button
-            type="button"
-            onClick={() => void remove()}
-            className="text-xs text-text-secondary transition-colors hover:text-red-400"
-          >
-            Delete
-          </button>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-3">
-        <div>
-          <label
-            htmlFor={`name-${p.id}`}
-            className="mb-1 block text-xs text-text-secondary"
-          >
-            Name
-          </label>
-          <input
-            id={`name-${p.id}`}
-            value={name}
-            maxLength={NAME_MAX}
-            disabled={isDefault}
-            placeholder="Default"
-            onChange={(e) => setName(e.target.value)}
-            onBlur={() => {
-              if (name !== p.name) {
-                void save({ name });
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && name !== p.name) {
-                void save({ name });
-              }
-            }}
-            className={INPUT + " disabled:opacity-60"}
-          />
-        </div>
-
-        <div>
-          <label
-            htmlFor={`body-${p.id}`}
-            className="mb-1 block text-xs text-text-secondary"
-          >
-            Instructions
-          </label>
-          <textarea
-            id={`body-${p.id}`}
-            value={body}
-            rows={5}
-            placeholder={
-              "What this profile produces, and what 'done' means to it. " +
-              "A name on its own changes nothing."
-            }
-            onChange={(e) => setBody(e.target.value)}
-            className={INPUT + " resize-y font-mono text-xs leading-relaxed"}
-          />
-          <p className="mt-1 text-xs text-text-tertiary">
-            Added to the base prompt, never a replacement for it — the safety
-            and tool rules stay whatever you write here. Takes effect the next
-            time a chat starts a turn.
-          </p>
-        </div>
-
-        {dirty && (
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={() => void save({ name, instructions: body })}
-              className={
-                "rounded-lg bg-accent px-3 py-1.5 text-xs font-medium " +
-                "text-white transition-opacity hover:opacity-90"
-              }
-            >
-              Save
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-export default function ProfilesPage() {
-  const { profiles, loading } = useProfiles();
+export default function ProfilesPage({
+  onOpenSession,
+}: {
+  onOpenSession: (id: string) => void;
+}) {
+  const { profiles, loading, activeId } = useProfiles();
+  const { sessions } = useSessions();
+  const [openId, setOpenId] = useState<string | null>(null);
 
   useEffect(() => {
     void profileStore.load();
   }, []);
+
+  // Chats are counted here rather than asked for, because the list already
+  // holds every session in memory and a per-profile count query would be a
+  // round trip to learn something the data in front of us already says.
+  const owned = useMemo(() => {
+    const n = new Map<string, number>();
+
+    for (const s of sessions) {
+      const id = s.profile_id ?? DEFAULT_ID;
+      n.set(id, (n.get(id) ?? 0) + 1);
+    }
+
+    return n;
+  }, [sessions]);
+
+  const selected = profiles.find((p) => p.id === openId);
+
+  if (selected !== undefined) {
+    return (
+      <ProfileDetail
+        key={selected.id}
+        id={selected.id}
+        onBack={() => setOpenId(null)}
+        onOpenSession={onOpenSession}
+      />
+    );
+  }
 
   if (loading) {
     return null;
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-xs text-text-secondary">
-        A profile is a name and a set of instructions. It owns its chats and
-        the sub-agents inside them, and nothing else — providers, models and
-        appearance are yours, not its.
+    <div className="flex flex-col">
+      <h1 className="mb-1 text-lg font-semibold text-text-primary">Profiles</h1>
+      <p className="mb-5 text-xs text-text-secondary">
+        A profile is a name, a set of instructions, and what it may reach. It
+        owns its chats and the sub-agents inside them, and nothing else —
+        providers, models and appearance are yours, not its.
       </p>
-      {profiles.map((p) => (
-        <ProfileRow key={p.id} id={p.id} />
-      ))}
+
+      <div className="overflow-hidden rounded-xl border border-border-primary">
+        {profiles.map((p) => {
+          const count = owned.get(p.id) ?? 0;
+          const canReach = p.reach_all || p.grants > 0;
+          const blank = p.instructions.trim() === "";
+
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => setOpenId(p.id)}
+              className={
+                "flex w-full items-center gap-3 border-b border-border-primary " +
+                "px-3 py-2.5 text-left transition-colors last:border-b-0 " +
+                "hover:bg-bg-hover-primary"
+              }
+            >
+              <ProfileAvatar name={p.name} />
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2">
+                  <span className="truncate text-sm font-medium text-text-primary">
+                    {profileLabel(p)}
+                  </span>
+                  {p.id === activeId && (
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                  )}
+                </span>
+                <span className="mt-0.5 block truncate text-xs text-text-tertiary">
+                  {blank
+                    ? "No instructions yet — a name on its own changes nothing"
+                    : p.instructions.trim().replace(/\s+/g, " ")}
+                </span>
+              </span>
+
+              <span className="flex shrink-0 items-center gap-2.5 text-xs text-text-tertiary">
+                {canReach && (
+                  <span title="Reaches other profiles">
+                    <LuLock size={13} />
+                  </span>
+                )}
+                <span>
+                  {count} {count === 1 ? "chat" : "chats"}
+                </span>
+              </span>
+
+              <FiChevronRight
+                size={15}
+                className="shrink-0 text-text-tertiary"
+              />
+            </button>
+          );
+        })}
+
+        <button
+          type="button"
+          onClick={() => void profileStore.create("New profile")}
+          disabled={profiles.length >= 10}
+          className={ADD}
+        >
+          <FiPlus size={16} className="shrink-0" />
+          <span>New profile</span>
+        </button>
+      </div>
     </div>
   );
 }

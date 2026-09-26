@@ -6,19 +6,61 @@ import {
   profileDelete,
   profileEdit,
   profileList,
+  profileReachGet,
+  profileReachSet,
   profileSetActive,
   sessGetProfile,
   sessSetProfile,
+  type Grant,
   type ProfileRow,
+  type Reach,
 } from "../lib/ipc";
 
 const DEFAULT_ID = "default";
 
 /// What the picker shows for a profile with no name. The default exists before
 /// anyone names anything, and a blank row reads as a broken one.
-export function profileLabel(p: ProfileRow): string {
+export function profileLabel(p: { name: string }): string {
   return p.name.trim() === "" ? "Default" : p.name.trim();
 }
+
+/// The reach ladder, weakest rung first. The key is what the database and the
+/// command call it; the label is what a person is agreeing to. Each rung hands
+/// over strictly more than the one above it, which is why they read top down.
+export const CAPABILITIES: { key: Grant["capability"]; label: string; note: string }[] = [
+  {
+    key: "see_activity",
+    label: "See what they are doing",
+    note: "Chats, tools, plans — the live view. Read only.",
+  },
+  {
+    key: "read_chats",
+    label: "Read their chats",
+    note: "The full history, not just the titles.",
+  },
+  {
+    key: "write_prompts",
+    label: "Write to their prompt",
+    note: "Add instructions this profile will answer under.",
+  },
+  {
+    key: "interrupt",
+    label: "Interrupt their work",
+    note: "Stop a running turn and take it over.",
+  },
+  {
+    key: "edit",
+    label: "Edit their profile",
+    note: "Rename them and rewrite what they are told to do.",
+  },
+  {
+    key: "change_access",
+    label: "Change who they can reach",
+    note: "The keys to the keys. Widens their reach further.",
+  },
+];
+
+export const EMPTY_REACH: Reach = { reach_all: false, grants: [] };
 
 type State = {
   profiles: ProfileRow[];
@@ -29,6 +71,9 @@ type State = {
   /// Which profile the open chat belongs to, once one is open. Null means the
   /// chat has not asked yet.
   sessionId: string | null;
+  /// The matrix of the profile whose detail page is open. Null until it asks.
+  reach: Reach;
+  reachFor: string | null;
 };
 
 class ProfileStore {
@@ -37,6 +82,8 @@ class ProfileStore {
     loading: true,
     activeId: DEFAULT_ID,
     sessionId: null,
+    reach: EMPTY_REACH,
+    reachFor: null,
   };
 
   private listeners = new Set<() => void>();
@@ -125,6 +172,23 @@ class ProfileStore {
     this.set({ activeId: profileId });
     // A chat you moved is a choice, and choices are what survive a restart.
     await profileSetActive(profileId).catch(() => {});
+  }
+
+  async loadReach(id: string) {
+    this.set({ reachFor: id });
+
+    try {
+      this.set({ reach: await profileReachGet(id) });
+    } catch {
+      this.set({ reach: EMPTY_REACH });
+    }
+  }
+
+  async saveReach(id: string, reachAll: boolean, grants: Grant[]) {
+    this.set({ reach: { reach_all: reachAll, grants } });
+    await profileReachSet(id, reachAll, grants);
+    // reach_all rides along on the profile row the list draws from.
+    await this.load();
   }
 }
 

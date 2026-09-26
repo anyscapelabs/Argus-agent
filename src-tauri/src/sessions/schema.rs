@@ -74,6 +74,11 @@ pub struct Session {
     pub agent_name: Option<String>,
     #[serde(default)]
     pub agent_state: Option<String>,
+    /// Sub-agents still working under this one. A parent that fanned out has
+    /// not finished its job when its turn ends, and the only thing that knows
+    /// that is the children.
+    #[serde(default)]
+    pub running_agents: i64,
 }
 
 #[derive(Deserialize, Debug)]

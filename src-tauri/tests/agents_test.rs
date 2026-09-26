@@ -668,3 +668,24 @@ fn a_parent_whose_children_all_failed_still_gets_called_back() {
         "a fan-out that went badly is exactly when the parent needs to hear"
     );
 }
+
+#[test]
+fn a_parent_still_reads_as_working_while_a_child_is_running() {
+    let app = app();
+    let pid = parent(&app);
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let a = store::create_child(&conn, &pid, "a", "a work", None, "never").unwrap();
+    let b = store::create_child(&conn, &pid, "b", "b work", None, "never").unwrap();
+
+    // The parent's turn is over the moment it fans out. Its turn ending is not
+    // the end of the job, and this count is the only thing left saying so.
+    assert_eq!(store::get_session(&conn, &pid).unwrap().running_agents, 2);
+
+    assert!(!agents::settle(&conn, &a.id, &pid, "done"));
+    assert_eq!(store::get_session(&conn, &pid).unwrap().running_agents, 1);
+
+    assert!(agents::settle(&conn, &b.id, &pid, "done"));
+    assert_eq!(store::get_session(&conn, &pid).unwrap().running_agents, 0);
+}

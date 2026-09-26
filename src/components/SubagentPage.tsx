@@ -22,7 +22,7 @@ const VERDICT: Record<string, string> = {
 };
 
 export default function SubagentPage({ agentId, parentId, onBack }: Props) {
-  const { msgs, agents } = useSessions();
+  const { msgs, turns } = useSessions();
   const [run, setRun] = useState<AgentRun | null>(null);
   const [missing, setMissing] = useState(false);
 
@@ -40,6 +40,7 @@ export default function SubagentPage({ agentId, parentId, onBack }: Props) {
   useEffect(() => {
     void reload();
     void sessionStore.loadMsgs(agentId);
+    sessionStore.watch(agentId);
 
     const un = listen<{ id: string }>("agent-done", (e) => {
       if (e.payload.id !== agentId) {
@@ -52,11 +53,15 @@ export default function SubagentPage({ agentId, parentId, onBack }: Props) {
 
     return () => {
       void un.then((f) => f());
+      sessionStore.unwatch(agentId);
     };
   }, [agentId, reload]);
 
   const rows = msgs[agentId] ?? [];
-  const state = agents[agentId] ?? run?.state ?? "running";
+  const state = run?.state ?? "running";
+  const turn = turns[agentId];
+  const live = turn !== undefined && turn.err === null;
+  const waiting = turn?.approval ?? null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -84,30 +89,49 @@ export default function SubagentPage({ agentId, parentId, onBack }: Props) {
         </div>
       )}
 
+      {waiting !== null && (
+        <div className="mx-4 mt-3 flex shrink-0 items-center gap-2 rounded-lg border border-border-primary px-3 py-2 text-xs text-text-secondary">
+          <span className="min-w-0 flex-1">
+            This sub-agent needs your approval to run a command. Approvals are
+            answered in the chat that started it.
+          </span>
+          <button
+            type="button"
+            onClick={onBack}
+            className="shrink-0 cursor-pointer text-text-primary underline"
+          >
+            Go there
+          </button>
+        </div>
+      )}
+
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {missing ? (
           <p className="text-sm text-text-secondary">
             That sub-agent is no longer around.
           </p>
-        ) : rows.length === 0 ? (
+        ) : rows.length === 0 && !live ? (
           <p className="text-sm text-text-secondary">
             {state === "running"
               ? "Working — nothing said yet."
               : "It said nothing."}
           </p>
         ) : (
-          rows.map((m) =>
-            m.role === "assistant" ? (
-              <AgentBubble key={m.id} text={m.content} />
-            ) : m.role === "tool" ? null : (
-              <div key={m.id}>
-                <div className="mb-1 text-xs text-text-tertiary">
-                  {m.role === "system" ? "Prompt from Argus" : "You"}
+          <>
+            {rows.map((m) =>
+              m.role === "assistant" ? (
+                <AgentBubble key={m.id} text={m.content} />
+              ) : m.role === "tool" ? null : (
+                <div key={m.id}>
+                  <div className="mb-1 text-xs text-text-tertiary">
+                    {m.role === "system" ? "Prompt from Argus" : "You"}
+                  </div>
+                  <UserBubble>{m.content}</UserBubble>
                 </div>
-                <UserBubble>{m.content}</UserBubble>
-              </div>
-            ),
-          )
+              ),
+            )}
+            {live && <AgentBubble text={turn.text} caret />}
+          </>
         )}
       </div>
 

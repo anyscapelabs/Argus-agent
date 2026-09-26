@@ -96,8 +96,16 @@ for collapsed reasoning <thinking>. Code fences and any other tags show up \
 literally — avoid them. Never fake tool output.\n\
 ";
 
-fn stable_layer(conn: &Connection, web: bool) -> Result<String, String> {
+fn stable_layer(conn: &Connection, web: bool, child: bool) -> Result<String, String> {
     let mut s = String::from(BASE);
+
+    if child {
+        s.push_str(crate::agents::CHILD_SECTION);
+    } else {
+        s.push_str("\n\n");
+        s.push_str(crate::agents::PROMPT_SECTION);
+    }
+
     s.push_str(&crate::tools::section(web));
 
     if let Some(rules) = gw_store::kv_get(conn, "preference_rules") {
@@ -185,9 +193,10 @@ fn past_index(conn: &Connection, session_id: &str) -> Option<String> {
 }
 
 pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String> {
-    let (model_id, compact_seq, ctx_tokens, web_search) = conn
+    let (model_id, compact_seq, ctx_tokens, web_search, parent_id) = conn
         .query_row(
-            "SELECT model_id, compact_seq, ctx_tokens, web_search FROM sessions WHERE id = ?1",
+            "SELECT model_id, compact_seq, ctx_tokens, web_search, parent_id
+             FROM sessions WHERE id = ?1",
             params![session_id],
             |r| {
                 Ok((
@@ -195,12 +204,14 @@ pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String
                     r.get::<_, i64>(1)?,
                     r.get::<_, i64>(2)?,
                     r.get::<_, i64>(3)? != 0,
+                    r.get::<_, Option<String>>(4)?,
                 ))
             },
         )
         .map_err(|_| format!("session {session_id} not found"))?;
 
-    let stable = stable_layer(conn, web_search)?;
+    let child = parent_id.is_some();
+    let stable = stable_layer(conn, web_search, child)?;
 
     let summary: Option<String> = conn
         .query_row(
@@ -268,6 +279,7 @@ pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String
         .collect();
 
     Ok(Projection {
+        child,
         session_id: session_id.into(),
         model_id,
         system,
@@ -426,6 +438,7 @@ pub fn full_budget(p: &Projection, web: bool) -> PromptBudget {
 }
 
 pub struct Projection {
+    pub child: bool,
     pub session_id: String,
     pub model_id: Option<String>,
     pub system: String,
@@ -446,11 +459,18 @@ impl Projection {
         }];
         msgs.extend(self.msgs.iter().cloned());
 
+        // A sub-agent cannot fan out. Taking the tool away is what enforces
+        // depth one; the prompt only asks nicely.
+        let specs: Vec<_> = crate::tools::tool_specs(self.web)
+            .into_iter()
+            .filter(|t| !(self.child && t.name.starts_with("agent.")))
+            .collect();
+
         ChatReq {
             model: self.model_id.clone().unwrap_or_default(),
             msgs,
             prefix_hash: None,
-            tools: crate::tools::tool_specs(self.web),
+            tools: specs,
         }
     }
 }

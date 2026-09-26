@@ -86,7 +86,7 @@ export default function EmailDraftCard({
             type="button"
             onClick={() => onSend({ to: toV, subject: subjectV, body: bodyV })}
             className={
-              "rounded-md bg-white px-2.5 py-1 text-xs font-medium " +
+              "rounded-md bg-text-primary px-2.5 py-1 text-xs font-medium " +
               "text-bg-primary transition-opacity hover:opacity-90 " +
               "focus:outline-none"
             }

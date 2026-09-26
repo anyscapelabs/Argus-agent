@@ -67,7 +67,7 @@ export default function ApprovalBlock({ block }: Props) {
             type="button"
             onClick={() => setDecision("allowed_always")}
             className={
-              "rounded-md bg-white px-2.5 py-1 text-xs font-medium " +
+              "rounded-md bg-text-primary px-2.5 py-1 text-xs font-medium " +
               "text-bg-primary transition-opacity hover:opacity-90 " +
               "focus:outline-none"
             }
@@ -125,7 +125,7 @@ export default function ApprovalBlock({ block }: Props) {
           type="button"
           onClick={() => setDecision("approved")}
           className={
-            "rounded-md bg-white px-2.5 py-1 text-xs font-medium " +
+            "rounded-md bg-text-primary px-2.5 py-1 text-xs font-medium " +
             "text-bg-primary transition-opacity hover:opacity-90 " +
             "focus:outline-none"
           }

@@ -348,7 +348,7 @@ function TerminalActivity({
           <button
             type="button"
             onClick={onAllow}
-            className="rounded-md bg-white px-3 py-1 text-xs font-medium text-bg-primary hover:opacity-90 cursor-pointer"
+            className="rounded-md bg-text-primary px-3 py-1 text-xs font-medium text-bg-primary hover:opacity-90 cursor-pointer"
           >
             Run
           </button>
@@ -518,7 +518,7 @@ export default function ToolActivity({
                   <button
                     type="button"
                     onClick={() => decide(true)}
-                    className="rounded-full bg-white px-3 py-1 text-xs font-medium text-bg-primary hover:opacity-90"
+                    className="rounded-full bg-text-primary px-3 py-1 text-xs font-medium text-bg-primary hover:opacity-90"
                   >
                     Run
                   </button>

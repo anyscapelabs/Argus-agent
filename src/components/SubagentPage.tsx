@@ -1,9 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useState } from "react";
-import { FiArrowLeft, FiUsers } from "react-icons/fi";
+import { useEffect, useState } from "react";
 
 import ChatTranscript from "./ChatTranscript";
-import { agentList, type AgentRun } from "../lib/ipc";
 import { sessionStore, useSessions } from "../stores/sessions";
 
 type Props = {
@@ -13,33 +11,22 @@ type Props = {
 };
 
 const VERDICT: Record<string, string> = {
-  done: "Finished",
-  failed: "Did not finish",
-  interrupted: "Interrupted when Argus exited",
-  killed: "Stopped",
-  running: "Still working",
+  done: "finished",
+  failed: "did not finish",
+  interrupted: "interrupted when Argus exited",
+  killed: "stopped",
+  running: "still working",
 };
 
 export default function SubagentPage({ agentId, parentId, onBack }: Props) {
-  const [run, setRun] = useState<AgentRun | null>(null);
-  const [missing, setMissing] = useState(false);
-  const { turns } = useSessions();
+  const { agentRuns, turns } = useSessions();
+  const run = agentRuns[agentId] ?? null;
   const waiting = turns[agentId]?.approval ?? null;
-
-  const reload = useCallback(async () => {
-    try {
-      const all = await agentList(parentId);
-      const found = all.find((r) => r.id === agentId) ?? null;
-      setRun(found);
-      setMissing(found === null);
-    } catch {
-      setMissing(true);
-    }
-  }, [agentId, parentId]);
+  const [checked, setChecked] = useState(false);
 
   useEffect(() => {
-    void reload();
     void sessionStore.loadMsgs(agentId);
+    void sessionStore.loadAgents(parentId).finally(() => setChecked(true));
     sessionStore.watch(agentId);
 
     const un = listen<{ id: string }>("agent-done", (e) => {
@@ -47,42 +34,18 @@ export default function SubagentPage({ agentId, parentId, onBack }: Props) {
         return;
       }
 
-      void reload();
       void sessionStore.loadMsgs(agentId);
+      void sessionStore.loadAgents(parentId);
     });
 
     return () => {
       void un.then((f) => f());
       sessionStore.unwatch(agentId);
     };
-  }, [agentId, reload]);
+  }, [agentId, parentId]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border-primary px-4 py-2.5">
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex cursor-pointer items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary"
-        >
-          <FiArrowLeft size={14} />
-          Back
-        </button>
-        <FiUsers size={13} className="text-text-tertiary" />
-        <span className="min-w-0 flex-1 truncate text-sm text-text-primary">
-          {run?.name ?? "Sub-agent"}
-        </span>
-        <span className="shrink-0 text-xs text-text-secondary">
-          {VERDICT[run?.state ?? "running"] ?? run?.state}
-        </span>
-      </div>
-
-      {run !== null && run.title.length > 0 && (
-        <div className="shrink-0 px-6 pt-4 text-sm text-text-secondary">
-          <div className="mx-auto w-full min-w-0 max-w-[700px]">{run.title}</div>
-        </div>
-      )}
-
       {waiting !== null && (
         <div className="shrink-0 px-6 pt-3">
           <div
@@ -93,8 +56,8 @@ export default function SubagentPage({ agentId, parentId, onBack }: Props) {
             }
           >
             <span className="min-w-0 flex-1">
-              This sub-agent needs your approval to run a command. Approvals
-              are answered in the chat that started it.
+              This sub-agent needs your approval to run a command. Approvals are
+              answered in the chat that started it.
             </span>
             <button
               type="button"
@@ -107,7 +70,7 @@ export default function SubagentPage({ agentId, parentId, onBack }: Props) {
         </div>
       )}
 
-      {missing ? (
+      {checked && run === null ? (
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
           <p className="mx-auto w-full min-w-0 max-w-[700px] text-sm text-text-secondary">
             That sub-agent is no longer around.
@@ -122,8 +85,9 @@ export default function SubagentPage({ agentId, parentId, onBack }: Props) {
       )}
 
       <div className="shrink-0 border-t border-border-primary px-4 py-2.5 text-xs text-text-tertiary">
-        This is a sub-agent's own transcript. It reports to the conversation
-        that started it, not to you.
+        {run === null
+          ? "This is a sub-agent's own transcript."
+          : `${VERDICT[run.state] ?? run.state} — this is the sub-agent's own transcript. It reports to the conversation that started it, not to you.`}
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import { BsLayoutSidebarInset } from "react-icons/bs";
 import { CgProfile } from "react-icons/cg";
-import { FiChevronDown } from "react-icons/fi";
+import { FiArrowLeft, FiChevronDown } from "react-icons/fi";
 import { LuArchive, LuDownload, LuTrash2 } from "react-icons/lu";
 import { VscSettingsGear } from "react-icons/vsc";
 
@@ -10,6 +10,7 @@ type ToolbarProps = {
   onToggleSidebar: () => void;
   sidebarOpen: boolean;
   chatTitle?: string | null;
+  onBack?: () => void;
   onSettings: () => void;
 };
 
@@ -17,6 +18,7 @@ export default function Toolbar({
   onToggleSidebar,
   sidebarOpen,
   chatTitle,
+  onBack,
   onSettings,
 }: ToolbarProps) {
   const menuItems: DropdownItem[] = [
@@ -46,6 +48,21 @@ export default function Toolbar({
       }
     >
       <div className="flex h-9 items-center gap-1 pl-2">
+        {onBack !== undefined && (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back to the chat"
+            className={
+              "flex h-7 w-7 items-center justify-center rounded-md " +
+              "text-text-secondary transition-colors " +
+              "hover:bg-bg-hover-primary hover:text-text-primary " +
+              "focus:bg-bg-hover-primary focus:text-text-primary"
+            }
+          >
+            <FiArrowLeft size={16} />
+          </button>
+        )}
         {!sidebarOpen && (
           <button
             type="button"
@@ -60,10 +77,7 @@ export default function Toolbar({
             }
             aria-label="Expand sidebar"
           >
-            <BsLayoutSidebarInset
-              size={18}
-              className="text-text-secondary"
-            />
+            <BsLayoutSidebarInset size={18} className="text-text-secondary" />
           </button>
         )}
         {chatTitle && (
@@ -79,32 +93,34 @@ export default function Toolbar({
             >
               {chatTitle}
             </button>
-            <Dropdown
-              items={menuItems}
-              align="left"
-              side="bottom"
-              trigger={({ open, toggle }) => (
-                <button
-                  type="button"
-                  aria-label="Session options"
-                  aria-expanded={open}
-                  onClick={toggle}
-                  className={
-                    "flex h-7 w-7 items-center justify-center rounded-md " +
-                    "transition-colors focus:outline-none " +
-                    `${
-                      open
-                        ? "bg-bg-hover-primary text-text-primary"
-                        : "text-text-secondary hover:bg-bg-hover-primary " +
-                          "hover:text-text-primary " +
-                          "focus-visible:bg-bg-hover-primary"
-                    }`
-                  }
-                >
-                  <FiChevronDown size={18} />
-                </button>
-              )}
-            />
+            {onBack === undefined && (
+              <Dropdown
+                items={menuItems}
+                align="left"
+                side="bottom"
+                trigger={({ open, toggle }) => (
+                  <button
+                    type="button"
+                    aria-label="Session options"
+                    aria-expanded={open}
+                    onClick={toggle}
+                    className={
+                      "flex h-7 w-7 items-center justify-center rounded-md " +
+                      "transition-colors focus:outline-none " +
+                      `${
+                        open
+                          ? "bg-bg-hover-primary text-text-primary"
+                          : "text-text-secondary hover:bg-bg-hover-primary " +
+                            "hover:text-text-primary " +
+                            "focus-visible:bg-bg-hover-primary"
+                      }`
+                    }
+                  >
+                    <FiChevronDown size={18} />
+                  </button>
+                )}
+              />
+            )}
           </div>
         )}
       </div>

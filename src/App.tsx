@@ -31,7 +31,7 @@ export type View =
   | "connectors";
 
 function App() {
-  const { sessions, activeId, turns } = useSessions();
+  const { sessions, activeId, turns, agentRuns } = useSessions();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [view, setView] = useState<View>("new-agent");
   const [subagent, setSubagent] = useState<{
@@ -154,8 +154,14 @@ function App() {
 
   const activeSession =
     activeId !== null ? sessions.find((s) => s.id === activeId) : undefined;
+  const subagentRun = subagent !== null ? agentRuns[subagent.id] : undefined;
   const chatTitle =
-    view === "chat" ? (activeSession?.title ?? "New chat") : null;
+    view === "subagent"
+      ? (subagentRun?.title ?? subagentRun?.name ?? null)
+      : view === "chat"
+        ? (activeSession?.title ?? "New chat")
+        : null;
+  const backToChat = () => setView("chat");
 
   const exportSession = async (sessionId: string) => {
     try {
@@ -227,6 +233,7 @@ function App() {
             onToggleSidebar={toggleSidebar}
             sidebarOpen={sidebarOpen}
             chatTitle={chatTitle}
+            onBack={view === "subagent" ? backToChat : undefined}
             onSettings={() => setSettingsOpen(true)}
           />
           <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -241,7 +248,7 @@ function App() {
               <SubagentPage
                 agentId={subagent.id}
                 parentId={subagent.parent}
-                onBack={() => setView("chat")}
+                onBack={backToChat}
               />
             )}
             {view === "chat" &&

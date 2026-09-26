@@ -26,8 +26,9 @@ export default function AgentCard({
   children,
   onOpen,
 }: Props) {
-  const { agents } = useSessions();
-  const live = (agents[id] ?? state) === "running";
+  const { agentRuns } = useSessions();
+  const liveState = agentRuns[id]?.state ?? state;
+  const live = liveState === "running";
 
   return (
     <div className="my-2 overflow-hidden rounded-lg border border-border-primary">
@@ -48,7 +49,7 @@ export default function AgentCard({
           {name}
         </span>
         <span className="shrink-0 text-xs text-text-secondary">
-          {VERDICT[agents[id] ?? state] ?? agents[id] ?? state}
+          {VERDICT[liveState] ?? liveState}
         </span>
         <FiChevronRight size={12} className="shrink-0 text-text-tertiary" />
       </button>

@@ -19,6 +19,7 @@ import {
   sessSupersedeFrom,
   sessUnwatch,
   sessWatchEvents,
+  type AgentRun,
   type MsgRow,
   type SessionRow,
   type StreamEvent,
@@ -63,7 +64,7 @@ type State = {
   msgs: Record<string, MsgRow[]>;
   turns: Record<string, Turn>;
   stopped: Record<string, boolean>;
-  agents: Record<string, string>;
+  agentRuns: Record<string, AgentRun>;
 };
 
 class SessionStore {
@@ -74,7 +75,7 @@ class SessionStore {
     msgs: {},
     turns: {},
     stopped: {},
-    agents: {},
+    agentRuns: {},
   };
 
   private listeners = new Set<() => void>();
@@ -116,13 +117,13 @@ class SessionStore {
         return;
       }
 
-      const agents = { ...this.state.agents };
+      const agentRuns = { ...this.state.agentRuns };
 
       for (const r of runs) {
-        agents[r.id] = r.state;
+        agentRuns[r.id] = r;
       }
 
-      this.set({ agents });
+      this.set({ agentRuns });
     } catch {}
   }
 

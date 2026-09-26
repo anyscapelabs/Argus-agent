@@ -4,7 +4,9 @@
 > its projects, and that can be granted limited visibility of and control over other
 > profiles. One unnamed default exists; the user creates the rest.
 
-**Status:** design agreed, not implemented.
+**Status:** slice one shipped — profiles, the picker, the manager page, and the
+prompt layer. Reach (§6), cross-profile read/write (§7, §9) and liveness (§8) are
+still design only.
 
 **Open:** the user-facing name. This document uses *profile* because that is the
 word used so far and the word on the button at `src/components/Toolbar.tsx:128`
@@ -39,38 +41,36 @@ already session-scoped or is added by this feature.
 
 ## 2. Schema
 
+Shipped, in `sessions/schema.rs`:
+
 ```sql
 CREATE TABLE agent_profiles (
-  id          TEXT PRIMARY KEY,
-  name        TEXT NOT NULL,
+  id           TEXT PRIMARY KEY,
+  name         TEXT NOT NULL DEFAULT '',
   instructions TEXT NOT NULL DEFAULT '',
-  reach_all   INTEGER NOT NULL DEFAULT 0,
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-ALTER TABLE sessions ADD COLUMN profile_id     TEXT REFERENCES agent_profiles(id);
-ALTER TABLE sessions ADD COLUMN profile_prompt TEXT;
-ALTER TABLE folders  ADD COLUMN profile_id     TEXT REFERENCES agent_profiles(id);
-
-CREATE TABLE profile_grants (
-  profile_id TEXT NOT NULL REFERENCES agent_profiles(id) ON DELETE CASCADE,
-  capability TEXT NOT NULL,
-  target_id  TEXT NOT NULL,
-  PRIMARY KEY (profile_id, capability, target_id)
-);
+ALTER TABLE sessions ADD COLUMN profile_id TEXT;
 ```
 
+`reach_all`, `profile_grants`, `sessions.profile_prompt` and `folders.profile_id`
+are **not** in the table yet. They belong to the reach slice, and an unused column
+is worse than no column. `folders.profile_id` lands with per-profile projects.
+
 Migration lives in `src-tauri/src/sessions/schema.rs` alongside the existing
-`MIGRATE` string. There is no separate migration runner.
+`MIGRATE` string, with the `profile_id` column added through the `pragma_table_info`
+batched loop in `store::migrate()`. There is no separate migration runner.
 
-`reach_all = 1` means "every capability, every target". The `profile_grants` rows are
-**kept, not deleted**, so flipping back to the custom matrix restores it. The user
-who ticks two accountants, switches to All for a week, and switches back should not
-have to re-tick.
+When `reach_all` does land it means "every capability, every target", and the
+`profile_grants` rows are **kept, not deleted**, so flipping back to the custom
+matrix restores it. The user who ticks two accountants, switches to All for a week,
+and switches back should not have to re-tick.
 
-The unnamed default profile is created at migration time with `name = ''` and is
-never deletable. A session with `profile_id IS NULL` is treated as belonging to it,
-so pre-existing chats keep working untouched.
+The unnamed default profile is a **real row** seeded at migration with
+`id = 'default'`, not a null-means-default convention — the picker then has one
+uniform list and never branches on a null. Migration backfills every existing
+session to it, so nothing that exists today needed migrating.
 
 ---
 
@@ -122,23 +122,34 @@ on every turn that shows code.
 
 ---
 
-## 4. Snapshot semantics
+## 4. Live read, not a snapshot
 
-At session creation, `profile_prompt` is frozen onto the session row. The prompt is
-not read live from the profile.
+**Superseded.** This section originally froze `profile_prompt` onto the session row
+at creation and called the resulting lock "the point". That is not what shipped, and
+the argument below lost.
 
-Reasons:
+What shipped: `sessions` stores only `profile_id`. The instructions are read from
+`agent_profiles` at prompt-build time (`profile_section`,
+`src-tauri/src/prompt/mod.rs`). The deciding rule, from the user:
 
-- **Prompt cache.** The stable layer is the hashed cached prefix (`prefix_hash`,
-  `src-tauri/src/prompt/mod.rs:288`). A live reference means editing one profile
-  invalidates the cache for every session using it, mid-conversation.
-- **Reproducibility.** A chat from March reads as it did. Editing a profile should
-  not silently rewrite the behaviour of old work.
-- **The lock is the point.** A session's instructions do not drift because somebody
-  reworded a profile six weeks later.
+> user can change the name anytime, the personality changes only when the user
+> changes the prompt
 
-Consequence: a profile cannot be changed for a conversation that already exists.
-Editing the profile's text affects new sessions only, and the UI says so.
+So a rename shows up everywhere at once, and the behaviour of a conversation changes
+at the exact moment the user saves the prompt — and not before. Nothing drifts on
+its own, which was the actual worry behind the snapshot.
+
+The costs, accepted:
+
+- **Prompt cache.** The stable layer is the hashed cached prefix (`prefix_hash`).
+  Editing one profile's instructions invalidates the cached prefix for every session
+  using it. That is one cache miss per edit, not a correctness problem.
+- **Reproducibility.** A chat from March no longer reads exactly as it did after the
+  profile behind it is reworded. The transcript is the record; the behaviour is
+  current.
+
+Sub-agents still inherit, because a sub-agent copies its parent's `profile_id` at
+`create_child` — see §5.
 
 ---
 

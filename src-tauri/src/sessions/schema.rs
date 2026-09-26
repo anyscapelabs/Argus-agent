@@ -19,7 +19,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   ctx_tokens  INTEGER NOT NULL DEFAULT 0,
   compact_seq INTEGER NOT NULL DEFAULT 0,
   compactions INTEGER NOT NULL DEFAULT 0,
-  web_search  INTEGER NOT NULL DEFAULT 0
+  web_search  INTEGER NOT NULL DEFAULT 0,
+  parent_id   TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+  agent_name  TEXT,
+  agent_state TEXT
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -65,6 +68,12 @@ pub struct Session {
     pub compactions: i64,
     #[serde(default)]
     pub web_search: bool,
+    #[serde(default)]
+    pub parent_id: Option<String>,
+    #[serde(default)]
+    pub agent_name: Option<String>,
+    #[serde(default)]
+    pub agent_state: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]

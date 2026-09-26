@@ -97,14 +97,43 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
             .map_err(|err| err.to_string())?;
     }
 
+    for (col, ddl) in [
+        (
+            "parent_id",
+            "ALTER TABLE sessions ADD COLUMN parent_id TEXT",
+        ),
+        (
+            "agent_name",
+            "ALTER TABLE sessions ADD COLUMN agent_name TEXT",
+        ),
+        (
+            "agent_state",
+            "ALTER TABLE sessions ADD COLUMN agent_state TEXT",
+        ),
+    ] {
+        let has: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = ?1",
+                params![col],
+                |r| r.get::<_, i64>(0),
+            )
+            .map(|n| n > 0)
+            .map_err(|err| err.to_string())?;
+
+        if !has {
+            conn.execute(ddl, []).map_err(|err| err.to_string())?;
+        }
+    }
+
     conn.pragma_update(None, "foreign_keys", true)
         .map_err(|err| err.to_string())?;
 
     Ok(())
 }
 
-const SESSION_COLS: &str =
-    "id, title, status, model_id, permission, folder_id, created_at, updated_at, ctx_tokens, compact_seq, compactions, web_search";
+const SESSION_COLS: &str = "id, title, status, model_id, permission, folder_id, \
+                            created_at, updated_at, ctx_tokens, compact_seq, \
+                            compactions, web_search, parent_id, agent_name, agent_state";
 
 fn row_session(r: &rusqlite::Row) -> rusqlite::Result<Session> {
     Ok(Session {
@@ -120,6 +149,9 @@ fn row_session(r: &rusqlite::Row) -> rusqlite::Result<Session> {
         compact_seq: r.get(9)?,
         compactions: r.get(10)?,
         web_search: r.get::<_, i64>(11)? != 0,
+        parent_id: r.get(12)?,
+        agent_name: r.get(13)?,
+        agent_state: r.get(14)?,
     })
 }
 
@@ -148,11 +180,15 @@ pub fn get_session(conn: &Connection, id: &str) -> Result<Session, String> {
 }
 
 pub fn list_sessions(conn: &Connection, folder_id: Option<&str>) -> Result<Vec<Session>, String> {
+    // Children belong to their parent, not to the user's list of chats.
     let sql = match folder_id {
         Some(_) => format!(
-            "SELECT {SESSION_COLS} FROM sessions WHERE folder_id = ?1 ORDER BY updated_at DESC"
+            "SELECT {SESSION_COLS} FROM sessions WHERE parent_id IS NULL AND folder_id = ?1 \
+             ORDER BY updated_at DESC"
         ),
-        None => format!("SELECT {SESSION_COLS} FROM sessions ORDER BY updated_at DESC"),
+        None => format!(
+            "SELECT {SESSION_COLS} FROM sessions WHERE parent_id IS NULL ORDER BY updated_at DESC"
+        ),
     };
 
     let mut stmt = conn.prepare(&sql).map_err(|err| err.to_string())?;
@@ -165,6 +201,72 @@ pub fn list_sessions(conn: &Connection, folder_id: Option<&str>) -> Result<Vec<S
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|err| err.to_string())
+}
+
+pub fn is_child(conn: &Connection, session_id: &str) -> Result<bool, String> {
+    conn.query_row(
+        "SELECT parent_id IS NOT NULL FROM sessions WHERE id = ?1",
+        params![session_id],
+        |r| r.get(0),
+    )
+    .map_err(|err| err.to_string())
+}
+
+pub fn children_of(conn: &Connection, parent_id: &str) -> Result<Vec<Session>, String> {
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT {SESSION_COLS} FROM sessions WHERE parent_id = ?1 ORDER BY created_at"
+        ))
+        .map_err(|err| err.to_string())?;
+
+    let rows = stmt
+        .query_map(params![parent_id], row_session)
+        .map_err(|err| err.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())
+}
+
+pub fn set_agent_state(
+    conn: &Connection,
+    session_id: &str,
+    state: &str,
+    title: Option<&str>,
+) -> Result<(), String> {
+    match title {
+        Some(t) => conn.execute(
+            "UPDATE sessions SET agent_state = ?2, title = ?3, updated_at = datetime('now')
+             WHERE id = ?1",
+            params![session_id, state, t],
+        ),
+        None => conn.execute(
+            "UPDATE sessions SET agent_state = ?2, updated_at = datetime('now') WHERE id = ?1",
+            params![session_id, state],
+        ),
+    }
+    .map_err(|err| err.to_string())?;
+
+    Ok(())
+}
+
+pub fn create_child(
+    conn: &Connection,
+    parent_id: &str,
+    name: &str,
+    title: &str,
+    model_id: Option<&str>,
+    permission: &str,
+) -> Result<Session, String> {
+    let id = Uuid::new_v4().to_string();
+
+    conn.execute(
+        "INSERT INTO sessions (id, title, model_id, permission, parent_id, agent_name, agent_state)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'running')",
+        params![id, title, model_id, permission, parent_id, name],
+    )
+    .map_err(|err| err.to_string())?;
+
+    get_session(conn, &id)
 }
 
 pub fn save_session(conn: &Connection, s: &Session) -> Result<(), String> {

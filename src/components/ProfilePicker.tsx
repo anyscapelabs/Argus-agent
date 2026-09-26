@@ -21,10 +21,11 @@ const INPUT =
   "focus:border-accent";
 
 type Props = {
+  onPick: (id: string) => void;
   onManage: () => void;
 };
 
-export default function ProfilePicker({ onManage }: Props) {
+export default function ProfilePicker({ onPick, onManage }: Props) {
   const { profiles, activeId } = useProfiles();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -37,9 +38,10 @@ export default function ProfilePicker({ onManage }: Props) {
 
   // A pick changes what you are looking at. It does not hand the chat you
   // happen to have open over to the new profile — the two are separate
-  // decisions and a list filter has no business editing a row.
-  const pick = async (id: string) => {
-    await profileStore.setActive(id);
+  // decisions and a list filter has no business editing a row. Whether the
+  // open chat survives the switch is the caller's business.
+  const pick = (id: string) => {
+    onPick(id);
   };
 
   const create = async () => {

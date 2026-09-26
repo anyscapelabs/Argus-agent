@@ -10,6 +10,7 @@ type ToolbarProps = {
   onToggleSidebar: () => void;
   sidebarOpen: boolean;
   chatTitle?: string | null;
+  onPickProfile: (id: string) => void;
   onManageProfiles: () => void;
   onBack?: () => void;
   onSettings: () => void;
@@ -19,6 +20,7 @@ export default function Toolbar({
   onToggleSidebar,
   sidebarOpen,
   chatTitle,
+  onPickProfile,
   onManageProfiles,
   onBack,
   onSettings,
@@ -127,7 +129,10 @@ export default function Toolbar({
         )}
       </div>
       <div className="flex h-9 items-center gap-1 pr-2">
-        <ProfilePicker onManage={onManageProfiles} />
+        <ProfilePicker
+          onPick={onPickProfile}
+          onManage={onManageProfiles}
+        />
         <button
           type="button"
           onClick={onSettings}

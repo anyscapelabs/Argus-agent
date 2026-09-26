@@ -181,6 +181,25 @@ function App() {
       : view === "chat"
         ? (activeSession?.title ?? "New chat")
         : null;
+  const switchProfile = async (id: string) => {
+    await profileStore.setActive(id);
+
+    if (view !== "chat" && view !== "subagent") {
+      return;
+    }
+
+    const row = activeId === null ? undefined : sessions.find((s) => s.id === activeId);
+
+    // The chat on screen belongs to the profile just left, so the list no
+    // longer lists it. Leaving it open would show work that is not there.
+    if (row === undefined || (row.profile_id ?? DEFAULT_PROFILE) === id) {
+      return;
+    }
+
+    sessionStore.select(null);
+    setView("new-agent");
+  };
+
   const backToChat = () => setView("chat");
 
   const exportSession = async (sessionId: string) => {
@@ -259,6 +278,7 @@ function App() {
             onToggleSidebar={toggleSidebar}
             sidebarOpen={sidebarOpen}
             chatTitle={chatTitle}
+            onPickProfile={switchProfile}
             onManageProfiles={() => {
               backView.current = view === "settings" ? backView.current : view;
               setSettingsTab("profiles");

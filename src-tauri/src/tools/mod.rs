@@ -49,6 +49,30 @@ const TOOLS: &[ToolMeta] = &[
         mutating: true,
     },
     ToolMeta {
+        name: "agent.spawn",
+        desc: "Start a sub-agent on one self-contained piece of a larger task and get a card back immediately. The prompt must stand alone — the sub-agent cannot see this conversation. Use it for work that splits into independent parts: researching N separate things, inspecting N separate files, auditing N separate call sites. Start every piece before waiting on any of them. At most four run at a time, and a sub-agent cannot start further sub-agents.",
+        args: "{\"name\":\"...\",\"title\":\"...\",\"prompt\":\"...\"}",
+        mutating: true,
+    },
+    ToolMeta {
+        name: "agent.list",
+        desc: "List the sub-agents this conversation started, with their state (running, done, failed, interrupted) and their answer. Call this instead of waiting or re-asking.",
+        args: "{}",
+        mutating: false,
+    },
+    ToolMeta {
+        name: "agent.read",
+        desc: "Read one sub-agent's full answer. The summary you were given is trimmed; read the whole thing when the answer is load-bearing and the tail left a question open.",
+        args: "{\"id\":\"...\",\"max_chars\":8000}",
+        mutating: false,
+    },
+    ToolMeta {
+        name: "agent.kill",
+        desc: "Stop a running sub-agent. Use when it is clearly going the wrong way and the user did not ask it to finish.",
+        args: "{\"id\":\"...\"}",
+        mutating: true,
+    },
+    ToolMeta {
         name: "code.run",
         desc: "Run code from untrusted origins — anything fetched from the web, pasted scripts of unknown provenance, or a freshly cloned repo. Use for: building, testing, or inspecting untrusted code. It runs with no network access and can write only inside its own scratch directory. Never use it for your own files and projects; that is what terminal is for.",
         args: "{\"command\":\"...\",\"cwd\":\".\"}",
@@ -751,6 +775,22 @@ pub async fn exec<R: tauri::Runtime>(
         .find(|t| t.name == name)
         .ok_or_else(|| format!("unknown tool {name}"))?;
 
+    // Depth one, enforced where it counts. A sub-agent that could fan out
+    // would multiply without anything in the way counting it.
+    if name.starts_with("agent.") {
+        let sid = notepad::current_session()
+            .ok_or("a sub-agent may only be started from inside a conversation")?;
+
+        let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+        let child = crate::sessions::store::is_child(&conn, &sid)?;
+
+        if child {
+            return Err("a sub-agent cannot start another sub-agent".into());
+        }
+
+        drop(conn);
+    }
+
     if name.starts_with("web.") && !web {
         return Err(
             "web search is off for this session; the user can enable it from the + menu".into(),
@@ -884,6 +924,106 @@ pub async fn exec<R: tauri::Runtime>(
                 Ok(format!("job {id} is being stopped"))
             } else {
                 Ok(format!("job {id} was not running"))
+            }
+        }
+        "agent.spawn" => {
+            let sid = notepad::current_session()
+                .ok_or("a sub-agent may only be started from inside a conversation")?;
+            let prompt = args["prompt"]
+                .as_str()
+                .filter(|p| !p.trim().is_empty())
+                .ok_or("agent.spawn needs a prompt")?;
+            let name = args["name"].as_str().unwrap_or("sub-agent").to_string();
+            let title = args["title"]
+                .as_str()
+                .filter(|t| !t.trim().is_empty())
+                .unwrap_or(&prompt.chars().take(90).collect::<String>())
+                .to_string();
+
+            let (model_id, perm) = {
+                let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+                let s = crate::sessions::store::get_session(&conn, &sid)?;
+                (s.model_id, s.permission)
+            };
+
+            let run = crate::agents::spawn(
+                app,
+                gw,
+                crate::agents::Spec {
+                    parent_id: sid.clone(),
+                    name,
+                    title,
+                    prompt: prompt.to_string(),
+                    model_id,
+                    permission: perm,
+                },
+            )?;
+
+            return Ok(format!(
+                "sub-agent {} is running as \"{}\" ({}). Do not wait for it and do \
+                 not start the same work again. Its card is in this chat; its answer \
+                 arrives here when it finishes.\n<agent id=\"{}\" name=\"{}\" \
+                 state=\"running\">\n{}\n</agent>",
+                run.id,
+                crate::sessions::chat::attr_escape(&run.name),
+                crate::sessions::chat::attr_escape(&run.title),
+                run.id,
+                crate::sessions::chat::attr_escape(&run.name),
+                crate::sessions::chat::attr_escape(&run.title)
+            ));
+        }
+        "agent.list" => {
+            let sid = notepad::current_session().ok_or("no conversation to list sub-agents of")?;
+            let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+            let runs = crate::agents::list(&conn, &sid)?;
+
+            if runs.is_empty() {
+                return Ok("this conversation has not started any sub-agents".into());
+            }
+
+            Ok(runs
+                .iter()
+                .map(|r| {
+                    format!(
+                        "{} | {} | {} | {}",
+                        r.id,
+                        r.state,
+                        r.name,
+                        r.result
+                            .as_deref()
+                            .unwrap_or("still working")
+                            .chars()
+                            .take(200)
+                            .collect::<String>()
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n"))
+        }
+        "agent.read" => {
+            let id = args["id"].as_str().ok_or("agent.read needs an id")?;
+            let max = args["max_chars"]
+                .as_u64()
+                .unwrap_or(8_000)
+                .clamp(200, 60_000) as usize;
+            let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+            let run = crate::agents::get(&conn, id)?;
+            drop(conn);
+
+            let text = crate::agents::tail(&run, max)?;
+
+            Ok(format!(
+                "{} ({}) — {}\n{}",
+                run.name, run.state, run.title, text
+            ))
+        }
+        "agent.kill" => {
+            let id = args["id"].as_str().ok_or("agent.kill needs an id")?;
+
+            if crate::agents::kill(gw, id)? {
+                Ok(format!("sub-agent {id} is being stopped"))
+            } else {
+                Ok(format!("sub-agent {id} was not running"))
             }
         }
         "code.run" => {

@@ -101,6 +101,26 @@ fn resolve(gw: &Gateway, req: &ChatReq) -> Result<Resolved, String> {
     })
 }
 
+/// Something to call the provider in a sentence. A provider with no name is
+/// still a provider, and "is rate limiting" beats a bare id.
+pub fn provider_label(name: &str, id: &str) -> String {
+    let n = name.trim();
+
+    if n.is_empty() {
+        return if id.is_empty() {
+            "The provider".to_string()
+        } else {
+            format!("Provider {id}")
+        };
+    }
+
+    if id.is_empty() || n == id {
+        return n.to_string();
+    }
+
+    format!("{n} ({id})")
+}
+
 fn backoff_ms(status: Option<u16>, attempt: i64, retry_after: Option<u64>) -> u64 {
     if let Some(secs) = retry_after {
         return secs.saturating_mul(1000).min(120_000);
@@ -284,6 +304,7 @@ pub async fn stream_run(
     let mut attempt = 0i64;
     let mut rate_body: Option<String> = None;
     let mut same_429 = 0u32;
+    let mut rate_noticed = false;
 
     loop {
         attempt += 1;
@@ -447,12 +468,23 @@ pub async fn stream_run(
                     let _ = chan.send(StreamEvent::Reset);
                 }
 
-                tokio::time::sleep(Duration::from_millis(backoff_ms(
-                    err.status,
-                    attempt,
-                    err.retry_after,
-                )))
-                .await;
+                let wait = backoff_ms(err.status, attempt, err.retry_after);
+
+                // Ten attempts against a rate limit is minutes of nothing on
+                // screen. Say why, once, before the wait rather than after it.
+                if err.status == Some(429) && !rate_noticed {
+                    rate_noticed = true;
+                    let _ = chan.send(StreamEvent::Notice {
+                        msg: format!(
+                            "{} is rate limiting this request. Waiting {}s, then \
+                             trying again — up to {MAX_ATTEMPTS} attempts.",
+                            provider_label(&prov.name, &prov.id),
+                            wait.div_ceil(1_000)
+                        ),
+                    });
+                }
+
+                tokio::time::sleep(Duration::from_millis(wait)).await;
             }
         }
     }

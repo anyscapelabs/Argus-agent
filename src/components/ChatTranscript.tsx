@@ -213,9 +213,26 @@ export default function ChatTranscript({
           // A wake — a sub-agent or a job reporting back — is stored as
           // `system`. It is the app speaking, not the model, but it is still
           // something the user was told and has to be able to read.
-          const assistants = group.agent.filter(
-            (a) => a.role === "assistant" || a.role === "system",
-          );
+          const assistants: MsgRow[] = [];
+
+          for (const a of group.agent) {
+            if (a.role !== "assistant" && a.role !== "system") {
+              continue;
+            }
+
+            // A model asked to try again and answering the same way used to
+            // land as a second copy of the same message. The backend stops that
+            // now; this keeps the chats that already have it from reading as
+            // three answers. Keep the last of a run, so `final` survives.
+            const prev = assistants[assistants.length - 1];
+
+            if (prev !== undefined && prev.content === a.content) {
+              assistants[assistants.length - 1] = a;
+              continue;
+            }
+
+            assistants.push(a);
+          }
           const live = running && gi === groups.length - 1;
           const buildWorkSteps = (
             msgs: MsgRow[],

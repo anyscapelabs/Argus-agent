@@ -312,6 +312,33 @@ export function sessWatchEvents(
   return invoke<void>("sess_watch_events", { sessionId, onEvent });
 }
 
+export type AgentRun = {
+  id: string;
+  parentId: string;
+  name: string;
+  title: string;
+  state: string;
+  result: string | null;
+  createdAt: string;
+};
+
+export function agentList(parentId: string): Promise<AgentRun[]> {
+  return invoke<AgentRun[]>("agent_list", { parentId });
+}
+
+export type AgentRead = {
+  run: AgentRun;
+  text: string;
+};
+
+export function agentRead(id: string, maxChars?: number): Promise<AgentRead> {
+  return invoke<AgentRead>("agent_read", { id, maxChars });
+}
+
+export function agentKill(id: string): Promise<boolean> {
+  return invoke<boolean>("agent_kill", { id });
+}
+
 export function sessUnwatch(): Promise<void> {
   return invoke<void>("sess_unwatch");
 }

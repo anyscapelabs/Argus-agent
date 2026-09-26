@@ -2,6 +2,7 @@ import { Channel } from "@tauri-apps/api/core";
 import { useSyncExternalStore } from "react";
 
 import {
+  agentList,
   sessCancelChat,
   sessChatStream,
   sessCleanDangling,
@@ -62,6 +63,7 @@ type State = {
   msgs: Record<string, MsgRow[]>;
   turns: Record<string, Turn>;
   stopped: Record<string, boolean>;
+  agents: Record<string, string>;
 };
 
 class SessionStore {
@@ -72,6 +74,7 @@ class SessionStore {
     msgs: {},
     turns: {},
     stopped: {},
+    agents: {},
   };
 
   private listeners = new Set<() => void>();
@@ -105,6 +108,24 @@ class SessionStore {
     this.set({ loading: false });
   }
 
+  async loadAgents(sessionId: string) {
+    try {
+      const runs = await agentList(sessionId);
+
+      if (runs.length === 0) {
+        return;
+      }
+
+      const agents = { ...this.state.agents };
+
+      for (const r of runs) {
+        agents[r.id] = r.state;
+      }
+
+      this.set({ agents });
+    } catch {}
+  }
+
   async loadMsgs(sessionId: string) {
     try {
       const rows = await sessListMessages(sessionId);
@@ -128,6 +149,7 @@ class SessionStore {
     }
 
     await this.loadMsgs(sessionId);
+    await this.loadAgents(sessionId);
     this.watch(sessionId);
   }
 

@@ -15,6 +15,7 @@ import Toasts from "./components/Toasts";
 import Toolbar from "./components/Toolbar";
 import type { Session } from "./components/SessionList";
 import { sessExportJson, type ChatModel } from "./lib/ipc";
+import SubagentPage from "./components/SubagentPage";
 import { notifyDone } from "./lib/notify";
 import { sessionStore, useSessions } from "./stores/sessions";
 import { toast } from "./stores/toast";
@@ -22,17 +23,21 @@ import { toast } from "./stores/toast";
 export type View =
   | "new-agent"
   | "chat"
+  | "subagent"
   | "memory"
   | "skills"
   | "library"
   | "projects"
   | "connectors";
 
-
 function App() {
   const { sessions, activeId, turns } = useSessions();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [view, setView] = useState<View>("new-agent");
+  const [subagent, setSubagent] = useState<{
+    id: string;
+    parent: string;
+  } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState("");
   const notified = useRef(new Set<string>());
@@ -75,6 +80,17 @@ function App() {
       sessionStore.loadSessions();
     });
 
+    const unAgent = listen<{ id: string; name: string; state: string }>(
+      "agent-done",
+      () => {
+        if (activeId !== null) {
+          sessionStore.loadAgents(activeId);
+        }
+
+        sessionStore.loadSessions();
+      },
+    );
+
     const unJob = listen<{ label: string; state: string; exit: number | null }>(
       "job-done",
       (e) => {
@@ -94,6 +110,7 @@ function App() {
     return () => {
       void un.then((f) => f());
       void unJob.then((f) => f());
+      void unAgent.then((f) => f());
     };
   }, []);
 
@@ -107,6 +124,15 @@ function App() {
   const openSession = (sessionId: string) => {
     sessionStore.select(sessionId);
     setView("chat");
+  };
+
+  const openSubagent = (id: string) => {
+    if (activeId === null) {
+      return;
+    }
+
+    setSubagent({ id, parent: activeId });
+    setView("subagent");
   };
 
   const startNew = async (
@@ -128,7 +154,8 @@ function App() {
 
   const activeSession =
     activeId !== null ? sessions.find((s) => s.id === activeId) : undefined;
-  const chatTitle = view === "chat" ? activeSession?.title ?? "New chat" : null;
+  const chatTitle =
+    view === "chat" ? (activeSession?.title ?? "New chat") : null;
 
   const exportSession = async (sessionId: string) => {
     try {
@@ -138,7 +165,8 @@ function App() {
         await navigator.clipboard.writeText(json);
       } catch {}
 
-      const title = sessions.find((s) => s.id === sessionId)?.title ?? "session";
+      const title =
+        sessions.find((s) => s.id === sessionId)?.title ?? "session";
       const blob = new Blob([json], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -209,9 +237,19 @@ function App() {
                 onPromptUsed={() => setPendingPrompt("")}
               />
             )}
+            {view === "subagent" && subagent !== null && (
+              <SubagentPage
+                agentId={subagent.id}
+                parentId={subagent.parent}
+                onBack={() => setView("chat")}
+              />
+            )}
             {view === "chat" &&
               (activeId !== null ? (
-                <ChatDetailPage sessionId={activeId} />
+                <ChatDetailPage
+                  sessionId={activeId}
+                  onOpenAgent={openSubagent}
+                />
               ) : (
                 <NewAgentPage
                   onSend={startNew}
@@ -227,7 +265,10 @@ function App() {
           </div>
         </div>
       </div>
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+      />
       <DocViewer />
       <Toasts />
     </div>

@@ -22,7 +22,7 @@ import { toast } from "../stores/toast";
 const SCROLL_LINE = 40;
 const SCROLL_PAGE_RATIO = 0.85;
 
-type Props = { sessionId: string };
+type Props = { sessionId: string; onOpenAgent?: (id: string) => void };
 
 type TurnGroup = { usr: MsgRow | null; agent: MsgRow[] };
 
@@ -72,7 +72,7 @@ function groupTurns(
   return groups;
 }
 
-export default function ChatDetailPage({ sessionId }: Props) {
+export default function ChatDetailPage({ sessionId, onOpenAgent }: Props) {
   const { sessions, msgs, turns, stopped } = useSessions();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
@@ -85,8 +85,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
 
   const { models } = useChatModels();
   const session = sessions.find((s) => s.id === sessionId);
-  const model =
-    models.find((m) => m.modelId === session?.model_id) ?? null;
+  const model = models.find((m) => m.modelId === session?.model_id) ?? null;
 
   const groups = groupTurns(rows, turn, sessionId);
 
@@ -100,8 +99,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
         return;
       }
 
-      const nearBottom =
-        el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
       pinnedRef.current = nearBottom;
     };
 
@@ -156,9 +154,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
       return;
     }
 
-    const row = rows.find(
-      (m) => m.id === usrMsgId && m.role === "user",
-    );
+    const row = rows.find((m) => m.id === usrMsgId && m.role === "user");
     if (row === undefined) {
       return;
     }
@@ -166,9 +162,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
     sessionStore.retry(sessionId, row.seq, row.content);
   };
 
-  const handleScrollKey = (
-    event: React.KeyboardEvent<HTMLDivElement>,
-  ) => {
+  const handleScrollKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const el = scrollRef.current;
     if (!el) {
       return;
@@ -214,13 +208,16 @@ export default function ChatDetailPage({ sessionId }: Props) {
         onKeyDown={handleScrollKey}
         className="min-h-0 flex-1 overflow-y-auto px-6 pb-16 pt-6 outline-none"
       >
-        <div
-          className="mx-auto flex w-full min-w-0 max-w-[700px] flex-col gap-3"
-        >
+        <div className="mx-auto flex w-full min-w-0 max-w-[700px] flex-col gap-3">
           {groups.map((group, gi) => {
-            const assistants = group.agent.filter((a) => a.role === "assistant");
+            const assistants = group.agent.filter(
+              (a) => a.role === "assistant",
+            );
             const live = running && gi === groups.length - 1;
-            const buildWorkSteps = (msgs: MsgRow[], liveIds: Set<string>): ToolStep[] => {
+            const buildWorkSteps = (
+              msgs: MsgRow[],
+              liveIds: Set<string>,
+            ): ToolStep[] => {
               const steps: ToolStep[] = [];
               let stepIdx = 0;
 
@@ -241,7 +238,13 @@ export default function ChatDetailPage({ sessionId }: Props) {
                     const idx = stepIdx++;
                     steps.push(
                       isLive
-                        ? actionStep(b, idx, true, turn?.term[idx] ?? "", turn?.termCode[idx])
+                        ? actionStep(
+                            b,
+                            idx,
+                            true,
+                            turn?.term[idx] ?? "",
+                            turn?.termCode[idx],
+                          )
                         : actionStep(b, idx, false),
                     );
                   } else if (b.tag === "terminal") {
@@ -289,9 +292,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
                           : "Plan",
                       body:
                         texts.length > 0
-                          ? texts
-                              .map((t, n) => `${n + 1}. ${t}`)
-                              .join("\n")
+                          ? texts.map((t, n) => `${n + 1}. ${t}`).join("\n")
                           : undefined,
                     });
                   }
@@ -386,6 +387,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
                       live={false}
                     />
                     <AgentBubble
+                      onOpenAgent={onOpenAgent}
                       text={summaryText}
                       hideToolActivity
                       attachments={docBlocks}
@@ -430,6 +432,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
                       />
                     )}
                     <AgentBubble
+                      onOpenAgent={onOpenAgent}
                       text={allText}
                       caret
                       hideToolActivity
@@ -444,6 +447,7 @@ export default function ChatDetailPage({ sessionId }: Props) {
                   </>
                 ) : (
                   <AgentBubble
+                    onOpenAgent={onOpenAgent}
                     text={allText}
                     caret={live}
                     liveTerm={
@@ -512,13 +516,9 @@ export default function ChatDetailPage({ sessionId }: Props) {
             sessionStore.setModel(sessionId, m?.modelId ?? null)
           }
           permission={session?.permission ?? "ask"}
-          onPermissionChange={(p) =>
-            sessionStore.setPermission(sessionId, p)
-          }
+          onPermissionChange={(p) => sessionStore.setPermission(sessionId, p)}
           webSearch={session?.web_search ?? false}
-          onWebSearchChange={(v) =>
-            sessionStore.setWebSearch(sessionId, v)
-          }
+          onWebSearchChange={(v) => sessionStore.setWebSearch(sessionId, v)}
           running={running}
           onStop={() => sessionStore.stop(sessionId)}
           onSubmit={() => {

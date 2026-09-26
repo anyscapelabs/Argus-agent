@@ -279,9 +279,9 @@ export function ProfileAvatar({
         "flex shrink-0 items-center justify-center rounded-full " +
         "bg-bg-hover-secondary font-medium text-text-secondary"
       }
-      style={{ width: size, height: size, fontSize: size * 0.42 }}
+      style={{ width: size, height: size, fontSize: size * 0.4 }}
     >
-      {profileLabel({ name }).toUpperCase()}
+      {profileLabel({ name }).charAt(0).toUpperCase()}
     </span>
   );
 }

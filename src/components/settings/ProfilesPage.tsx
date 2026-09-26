@@ -1,14 +1,19 @@
 import { useEffect, useState } from "react";
-import { FiChevronRight, FiPlus } from "react-icons/fi";
+import { FiPlus } from "react-icons/fi";
 
 import { profileStore, profileLabel, useProfiles } from "../../stores/profiles";
-import { Card, Page, ProfileAvatar } from "./kit";
+import { Page, ProfileAvatar } from "./kit";
 import ProfileDetail from "./ProfileDetail";
 
 const ADD =
-  "flex w-full items-center gap-3 px-4 py-3.5 text-sm text-text-secondary " +
-  "transition-colors hover:bg-bg-hover-secondary hover:text-text-primary " +
-  "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-bg-secondary";
+  "flex flex-col items-center justify-center gap-3 rounded-xl border " +
+  "border-dashed border-border-primary px-4 py-6 text-sm text-" +
+  "text-secondary transition-colors hover:border-text-tertiary " +
+  "hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40";
+
+const TILE =
+  "flex flex-col items-center gap-3 rounded-xl border border-border-primary " +
+  "bg-bg-secondary px-4 py-6 transition-colors hover:bg-bg-hover-secondary";
 
 export default function ProfilesPage() {
   const { profiles, loading, activeId } = useProfiles();
@@ -36,37 +41,28 @@ export default function ProfilesPage() {
 
   return (
     <Page>
-      <Card>
+      <div className="grid grid-cols-3 gap-3">
         {profiles.map((p) => (
           <button
             key={p.id}
             type="button"
             onClick={() => setOpenId(p.id)}
-            className={
-              "flex w-full items-center gap-3 px-4 py-3.5 text-left " +
-              "transition-colors hover:bg-bg-hover-secondary"
-            }
+            className={TILE}
           >
-            <ProfileAvatar name={p.name} />
-            <span className="min-w-0 flex-1">
-              <span className="flex items-center gap-2">
-                <span className="truncate text-sm text-text-primary">
-                  {profileLabel(p)}
-                </span>
-                {p.id === activeId && (
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-                )}
-              </span>
-              <span className="mt-0.5 block truncate text-xs text-text-tertiary">
-                {p.instructions.trim() === ""
-                  ? "No instructions yet"
-                  : p.instructions.trim().replace(/\s+/g, " ")}
-              </span>
+            <span className="relative">
+              <ProfileAvatar name={p.name} size={44} />
+              {p.id === activeId && (
+                <span className="absolute -right-0.5 -bottom-0.5 h-3 w-3 rounded-full border-2 border-bg-secondary bg-accent" />
+              )}
             </span>
-            <FiChevronRight
-              size={15}
-              className="shrink-0 text-text-tertiary"
-            />
+            <span className="max-w-full truncate text-sm text-text-primary">
+              {profileLabel(p)}
+            </span>
+            <span className="line-clamp-2 min-h-8 text-center text-xs leading-snug text-text-tertiary">
+              {p.instructions.trim() === ""
+                ? "No instructions yet"
+                : p.instructions.trim().replace(/\s+/g, " ")}
+            </span>
           </button>
         ))}
 
@@ -76,10 +72,10 @@ export default function ProfilesPage() {
           disabled={profiles.length >= 10}
           className={ADD}
         >
-          <FiPlus size={16} className="shrink-0" />
+          <FiPlus size={18} />
           <span>New profile</span>
         </button>
-      </Card>
+      </div>
     </Page>
   );
 }

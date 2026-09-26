@@ -81,6 +81,10 @@ pub struct Session {
     pub agent_name: Option<String>,
     #[serde(default)]
     pub agent_state: Option<String>,
+    /// Which profile owns this chat. The sidebar list is scoped by it, so a
+    /// profile is a question you can ask of your own work and get an answer.
+    #[serde(default)]
+    pub profile_id: Option<String>,
     /// Sub-agents still working under this one. A parent that fanned out has
     /// not finished its job when its turn ends, and the only thing that knows
     /// that is the children.

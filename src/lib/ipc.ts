@@ -149,6 +149,7 @@ export type SessionRow = {
   compact_seq: number;
   compactions: number;
   web_search: boolean;
+  profile_id: string | null;
   running_agents: number;
 };
 

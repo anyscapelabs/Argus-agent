@@ -359,3 +359,29 @@ fn a_child_agent_answers_as_the_profile_too() {
     // And a sub-agent still gets the sub-agent rules, not the parent's.
     assert!(system.contains("Accountant"));
 }
+
+#[test]
+fn a_listed_session_carries_the_profile_that_owns_it() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let p = profiles::store::create(&conn, "Manager").unwrap();
+    let mine = new_session(&conn, "mine");
+    let theirs = new_session(&conn, "theirs");
+    profiles::store::set_for_session(&conn, &mine, &p.id).unwrap();
+
+    let list = store::list_sessions(&conn, None).unwrap();
+    let by_id = |id: &str| {
+        list.iter()
+            .find(|s| s.id == id)
+            .map(|s| s.profile_id.clone())
+            .unwrap()
+    };
+
+    // The subquery for running_agents sits after profile_id. Getting the two
+    // out of step would hand every chat a count where the id should be.
+    assert_eq!(by_id(&mine).as_deref(), Some(p.id.as_str()));
+    assert_eq!(by_id(&theirs).as_deref(), Some("default"));
+    assert!(list.iter().all(|s| s.running_agents == 0));
+}

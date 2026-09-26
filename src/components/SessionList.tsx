@@ -45,6 +45,9 @@ type SessionListProps = {
   onArchive: (sessionId: string) => void;
   onExport: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
+  /// Which profile the list is scoped to. Shown so an empty list reads as
+  /// "none here" rather than "where did my chats go".
+  profileName: string | null;
 };
 
 function getMenuItems(
@@ -82,6 +85,7 @@ export default function SessionList({
   onArchive,
   onExport,
   onDelete,
+  profileName,
 }: SessionListProps) {
   const [open, setOpen] = useState(true);
 
@@ -100,12 +104,20 @@ export default function SessionList({
         aria-controls="session-list-panel"
       >
         <span className="text-xs font-medium">Sessions</span>
+        <span className="ml-auto text-xs text-text-tertiary">
+          {profileName ?? "Default"}
+        </span>
       </button>
       {open && (
         <div
           id="session-list-panel"
           className="flex flex-col gap-0.5 px-2"
         >
+          {sessions.length === 0 && (
+            <p className="px-2 py-1 text-xs text-text-tertiary">
+              Nothing here yet. Start a chat and it lands on this profile.
+            </p>
+          )}
           {sessions.map(({ id, title, status }) => {
             const isActive = id === activeSessionId;
 

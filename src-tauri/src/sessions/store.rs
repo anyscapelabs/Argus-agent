@@ -153,6 +153,7 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
 const SESSION_COLS: &str = "id, title, status, model_id, permission, folder_id, \
                             created_at, updated_at, ctx_tokens, compact_seq, \
                             compactions, web_search, parent_id, agent_name, agent_state, \
+                            profile_id, \
                             (SELECT COUNT(*) FROM sessions c \
                                WHERE c.parent_id = sessions.id \
                                  AND c.agent_state = 'running')";
@@ -174,7 +175,8 @@ fn row_session(r: &rusqlite::Row) -> rusqlite::Result<Session> {
         parent_id: r.get(12)?,
         agent_name: r.get(13)?,
         agent_state: r.get(14)?,
-        running_agents: r.get(15)?,
+        profile_id: r.get(15)?,
+        running_agents: r.get(16)?,
     })
 }
 

@@ -227,8 +227,11 @@ function App() {
     }
   };
 
+  // The list answers to the profile you are on. A profile that owns half your
+  // work and shows none of it is a shelf, not a tool.
   const sidebarSessions: Session[] = sessions
     .filter((s) => s.status !== "archived")
+    .filter((s) => (s.profile_id ?? DEFAULT_PROFILE) === profileActive)
     .map((s) => ({
       id: s.id,
       title: s.title,
@@ -253,6 +256,7 @@ function App() {
           onArchive={(id) => archiveSession(id)}
           onExport={exportSession}
           onDelete={(id) => deleteSession(id)}
+          profileName={profileName}
         />
         <div className="flex min-w-0 min-h-0 flex-1 flex-col">
           <Toolbar

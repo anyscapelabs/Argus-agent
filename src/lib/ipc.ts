@@ -339,6 +339,14 @@ export function agentKill(id: string): Promise<boolean> {
   return invoke<boolean>("agent_kill", { id });
 }
 
+export function agentKeep(): Promise<number> {
+  return invoke<number>("agent_keep");
+}
+
+export function agentSetKeep(n: number): Promise<number> {
+  return invoke<number>("agent_set_keep", { n });
+}
+
 export function sessUnwatch(): Promise<void> {
   return invoke<void>("sess_unwatch");
 }

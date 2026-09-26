@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 
+import AgentsPage from "./settings/AgentsPage";
 import ModelsPage from "./settings/ModelsPage";
 import ProvidersPage from "./settings/ProvidersPage";
 import SettingsSidebar, { type SettingsTab } from "./settings/SettingsSidebar";
@@ -153,6 +154,7 @@ export default function SettingsModal({
           {activeTab === "providers" && <ProvidersPage />}
           {activeTab === "terminal" && <TerminalPage />}
           {activeTab === "sandbox" && <SandboxPage />}
+          {activeTab === "agents" && <AgentsPage />}
           {activeTab === "theme" && <ThemePage />}
         </div>
       </div>

@@ -24,6 +24,7 @@ import type { BlockNode, InlineNode, XmlTree } from "../lib/agentXml";
 import { blockRole, parse } from "../lib/agentXml";
 import { ExtLink } from "../lib/extLink";
 import { type PendingApproval } from "../stores/sessions";
+import AgentCard from "./agent/AgentCard";
 import AlertBanner from "./agent/AlertBanner";
 import ApprovalBlock from "./agent/ApprovalBlock";
 import ToolActivity, {
@@ -65,6 +66,7 @@ type Props = {
   hideToolActivity?: boolean;
   showThinking?: boolean;
   attachments?: BlockNode[];
+  onOpenAgent?: (id: string) => void;
 };
 
 const HEADING_CLS: Record<string, string> = {
@@ -372,7 +374,11 @@ type LiveAction = {
   sessionId: string;
 };
 
-function renderBlk(blk: BlockNode, key: string): React.ReactNode {
+function renderBlk(
+  blk: BlockNode,
+  key: string,
+  onOpenAgent?: (id: string) => void,
+): React.ReactNode {
   if (blk.kind === "paragraph") {
     const raw = blk.children.map((c) => c.value).join("");
     const isBulleted = /^\s*[-•*]\s+/m.test(raw);
@@ -455,6 +461,16 @@ function renderBlk(blk: BlockNode, key: string): React.ReactNode {
   }
 
   switch (blk.tag) {
+    case "agent":
+      return (
+        <AgentCard
+          key={key}
+          id={blk.attrs.id ?? ""}
+          name={blk.attrs.name ?? "sub-agent"}
+          state={blk.attrs.state ?? "running"}
+          onOpen={(id) => onOpenAgent?.(id)}
+        />
+      );
     case "thinking":
       return <ThinkingBlock key={key} block={blk} />;
     case "plan":
@@ -510,6 +526,7 @@ function renderTree(
   live: boolean,
   liveTerm?: LiveTerm,
   hideTools?: boolean,
+  onOpenAgent?: (id: string) => void,
 ): React.ReactNode[] {
   const diffs = new Map<string, { added: number; removed: number }>();
   const paths = new Set<string>();
@@ -685,7 +702,7 @@ function renderTree(
       continue;
     }
 
-    out.push(renderBlk(blk, `b-${i}`));
+    out.push(renderBlk(blk, `b-${i}`, onOpenAgent));
     i++;
   }
 
@@ -705,6 +722,7 @@ export default function AgentBubble({
   hideToolActivity,
   showThinking,
   attachments,
+  onOpenAgent,
 }: Props) {
   const tree: XmlTree | null = useMemo(
     () => (text !== undefined ? parse(text) : null),
@@ -784,6 +802,7 @@ export default function AgentBubble({
           !!caret,
           caret ? liveTerm : undefined,
           !!hideToolActivity,
+          onOpenAgent,
         )
       ) : (
         <div className="font-sans text-[16px] font-light">{children}</div>
@@ -792,7 +811,9 @@ export default function AgentBubble({
       {caret && showThinking !== false && <StreamingIndicator />}
 
       {attachments?.map((b, i) => (
-        <Fragment key={`att-${i}`}>{renderBlk(b, `att-${i}`)}</Fragment>
+        <Fragment key={`att-${i}`}>
+          {renderBlk(b, `att-${i}`, onOpenAgent)}
+        </Fragment>
       ))}
 
       {text !== undefined && text.length > 0 && !caret && !hideActions && (

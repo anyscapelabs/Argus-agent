@@ -24,6 +24,15 @@ export const TAG_SCHEMA: readonly TagSchema[] = [
   { tag: "tr", selfClosing: false, attributes: [] },
   { tag: "th", selfClosing: false, attributes: [] },
   { tag: "td", selfClosing: false, attributes: [] },
+  {
+    tag: "agent",
+    selfClosing: false,
+    attributes: [
+      { name: "id" },
+      { name: "name" },
+      { name: "state" },
+    ],
+  },
   { tag: "thinking", selfClosing: false, attributes: [{ name: "id" }] },
   { tag: "plan", selfClosing: false, attributes: [{ name: "id" }] },
   {

@@ -1,5 +1,4 @@
 import {
-  LuBot,
   LuBrain,
   LuPalette,
   LuServer,
@@ -13,7 +12,6 @@ export type SettingsTab =
   | "providers"
   | "terminal"
   | "sandbox"
-  | "agents"
   | "profiles"
   | "theme";
 
@@ -29,7 +27,6 @@ export const SETTINGS_TABS: {
 }[] = [
   { tab: "models", label: "Models", group: "AI", Icon: LuBrain },
   { tab: "providers", label: "Providers", group: "AI", Icon: LuServer },
-  { tab: "agents", label: "Sub-agents", group: "AI", Icon: LuBot },
   { tab: "terminal", label: "Terminal", group: "Permissions", Icon: LuTerminal },
   { tab: "sandbox", label: "Sandbox", group: "Permissions", Icon: LuShieldCheck },
   { tab: "profiles", label: "Profiles", group: "Personalization", Icon: LuUsers },
@@ -41,7 +38,6 @@ export const SETTINGS_TITLE: Record<SettingsTab, string> = {
   providers: "Providers",
   terminal: "Terminal",
   sandbox: "Sandbox",
-  agents: "Sub-agents",
   profiles: "Profiles",
   theme: "Appearance",
 };
@@ -54,8 +50,6 @@ export const SETTINGS_DESC: Record<SettingsTab, string> = {
   terminal: "The shell Argus runs commands in.",
   sandbox:
     "Isolated commands run under a boundary the OS enforces directly. If a profile cannot be enforced, the command is refused — never run unconfined.",
-  agents:
-    "Each sub-agent keeps its own transcript. Nothing else ever reads it, so it is safe to let old ones go.",
   profiles:
     "A profile is a name, a set of instructions, and what it may reach. It owns its chats and the sub-agents inside them, and nothing else.",
   theme: "Argus repaints immediately. Nothing reloads and no work is lost.",

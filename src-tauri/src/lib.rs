@@ -160,8 +160,6 @@ pub fn run() {
             agents::agent_list,
             agents::agent_read,
             agents::agent_kill,
-            agents::agent_keep,
-            agents::agent_set_keep,
             jobs::job_list,
             jobs::job_read,
             jobs::job_kill,

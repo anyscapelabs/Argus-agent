@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { FiArrowLeft } from "react-icons/fi";
 
 import { profileLabel, useProfiles } from "../../stores/profiles";
-import AgentsPage from "./AgentsPage";
 import ModelsPage from "./ModelsPage";
 import ProfilesPage from "./ProfilesPage";
 import ProvidersPage from "./ProvidersPage";
@@ -89,7 +88,6 @@ export default function SettingsPage({ tab, onTab, onClose }: Props) {
         {tab === "providers" && <ProvidersPage />}
         {tab === "terminal" && <TerminalPage />}
         {tab === "sandbox" && <SandboxPage />}
-        {tab === "agents" && <AgentsPage />}
         {tab === "profiles" && (
           <ProfilesPage openId={openId} onOpen={setOpenId} />
         )}

@@ -453,19 +453,6 @@ pub fn agent_kill(gw: tauri::State<'_, Gateway>, id: String) -> Result<bool, Str
     kill(&gw, &id)
 }
 
-#[tauri::command]
-pub fn agent_keep(gw: tauri::State<'_, Gateway>) -> Result<usize, String> {
-    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
-    Ok(keep(&conn))
-}
-
-#[tauri::command]
-pub fn agent_set_keep(gw: tauri::State<'_, Gateway>, n: i64) -> Result<usize, String> {
-    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
-    set_keep(&conn, n.clamp(0, 100_000) as usize)?;
-    Ok(keep(&conn))
-}
-
 pub const PROMPT_SECTION: &str = "PARALLEL WORK\n\
 When a task splits into independent pieces, hand each to a sub-agent instead of \
 doing them one after another. agent.spawn starts one with a name, a short title, and a \

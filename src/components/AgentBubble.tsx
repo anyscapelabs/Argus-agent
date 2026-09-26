@@ -126,8 +126,7 @@ function renderInline(nodes: InlineNode[]): React.ReactNode {
         continue;
       }
 
-      const emailRe =
-        /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+)/g;
+      const emailRe = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+)/g;
       const eParts = up.split(emailRe);
 
       for (let ei = 0; ei < eParts.length; ei++) {
@@ -143,65 +142,65 @@ function renderInline(nodes: InlineNode[]): React.ReactNode {
 
         const mParts = ep.split(mentionRe);
 
-      for (const mp of mParts) {
-        if (!mp) {
-          continue;
-        }
+        for (const mp of mParts) {
+          if (!mp) {
+            continue;
+          }
 
-        if (mentionRe.test(mp)) {
-          mentionRe.lastIndex = 0;
-          const tool = mp.slice(1).toLowerCase();
-          if (toolSet.has(tool)) {
-            const toolMeta: Record<
-              string,
-              {
-                Icon: React.ComponentType<{
-                  size?: number;
-                  className?: string;
-                }>;
-                color: string;
-              }
-            > = {
-              chrome: { Icon: SiGooglechrome, color: "text-[#4285F4]" },
-              gmail: { Icon: SiGmail, color: "text-[#EA4335]" },
-              drive: { Icon: SiGoogledrive, color: "text-[#4285F4]" },
-              docs: { Icon: SiGoogledocs, color: "text-[#4285F4]" },
-              sheets: { Icon: SiGooglesheets, color: "text-[#0F9D58]" },
-              slides: { Icon: SiGoogleslides, color: "text-[#F4B400]" },
-              meet: { Icon: SiGooglemeet, color: "text-[#00897B]" },
-              calendar: {
-                Icon: SiGooglecalendar,
-                color: "text-[#4285F4]",
-              },
-              github: { Icon: SiGithub, color: "text-text-primary" },
-            };
-            const meta = toolMeta[tool];
-            const { Icon, color } = meta;
+          if (mentionRe.test(mp)) {
+            mentionRe.lastIndex = 0;
+            const tool = mp.slice(1).toLowerCase();
+            if (toolSet.has(tool)) {
+              const toolMeta: Record<
+                string,
+                {
+                  Icon: React.ComponentType<{
+                    size?: number;
+                    className?: string;
+                  }>;
+                  color: string;
+                }
+              > = {
+                chrome: { Icon: SiGooglechrome, color: "text-[#4285F4]" },
+                gmail: { Icon: SiGmail, color: "text-[#EA4335]" },
+                drive: { Icon: SiGoogledrive, color: "text-[#4285F4]" },
+                docs: { Icon: SiGoogledocs, color: "text-[#4285F4]" },
+                sheets: { Icon: SiGooglesheets, color: "text-[#0F9D58]" },
+                slides: { Icon: SiGoogleslides, color: "text-[#F4B400]" },
+                meet: { Icon: SiGooglemeet, color: "text-[#00897B]" },
+                calendar: {
+                  Icon: SiGooglecalendar,
+                  color: "text-[#4285F4]",
+                },
+                github: { Icon: SiGithub, color: "text-text-primary" },
+              };
+              const meta = toolMeta[tool];
+              const { Icon, color } = meta;
+              out.push(
+                <span
+                  key={`i-${k++}`}
+                  className="inline-flex items-center gap-1 rounded border border-border-primary bg-bg-secondary px-1.5 py-0.5 font-sans text-xs font-medium text-text-secondary"
+                >
+                  <Icon size={12} className={color} />
+                  {mp}
+                </span>,
+              );
+              continue;
+            }
+
             out.push(
               <span
                 key={`i-${k++}`}
-                className="inline-flex items-center gap-1 rounded border border-border-primary bg-bg-secondary px-1.5 py-0.5 font-sans text-xs font-medium text-text-secondary"
+                className="rounded bg-blue-500/15 px-1 py-0.5 font-medium text-blue-300"
               >
-                <Icon size={12} className={color} />
                 {mp}
               </span>,
             );
             continue;
           }
 
-          out.push(
-            <span
-              key={`i-${k++}`}
-              className="rounded bg-blue-500/15 px-1 py-0.5 font-medium text-blue-300"
-            >
-              {mp}
-            </span>,
-          );
-          continue;
+          pushText(mp);
         }
-
-        pushText(mp);
-      }
       }
     }
   };
@@ -263,9 +262,7 @@ function renderInline(nodes: InlineNode[]): React.ReactNode {
     while ((m = re.exec(seg)) !== null) {
       const raw = m[0];
       const junk = raw.match(/[.,;:!?)\]}]+$/)?.[0].length ?? 0;
-      const path = raw
-        .slice(0, raw.length - junk)
-        .replace(/\/+$/, "");
+      const path = raw.slice(0, raw.length - junk).replace(/\/+$/, "");
 
       const slashes = (path.match(/\//g) ?? []).length;
       const base = path.split("/").pop() ?? "";
@@ -506,7 +503,10 @@ function renderBlk(
           key={key}
           to={blk.attrs.to ?? ""}
           subject={blk.attrs.subject ?? ""}
-          body={blk.children.map((c) => c.value).join("").trim()}
+          body={blk.children
+            .map((c) => c.value)
+            .join("")
+            .trim()}
         />
       );
     case "memory-ref":
@@ -517,7 +517,18 @@ function renderBlk(
     case "error":
       return <AlertBanner key={key} block={blk} />;
     default:
-      return null;
+      // A tag nobody drew must not swallow what the model wrote inside it.
+      // `<agent-done>` carries a sub-agent's whole report: dropping it here
+      // loses the answer the parent was given.
+      return (
+        <div key={key} className="mt-2 flex flex-col gap-2 first:mt-0">
+          {blk.children.map((c, ci) => (
+            <p key={ci} className="font-sans text-[16px] font-medium leading-6">
+              {renderInline([c])}
+            </p>
+          ))}
+        </div>
+      );
   }
 }
 
@@ -579,7 +590,9 @@ function renderTree(
         aIdx++;
       }
 
-      out.push(<WebSearchGroup key={`web-${wIdx++}`} blocks={grp} live={live} />);
+      out.push(
+        <WebSearchGroup key={`web-${wIdx++}`} blocks={grp} live={live} />,
+      );
       continue;
     }
 
@@ -593,8 +606,7 @@ function renderTree(
         b.attrs.type === "image" ||
         /\.(png|jpe?g|gif|webp|svg)$/i.test(b.attrs.path ?? "");
       const isDoc = (b: BlockNode) =>
-        b.attrs.type === "doc" ||
-        /\.(pdf|docx?|md)$/i.test(b.attrs.path ?? "");
+        b.attrs.type === "doc" || /\.(pdf|docx?|md)$/i.test(b.attrs.path ?? "");
       const codeFiles = grp.filter((b) => !isImg(b) && !isDoc(b));
       const imgFiles = grp.filter((b) => isImg(b));
 
@@ -748,7 +760,8 @@ export default function AgentBubble({
 
   return (
     <div className="group/agent flex flex-col gap-3 text-base text-text-primary">
-      {editing ? (        <div className="flex flex-col gap-2">
+      {editing ? (
+        <div className="flex flex-col gap-2">
           <textarea
             value={draft}
             rows={8}

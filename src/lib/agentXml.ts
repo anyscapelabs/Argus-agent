@@ -27,11 +27,12 @@ export const TAG_SCHEMA: readonly TagSchema[] = [
   {
     tag: "agent",
     selfClosing: false,
-    attributes: [
-      { name: "id" },
-      { name: "name" },
-      { name: "state" },
-    ],
+    attributes: [{ name: "id" }, { name: "name" }, { name: "state" }],
+  },
+  {
+    tag: "agent-done",
+    selfClosing: false,
+    attributes: [{ name: "id" }, { name: "name" }, { name: "state" }],
   },
   { tag: "thinking", selfClosing: false, attributes: [{ name: "id" }] },
   { tag: "plan", selfClosing: false, attributes: [{ name: "id" }] },
@@ -60,7 +61,14 @@ export const TAG_SCHEMA: readonly TagSchema[] = [
       { name: "id" },
       {
         name: "type",
-        values: ["git_push", "payment", "send_email", "delete", "login", "force_push"],
+        values: [
+          "git_push",
+          "payment",
+          "send_email",
+          "delete",
+          "login",
+          "force_push",
+        ],
       },
     ],
   },
@@ -135,16 +143,12 @@ export const TAG_SCHEMA: readonly TagSchema[] = [
   {
     tag: "warning",
     selfClosing: false,
-    attributes: [
-      { name: "severity", values: ["low", "medium", "high"] },
-    ],
+    attributes: [{ name: "severity", values: ["low", "medium", "high"] }],
   },
   {
     tag: "error",
     selfClosing: false,
-    attributes: [
-      { name: "severity", values: ["low", "medium", "high"] },
-    ],
+    attributes: [{ name: "severity", values: ["low", "medium", "high"] }],
   },
 ] as const;
 
@@ -421,7 +425,11 @@ export function buildTree(toks: Token[]): XmlTree {
         continue;
       }
 
-      if (cur && (cur.tag === "table" || cur.tag === "tr") && tableInner.has(tag)) {
+      if (
+        cur &&
+        (cur.tag === "table" || cur.tag === "tr") &&
+        tableInner.has(tag)
+      ) {
         const raw = `<${tag}>`;
         cur.children.push({ kind: "text", value: raw });
         continue;
@@ -453,7 +461,11 @@ export function buildTree(toks: Token[]): XmlTree {
       continue;
     }
 
-    if (cur && (cur.tag === "table" || cur.tag === "tr") && tableInner.has(tag)) {
+    if (
+      cur &&
+      (cur.tag === "table" || cur.tag === "tr") &&
+      tableInner.has(tag)
+    ) {
       const raw = `</${tag}>`;
       cur.children.push({ kind: "text", value: raw });
       continue;
@@ -467,7 +479,14 @@ export function buildTree(toks: Token[]): XmlTree {
       continue;
     }
 
-    if (cur.tag !== tag) continue;
+    if (cur.tag !== tag) {
+      // A closing tag that does not match — `</arg_value>` for an `<action>` —
+      // must not leave the block open. While `cur` lives, every following line
+      // is appended to it, and a block that renders as one line swallows the
+      // rest of the reply. End it here and let the prose out.
+      cur = null;
+      continue;
+    }
 
     buf = "";
     cur = null;
@@ -546,24 +565,27 @@ function depthDelta(line: string): number {
 // Complete single-line blocks (`<action>{...}</action>`) are shielded so
 // prose normalization never rewrites their bodies (backticks in commands
 // would otherwise break arg parsing and hide the step hint).
-const SINGLE_RE = new RegExp(
-  `<(${DEPTH_TAGS})\\b${TAG_ATTRS}>.*?</\\1>`,
-  "g",
-);
+const SINGLE_RE = new RegExp(`<(${DEPTH_TAGS})\\b${TAG_ATTRS}>.*?</\\1>`, "g");
 
-function shieldLine(line: string): { text: string; restore: (s: string) => string } {
+function shieldLine(line: string): {
+  text: string;
+  restore: (s: string) => string;
+} {
   const saved: string[] = [];
-  const text = line.replace(SINGLE_RE, (m) => `\u0000${saved.push(m) - 1}\u0000`);
+  const text = line.replace(
+    SINGLE_RE,
+    (m) => `\u0000${saved.push(m) - 1}\u0000`,
+  );
   const restore = (s: string) =>
-    s.replace(/\u0000(\d+)\u0000/g, (mm: string, n: string) => saved[Number(n)] ?? mm);
+    s.replace(
+      /\u0000(\d+)\u0000/g,
+      (mm: string, n: string) => saved[Number(n)] ?? mm,
+    );
   return { text, restore };
 }
 
 function escCode(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function normalizeMdLine(line: string): string {
@@ -596,7 +618,10 @@ function tableRow(line: string): string[] | null {
     .map((c) => c.trim());
 }
 
-function tryTable(lines: string[], i: number): { xml: string; next: number } | null {
+function tryTable(
+  lines: string[],
+  i: number,
+): { xml: string; next: number } | null {
   const head = tableRow(lines[i]);
   if (head === null || i + 1 >= lines.length) return null;
 
@@ -612,7 +637,10 @@ function tryTable(lines: string[], i: number): { xml: string; next: number } | n
   while (j < lines.length) {
     const cells = tableRow(lines[j]);
     if (cells === null || cells.length !== head.length) break;
-    xml += "<tr>" + cells.map((c) => `<td>${inlineOutside(c)}</td>`).join("") + "</tr>";
+    xml +=
+      "<tr>" +
+      cells.map((c) => `<td>${inlineOutside(c)}</td>`).join("") +
+      "</tr>";
     j++;
   }
 
@@ -634,7 +662,9 @@ function normalizeMd(src: string): string {
       return;
     }
     const lang = fenceLang ? ` language="${fenceLang}"` : "";
-    out.push(`<codeblock${lang}>${fenceBody.map(escCode).join("\n")}</codeblock>`);
+    out.push(
+      `<codeblock${lang}>${fenceBody.map(escCode).join("\n")}</codeblock>`,
+    );
   };
 
   let k = 0;

@@ -6,6 +6,7 @@ use argus_lib::profiles;
 use argus_lib::profiles::schema::Grant;
 use argus_lib::sessions::schema::{NewMsg, NewSession};
 use argus_lib::sessions::store;
+use argus_lib::tools;
 use tauri::Manager;
 
 fn app() -> tauri::AppHandle<tauri::test::MockRuntime> {
@@ -629,4 +630,356 @@ fn deleting_a_profile_takes_its_grants_with_it() {
     // b outlived a. Nothing may point at a profile that is gone.
     assert_eq!(left, 0);
     assert!(profiles::store::reach(&conn, &b.id).is_ok());
+}
+
+// --- profile.list / profile.read -------------------------------------------------
+// The two read-only tools. What matters here is that a refusal is loud: a tool
+// that returns nothing when the grant is missing reads as "they are idle".
+
+fn chat_of(conn: &rusqlite::Connection, title: &str, profile_id: &str, body: &str) -> String {
+    let id = new_session(conn, title);
+
+    profiles::store::set_for_session(conn, &id, profile_id).unwrap();
+    store::add_msg(
+        conn,
+        &NewMsg {
+            session_id: id.clone(),
+            role: "user".into(),
+            content: body.into(),
+            model_id: None,
+            provider_id: None,
+            tok_in: None,
+            tok_out: None,
+            tool_calls: None,
+            tool_call_id: None,
+        },
+    )
+    .unwrap();
+
+    id
+}
+
+fn as_args(json: &str) -> serde_json::Value {
+    serde_json::from_str(json).unwrap()
+}
+
+/// Run a body as if it were called from inside `session_id`'s chat. The tool
+/// learns who is asking from the chat, never from the model.
+async fn as_caller<T>(session_id: &str, f: impl FnOnce() -> T) -> T {
+    tools::notepad::SESSION_ID
+        .scope(Some(session_id.to_string()), async { f() })
+        .await
+}
+
+#[tokio::test]
+async fn a_profile_with_no_grants_sees_itself_and_is_told_the_rest_are_withheld() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let dev = profiles::store::create(&conn, "Dev").unwrap();
+    let ops = profiles::store::create(&conn, "Ops").unwrap();
+
+    let mine = chat_of(&conn, "Fix login", &dev.id, "on it");
+    let _theirs = chat_of(&conn, "Rotate keys", &ops.id, "later");
+
+    let out = as_caller(&mine, || tools::profile::list(&conn, &as_args("{}")))
+        .await
+        .unwrap();
+
+    assert!(out.contains("Fix login"), "{out}");
+    assert!(out.contains("Dev (you)"), "{out}");
+    // Not absent — named as withheld, so silence is never mistaken for idleness.
+    assert!(out.contains("Not shown, no grant"), "{out}");
+    assert!(out.contains("Ops"), "{out}");
+    assert!(!out.contains("Rotate keys"), "{out}");
+}
+
+#[tokio::test]
+async fn seeing_activity_does_not_also_buy_the_transcript() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let dev = profiles::store::create(&conn, "Dev").unwrap();
+    let ops = profiles::store::create(&conn, "Ops").unwrap();
+
+    profiles::store::set_reach(&conn, &dev.id, false, vec![grant("see_activity", &ops.id)])
+        .unwrap();
+
+    let mine = chat_of(&conn, "Mine", &dev.id, "mine");
+    let theirs = chat_of(&conn, "Theirs", &ops.id, "theirs");
+
+    let listed = as_caller(&mine, || tools::profile::list(&conn, &as_args("{}")))
+        .await
+        .unwrap();
+
+    assert!(listed.contains("Theirs"), "{listed}");
+
+    // The ladder's whole point: one rung down and it is refused.
+    let read = as_caller(&mine, || {
+        tools::profile::read(&conn, &as_args(&format!(r#"{{"session_id":"{theirs}"}}"#)))
+    })
+    .await;
+
+    let err = read.unwrap_err();
+    assert!(err.contains("no grant"), "{err}");
+    assert!(!err.contains("theirs"), "the transcript leaked: {err}");
+}
+
+#[tokio::test]
+async fn a_refused_read_never_comes_back_empty() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let dev = profiles::store::create(&conn, "Dev").unwrap();
+    let ops = profiles::store::create(&conn, "Ops").unwrap();
+
+    let mine = chat_of(&conn, "Mine", &dev.id, "mine");
+    let theirs = chat_of(&conn, "Theirs", &ops.id, "quiet content");
+
+    let out = as_caller(&mine, || {
+        tools::profile::read(&conn, &as_args(&format!(r#"{{"session_id":"{theirs}"}}"#)))
+    })
+    .await;
+
+    match out {
+        Ok(text) => panic!("expected a refusal, got: {text}"),
+        Err(err) => {
+            assert!(err.contains("no grant"), "{err}");
+            assert!(!err.contains("quiet content"), "{err}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn read_chats_buys_the_transcript_and_nothing_more() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let dev = profiles::store::create(&conn, "Dev").unwrap();
+    let ops = profiles::store::create(&conn, "Ops").unwrap();
+    let cfo = profiles::store::create(&conn, "Cfo").unwrap();
+
+    profiles::store::set_reach(&conn, &dev.id, false, vec![grant("read_chats", &ops.id)]).unwrap();
+
+    let mine = chat_of(&conn, "Mine", &dev.id, "mine");
+    let theirs = chat_of(&conn, "Theirs", &ops.id, "quarterly numbers");
+    let other = chat_of(&conn, "Theirs too", &cfo.id, "salaries");
+
+    let read = as_caller(&mine, || {
+        tools::profile::read(&conn, &as_args(&format!(r#"{{"session_id":"{theirs}"}}"#)))
+    })
+    .await
+    .unwrap();
+
+    assert!(read.contains("quarterly numbers"), "{read}");
+
+    // Sparse: one target, not the whole column.
+    let nope = as_caller(&mine, || {
+        tools::profile::read(&conn, &as_args(&format!(r#"{{"session_id":"{other}"}}"#)))
+    })
+    .await;
+
+    assert!(nope.unwrap_err().contains("no grant"));
+}
+
+#[tokio::test]
+async fn a_grant_is_one_way() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let boss = profiles::store::create(&conn, "Boss").unwrap();
+    let help = profiles::store::create(&conn, "Help").unwrap();
+
+    profiles::store::set_reach(&conn, &boss.id, false, vec![grant("read_chats", &help.id)])
+        .unwrap();
+
+    let boss_chat = chat_of(&conn, "Directing", &boss.id, "go");
+    let help_chat = chat_of(&conn, "Helping", &help.id, "on it");
+
+    let up = as_caller(&help_chat, || tools::profile::list(&conn, &as_args("{}")))
+        .await
+        .unwrap();
+
+    assert!(up.contains("no grant"), "{up}");
+    assert!(!up.contains("Directing"), "{up}");
+
+    // The boss's grant is real, so the two directions are not symmetric by
+    // accident of setup. Note it buys the transcript and not the listing:
+    // read_chats is the rung below see_activity and does not imply it.
+    let down = as_caller(&boss_chat, || {
+        tools::profile::read(
+            &conn,
+            &as_args(&format!(r#"{{"session_id":"{help_chat}"}}"#)),
+        )
+    })
+    .await
+    .unwrap();
+
+    assert!(down.contains("on it"), "{down}");
+
+    let not_listed = as_caller(&boss_chat, || {
+        tools::profile::list(
+            &conn,
+            &as_args(&format!(r#"{{"profile_id":"{}"}}"#, help.id)),
+        )
+    })
+    .await;
+
+    assert!(not_listed.unwrap_err().contains("no grant"));
+}
+
+#[tokio::test]
+async fn reaching_every_profile_needs_no_per_target_grant() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let boss = profiles::store::create(&conn, "Boss").unwrap();
+    let a = profiles::store::create(&conn, "A").unwrap();
+    let b = profiles::store::create(&conn, "B").unwrap();
+
+    profiles::store::set_reach(&conn, &boss.id, true, vec![]).unwrap();
+
+    let mine = chat_of(&conn, "Mine", &boss.id, "mine");
+    let one = chat_of(&conn, "One", &a.id, "one");
+    let two = chat_of(&conn, "Two", &b.id, "two");
+
+    let listed = as_caller(&mine, || tools::profile::list(&conn, &as_args("{}")))
+        .await
+        .unwrap();
+
+    assert!(listed.contains("One") && listed.contains("Two"), "{listed}");
+    assert!(!listed.contains("Not shown"), "{listed}");
+
+    let read = as_caller(&mine, || {
+        tools::profile::read(&conn, &as_args(&format!(r#"{{"session_id":"{one}"}}"#)))
+    })
+    .await
+    .unwrap();
+
+    assert!(read.contains("one"), "{read}");
+
+    let _ = two;
+}
+
+#[tokio::test]
+async fn your_own_chat_needs_no_grant() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let dev = profiles::store::create(&conn, "Dev").unwrap();
+    let mine = chat_of(&conn, "Mine", &dev.id, "my own business");
+
+    let read = as_caller(&mine, || {
+        tools::profile::read(&conn, &as_args(&format!(r#"{{"session_id":"{mine}"}}"#)))
+    })
+    .await
+    .unwrap();
+
+    assert!(read.contains("my own business"), "{read}");
+    assert!(read.contains("your own chat"), "{read}");
+}
+
+#[tokio::test]
+async fn the_caller_is_the_chat_that_asked_not_the_name_it_gave() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let dev = profiles::store::create(&conn, "Dev").unwrap();
+    let ops = profiles::store::create(&conn, "Ops").unwrap();
+
+    let dev_chat = chat_of(&conn, "Dev work", &dev.id, "dev");
+    let ops_secret = chat_of(&conn, "Ops work", &ops.id, "ops only");
+
+    // Asks for the whole world by naming somebody else as the target.
+    let out = as_caller(&dev_chat, || {
+        tools::profile::read(
+            &conn,
+            &as_args(&format!(r#"{{"session_id":"{ops_secret}"}}"#)),
+        )
+    })
+    .await;
+
+    assert!(out.unwrap_err().contains("no grant"));
+}
+
+#[tokio::test]
+async fn a_chat_with_no_profile_is_the_default_one() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    // The backfill in migration normally prevents this, but the tools must not
+    // depend on it holding forever.
+    let id = new_session(&conn, "Unowned");
+    conn.execute(
+        "UPDATE sessions SET profile_id = NULL WHERE id = ?1",
+        rusqlite::params![id],
+    )
+    .unwrap();
+
+    let read = as_caller(&id, || {
+        tools::profile::read(&conn, &as_args(&format!(r#"{{"session_id":"{id}"}}"#)))
+    })
+    .await
+    .unwrap();
+
+    assert!(read.contains("your own chat"), "{read}");
+}
+
+#[tokio::test]
+async fn a_sub_agent_is_not_a_chat_of_its_own() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let dev = profiles::store::create(&conn, "Dev").unwrap();
+    let parent = chat_of(&conn, "Parent", &dev.id, "fan out");
+
+    store::create_child(&conn, &parent, "worker", "Worker", None, "do the piece").unwrap();
+
+    let listed = as_caller(&parent, || tools::profile::list(&conn, &as_args("{}")))
+        .await
+        .unwrap();
+
+    assert!(listed.contains("Parent"), "{listed}");
+    assert!(
+        !listed.contains("Worker"),
+        "a sub-agent is a session, not a chat: {listed}"
+    );
+}
+
+#[tokio::test]
+async fn an_empty_chat_says_it_is_empty_rather_than_looking_untouched() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let dev = profiles::store::create(&conn, "Dev").unwrap();
+    let fresh = new_session(&conn, "Fresh");
+    profiles::store::set_for_session(&conn, &fresh, &dev.id).unwrap();
+
+    let listed = as_caller(&fresh, || tools::profile::list(&conn, &as_args("{}")))
+        .await
+        .unwrap();
+
+    assert!(listed.contains("Fresh | 0 messages"), "{listed}");
+}
+
+#[tokio::test]
+async fn outside_a_conversation_the_tools_refuse_rather_than_guessing() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let out = tools::profile::list(&conn, &as_args("{}"));
+
+    assert!(out.unwrap_err().contains("inside a conversation"));
 }

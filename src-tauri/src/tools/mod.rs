@@ -4,6 +4,7 @@ pub mod connector;
 pub mod fs;
 pub mod grep;
 pub mod notepad;
+pub mod profile;
 pub mod recover;
 pub mod sandbox;
 pub mod shell;
@@ -770,6 +771,7 @@ pub async fn exec<R: tauri::Runtime>(
         .chain(WEB_TOOLS.iter())
         .chain(browser::META.iter())
         .chain(notepad::META.iter())
+        .chain(profile::META.iter())
         .chain(connector::META.iter())
         .chain(conn_oauth::META.iter())
         .find(|t| t.name == name)
@@ -1272,6 +1274,19 @@ pub async fn exec<R: tauri::Runtime>(
         "notepad.append" => notepad::append(&args),
         "notepad.replace" => notepad::replace(&args),
         "notepad.clear" => notepad::clear(&args),
+        "profile.list" | "profile.read" => {
+            let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+
+            let out = if name == "profile.list" {
+                profile::list(&conn, &args)
+            } else {
+                profile::read(&conn, &args)
+            };
+
+            drop(conn);
+
+            out
+        }
         _ if connector::META.iter().any(|t| t.name == name) => connector::exec(name, &args).await,
         _ if conn_oauth::META.iter().any(|t| t.name == name) => conn_oauth::exec(name, &args).await,
         _ => Err("unknown tool".into()),
@@ -1305,6 +1320,7 @@ pub fn is_mutating(name: &str) -> bool {
         .chain(WEB_TOOLS.iter())
         .chain(browser::META.iter())
         .chain(notepad::META.iter())
+        .chain(profile::META.iter())
         .chain(connector::META.iter())
         .chain(conn_oauth::META.iter())
         .find(|t| t.name == name)
@@ -1330,6 +1346,7 @@ pub fn tool_specs(web: bool) -> Vec<crate::gateway::schema::ToolSpec> {
         .chain(WEB_TOOLS.iter().filter(|_| web))
         .chain(browser::META.iter())
         .chain(notepad::META.iter())
+        .chain(profile::META.iter())
         .chain(connector::META.iter())
         .chain(conn_oauth::META.iter())
     {

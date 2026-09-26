@@ -246,6 +246,41 @@ pub fn list_sessions(conn: &Connection, folder_id: Option<&str>) -> Result<Vec<S
         .map_err(|err| err.to_string())
 }
 
+/// The chats one profile owns. Children belong to their parent, so a sub-agent
+/// is not a chat of its own here. A null `profile_id` is the default profile,
+/// not a profile nobody owns.
+pub fn list_profile_sessions(
+    conn: &Connection,
+    profile_id: &str,
+    default_id: &str,
+) -> Result<Vec<Session>, String> {
+    let sql = format!(
+        "SELECT {SESSION_COLS} FROM sessions \
+         WHERE parent_id IS NULL AND IFNULL(profile_id, ?2) = ?1 \
+         ORDER BY updated_at DESC"
+    );
+
+    let mut stmt = conn.prepare(&sql).map_err(|err| err.to_string())?;
+
+    let rows = stmt
+        .query_map(params![profile_id, default_id], row_session)
+        .map_err(|err| err.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())
+}
+
+/// How much a chat holds, without reading it. Counts what `list_msgs` would
+/// return, so the number in a list and the transcript behind it agree.
+pub fn count_msgs(conn: &Connection, session_id: &str) -> Result<i64, String> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM messages WHERE session_id = ?1 AND active = 1",
+        params![session_id],
+        |r| r.get(0),
+    )
+    .map_err(|err| err.to_string())
+}
+
 pub fn is_child(conn: &Connection, session_id: &str) -> Result<bool, String> {
     conn.query_row(
         "SELECT parent_id IS NOT NULL FROM sessions WHERE id = ?1",

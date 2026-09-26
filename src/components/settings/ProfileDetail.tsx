@@ -145,7 +145,7 @@ export default function ProfileDetail({ id, onBack }: Props) {
 
       <Section
         label="Reach"
-        note="What this profile is allowed to do to your other profiles. Nothing here is used yet — the tools that would act on it are not built."
+        note="What this profile is allowed to do to your other profiles. Seeing their activity and reading their chats work today. Prompting, interrupting and editing them do not — those tools are not built."
       >
         <Card>
           <div className="p-4">

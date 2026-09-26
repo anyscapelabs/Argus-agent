@@ -2,27 +2,13 @@ import { useProviderLogo } from "../../hooks/useProviderLogo";
 import type { Provider } from "../../lib/ipc";
 import { Btn } from "./kit";
 
-type ConnectedProviderRowProps = {
-  provider: Provider;
-  onDisconnect?: (id: string) => void;
-  onConnect?: (id: string) => void;
-  variant?: "connected" | "popular";
-};
-
-type ConnectedProviderListProps = {
+type Props = {
   providers: Provider[];
   onDisconnect?: (id: string) => void;
   onConnect?: (id: string) => void;
-  variant?: "connected" | "popular";
 };
 
-function ProviderLogo({
-  id,
-  name,
-}: {
-  id: string;
-  name: string;
-}) {
+function ProviderLogo({ id, name }: { id: string; name: string }) {
   const uri = useProviderLogo(id);
 
   if (uri) {
@@ -30,7 +16,7 @@ function ProviderLogo({
       <img
         src={uri}
         alt=""
-        className="h-8 w-8 shrink-0 rounded-lg object-contain p-1 invert"
+        className="h-7 w-7 shrink-0 rounded-md object-contain p-1 invert"
       />
     );
   }
@@ -43,72 +29,37 @@ function ProviderLogo({
     .toUpperCase();
 
   return (
-    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-[11px] font-semibold leading-none text-bg-primary">
+    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-bg-hover-secondary text-[10px] font-medium leading-none text-text-secondary">
       {initials}
     </div>
   );
 }
 
-function ConnectedProviderRow({
-  provider,
-  onDisconnect,
-  onConnect,
-  variant = "connected",
-}: ConnectedProviderRowProps) {
-  const isPopular = variant === "popular";
-
-  return (
-    <div className="flex items-center gap-4 px-4 py-3.5">
-      <div className="flex min-w-0 items-center gap-3">
-        <ProviderLogo id={provider.id} name={provider.name} />
-        <span className="truncate text-sm font-medium text-text-primary">
-          {provider.name}
-        </span>
-        {!isPopular && (
-          <span className="inline-flex shrink-0 items-center rounded-full border border-border-primary bg-bg-hover-secondary px-2 py-0.5 text-[11px] font-medium leading-none text-text-secondary">
-            Connected
-          </span>
-        )}
-      </div>
-
-      {isPopular ? (
-        <Btn onClick={() => onConnect?.(provider.id)}>Connect</Btn>
-      ) : (
-        <Btn onClick={() => onDisconnect?.(provider.id)}>Disconnect</Btn>
-      )}
-    </div>
-  );
-}
-
+/// Rows only — the Card draws the box and the dividers. A row says connected
+/// or it does not: the button on the right is Disconnect, and a badge beside
+/// the name repeating that is noise.
 export default function ConnectedProviderList({
   providers,
   onDisconnect,
   onConnect,
-  variant = "connected",
-}: ConnectedProviderListProps) {
-  if (providers.length === 0) {
-    const msg =
-      variant === "popular"
-        ? "No popular providers."
-        : "No connected providers.";
-
-    return (
-      <div className="px-4 py-3.5">
-        <p className="text-xs text-text-secondary">{msg}</p>
-      </div>
-    );
-  }
-
+}: Props) {
   return (
     <>
       {providers.map((p) => (
-        <ConnectedProviderRow
+        <div
           key={p.id}
-          provider={p}
-          onDisconnect={onDisconnect}
-          onConnect={onConnect}
-          variant={variant}
-        />
+          className="flex items-center gap-4 px-4 py-3.5"
+        >
+          <ProviderLogo id={p.id} name={p.name} />
+          <span className="min-w-0 flex-1 truncate text-sm text-text-primary">
+            {p.name}
+          </span>
+          {p.connected ? (
+            <Btn onClick={() => onDisconnect?.(p.id)}>Disconnect</Btn>
+          ) : (
+            <Btn onClick={() => onConnect?.(p.id)}>Connect</Btn>
+          )}
+        </div>
       ))}
     </>
   );

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { LuRefreshCw } from "react-icons/lu";
+import { useMemo, useState } from "react";
+import { LuRefreshCw, LuSearch } from "react-icons/lu";
 
 import { useProviders } from "../../hooks/useProviders";
 import type { Provider } from "../../lib/ipc";
@@ -7,9 +7,9 @@ import ConnectedProviderList from "./ConnectedProviderList";
 import { Btn, Card, Note, Page, Section } from "./kit";
 import ProviderConnectModal from "./ProviderConnectModal";
 
-function isPopular(provider: Provider): boolean {
-  return !provider.connected && provider.priority < 100;
-}
+/// Enough rows that scrolling beats a control nobody would find. Below it the
+/// box is just furniture.
+const SEARCH_OVER = 12;
 
 export default function ProvidersPage() {
   const {
@@ -22,15 +22,25 @@ export default function ProvidersPage() {
     syncCatalog,
   } = useProviders();
   const [selected, setSelected] = useState<Provider | null>(null);
-  const [showAll, setShowAll] = useState(false);
+  const [query, setQuery] = useState("");
 
-  const connected = providers.filter((p) => p.connected);
-  const popular = showAll
-    ? providers.filter((p) => !p.connected)
-    : providers.filter(isPopular);
-  const hasMore = providers.some(
-    (p) => !p.connected && p.priority >= 100,
-  );
+  // One list, connected first, everything in it. Splitting this into
+  // "connected" and "popular" behind a View more button is what made it read
+  // as though the eight shown were the eight that exist.
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+
+    return providers
+      .filter((p) => q === "" || p.name.toLowerCase().includes(q))
+      .slice()
+      .sort((a, b) => {
+        if (a.connected !== b.connected) {
+          return a.connected ? -1 : 1;
+        }
+
+        return a.priority - b.priority;
+      });
+  }, [providers, query]);
 
   function handleConnectClick(id: string): void {
     const provider = providers.find((x) => x.id === id);
@@ -50,46 +60,57 @@ export default function ProvidersPage() {
   return (
     <Page>
       <Section
-        label="Connected"
-        note="Providers with a key in your keyring. The key never leaves the machine."
+        label="Providers"
+        note="Your key goes to the OS keyring and never leaves this machine."
       >
-        <Card>
-          {loading ? (
-            <div className="px-4 py-3.5">
-              <Note>Loading providers…</Note>
-            </div>
-          ) : err !== null ? (
-            <div className="px-4 py-3.5">
-              <span className="text-xs text-red-400">{err}</span>
-            </div>
-          ) : (
-            <ConnectedProviderList
-              providers={connected}
-              onDisconnect={disconnect}
-              variant="connected"
-            />
+        <div className="flex flex-col gap-3">
+          {providers.length > SEARCH_OVER && (
+            <label className="relative block">
+              <LuSearch
+                size={14}
+                className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-text-tertiary"
+              />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search providers"
+                className={
+                  "w-full rounded-lg border border-border-primary " +
+                  "bg-bg-secondary py-2 pr-3 pl-8 text-sm text-text-primary " +
+                  "outline-none placeholder:text-text-tertiary " +
+                  "focus:border-text-tertiary"
+                }
+              />
+            </label>
           )}
-        </Card>
-      </Section>
 
-      {!loading && err === null && (
-        <Section label="Add a provider">
           <Card>
-            <ConnectedProviderList
-              providers={popular}
-              onConnect={handleConnectClick}
-              variant="popular"
-            />
-            {hasMore && (
-              <div className="px-4 py-3">
-                <Btn variant="ghost" onClick={() => setShowAll((v) => !v)}>
-                  {showAll ? "View less" : "View more"}
-                </Btn>
+            {loading ? (
+              <div className="px-4 py-3.5">
+                <Note>Loading providers…</Note>
               </div>
+            ) : err !== null ? (
+              <div className="px-4 py-3.5">
+                <span className="text-xs text-red-400">{err}</span>
+              </div>
+            ) : shown.length === 0 ? (
+              <div className="px-4 py-3.5">
+                <Note>
+                  {providers.length === 0
+                    ? "No providers in the catalog yet. Sync to fetch them."
+                    : "Nothing matches that."}
+                </Note>
+              </div>
+            ) : (
+              <ConnectedProviderList
+                providers={shown}
+                onConnect={handleConnectClick}
+                onDisconnect={disconnect}
+              />
             )}
           </Card>
-        </Section>
-      )}
+        </div>
+      </Section>
 
       <div className="flex justify-end">
         <Btn onClick={() => void syncCatalog()} disabled={syncing}>

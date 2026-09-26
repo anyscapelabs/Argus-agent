@@ -771,19 +771,6 @@ function normalizeMd(src: string): string {
       continue;
     }
 
-    // Markdown does not belong inside a tag. A multi-line terminal command
-    // carries `#` comments and backticks, and rewriting those turns a shell
-    // script into headings before anyone has parsed a single attribute.
-    if (inTag) {
-      out.push(lines[k]);
-      if (findTagEnd(lines[k], 0) !== -1) {
-        inTag = false;
-      }
-
-      k++;
-      continue;
-    }
-
     const fence = lines[k].match(/^```([a-zA-Z0-9_-]*)[^\S\n]*$/);
     if (fence !== null) {
       if (!inFence) {
@@ -801,6 +788,19 @@ function normalizeMd(src: string): string {
 
     if (inFence) {
       fenceBody.push(lines[k]);
+      k++;
+      continue;
+    }
+
+    // Markdown does not belong inside a tag. A multi-line terminal command
+    // carries `#` comments and backticks, and rewriting those turns a shell
+    // script into headings before anyone has parsed a single attribute.
+    if (inTag) {
+      out.push(lines[k]);
+      if (findTagEnd(lines[k], 0) !== -1) {
+        inTag = false;
+      }
+
       k++;
       continue;
     }

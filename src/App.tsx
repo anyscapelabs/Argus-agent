@@ -17,12 +17,12 @@ import Toolbar from "./components/Toolbar";
 import type { Session } from "./components/SessionList";
 import { sessExportJson, type ChatModel } from "./lib/ipc";
 import SubagentPage from "./components/SubagentPage";
-
-const DEFAULT_PROFILE = "default";
 import { notifyDone } from "./lib/notify";
 import { profileLabel, profileStore, useProfiles } from "./stores/profiles";
 import { isWorking, sessionStore, useSessions } from "./stores/sessions";
 import { toast } from "./stores/toast";
+
+const DEFAULT_PROFILE = "default";
 
 export type View =
   | "new-agent"
@@ -50,8 +50,8 @@ function App() {
   const notified = useRef(new Set<string>());
   const viewRef = useRef(view);
   viewRef.current = view;
-  // Settings is an overlay in shape only — it remembers where it came from
-  // so Escape puts the user back where they were, not on a fixed default.
+  // Escape out of settings should put you back where you were, not on a
+  // fixed default view.
   const backView = useRef<View>("new-agent");
   const activeRef = useRef(activeId);
   activeRef.current = activeId;

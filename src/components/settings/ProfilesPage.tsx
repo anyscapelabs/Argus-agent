@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { FiPlus } from "react-icons/fi";
 import { LuChevronRight } from "react-icons/lu";
 
@@ -23,9 +23,13 @@ function reach(p: ProfileRow): string {
   return "Reaches nothing yet";
 }
 
-export default function ProfilesPage() {
+type Props = {
+  openId: string | null;
+  onOpen: (id: string | null) => void;
+};
+
+export default function ProfilesPage({ openId, onOpen }: Props) {
   const { profiles, loading, activeId } = useProfiles();
-  const [openId, setOpenId] = useState<string | null>(null);
 
   useEffect(() => {
     void profileStore.load();
@@ -38,7 +42,7 @@ export default function ProfilesPage() {
       <ProfileDetail
         key={selected.id}
         id={selected.id}
-        onBack={() => setOpenId(null)}
+        onBack={() => onOpen(null)}
       />
     );
   }
@@ -55,7 +59,7 @@ export default function ProfilesPage() {
             <button
               key={p.id}
               type="button"
-              onClick={() => setOpenId(p.id)}
+              onClick={() => onOpen(p.id)}
               className={ROW}
             >
               <ProfileAvatar name={p.name} size={32} />

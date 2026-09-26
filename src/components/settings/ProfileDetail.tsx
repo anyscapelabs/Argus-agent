@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
-import { FiArrowLeft } from "react-icons/fi";
 
 import { profileStore, profileLabel, useProfiles } from "../../stores/profiles";
 import { toast } from "../../stores/toast";
-import { Btn, Card, INPUT, Note, Page, ProfileAvatar, Row, Section } from "./kit";
+import { Btn, Card, INPUT, Note, Page, Row, Section } from "./kit";
 import ReachMatrix, { type GrantCell } from "./ReachMatrix";
 
 const DEFAULT_ID = "default";
@@ -101,79 +100,48 @@ export default function ProfileDetail({ id, onBack }: Props) {
 
   return (
     <Page>
-      <button
-        type="button"
-        onClick={onBack}
-        className={
-          "flex w-fit items-center gap-1.5 text-xs text-text-secondary " +
-          "transition-colors hover:text-text-primary"
-        }
-      >
-        <FiArrowLeft size={13} />
-        <span>Profiles</span>
-      </button>
-
-      <div className="-mt-4 flex items-center gap-3">
-        <ProfileAvatar name={p.name} size={40} />
-        <h2 className="min-w-0 flex-1 truncate text-[22px] font-normal leading-tight text-text-primary">
-          {profileLabel(p)}
-        </h2>
-        {!isDefault && (
-          <Btn variant="danger" onClick={() => void remove()}>
-            Delete
-          </Btn>
-        )}
-      </div>
-
-      <Section label="Name">
-        <Card>
-          <Row stacked title="What you call it" desc="Safe to change at any time.">
-            <input
-              value={name}
-              maxLength={NAME_MAX}
-              disabled={isDefault}
-              placeholder="Default"
-              onChange={(e) => setName(e.target.value)}
-              onBlur={() => {
-                if (name !== p.name) {
-                  void profileStore.edit(p.id, { name });
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && name !== p.name) {
-                  void profileStore.edit(p.id, { name });
-                }
-              }}
-              className={INPUT}
-            />
-            {isDefault && (
-              <Note>
-                The default always exists, so it has no name to change.
-              </Note>
-            )}
-          </Row>
-        </Card>
-      </Section>
-
-      <Section
-        label="Instructions"
-        note="Added to the base prompt, never a replacement for it — the safety and tool rules stay whatever you write here. Takes effect the next time a chat starts a turn."
-      >
-        <Card>
-          <Row stacked title="How it works">
-            <textarea
-              value={body}
-              rows={8}
-              placeholder={
-                "What this profile produces, and what 'done' means to it. " +
-                "A name on its own changes nothing."
+      <Card>
+        <Row stacked title="What you call it" desc="Safe to change at any time.">
+          <input
+            value={name}
+            maxLength={NAME_MAX}
+            disabled={isDefault}
+            placeholder="Default"
+            onChange={(e) => setName(e.target.value)}
+            onBlur={() => {
+              if (name !== p.name) {
+                void profileStore.edit(p.id, { name });
               }
-              onChange={(e) => setBody(e.target.value)}
-              className={INPUT + " resize-y font-mono text-xs leading-relaxed"}
-            />
-          </Row>
-        </Card>
-      </Section>
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && name !== p.name) {
+                void profileStore.edit(p.id, { name });
+              }
+            }}
+            className={INPUT}
+          />
+          {isDefault && (
+            <Note>The default always exists, so it has no name to change.</Note>
+          )}
+        </Row>
+
+        <Row
+          stacked
+          title="How it works"
+          desc="Added to the base prompt, never a replacement for it. Takes effect the next time a chat starts a turn."
+        >
+          <textarea
+            value={body}
+            rows={6}
+            placeholder={
+              "What this profile produces, and what 'done' means to it. " +
+              "A name on its own changes nothing."
+            }
+            onChange={(e) => setBody(e.target.value)}
+            className={INPUT + " resize-y font-mono text-xs leading-relaxed"}
+          />
+        </Row>
+      </Card>
 
       <Section
         label="Reach"
@@ -191,16 +159,23 @@ export default function ProfileDetail({ id, onBack }: Props) {
         </Card>
       </Section>
 
-      {dirty && (
-        <div className="flex items-center gap-3">
-          <span className="min-w-0 flex-1">
-            <Note>Unsaved changes</Note>
-          </span>
+      <div className="flex items-center gap-3">
+        {!isDefault ? (
+          <Btn variant="danger" onClick={() => void remove()}>
+            Delete
+          </Btn>
+        ) : (
+          <span />
+        )}
+        <span className="min-w-0 flex-1 text-right">
+          {dirty && <Note>Unsaved changes</Note>}
+        </span>
+        {dirty && (
           <Btn variant="primary" onClick={() => void save()}>
             Save
           </Btn>
-        </div>
-      )}
+        )}
+      </div>
     </Page>
   );
 }

@@ -84,8 +84,7 @@ export default function ReachMatrix({
         <div className="overflow-x-auto">
           <p className="mb-3 text-xs text-text-tertiary">
             Tick a cell to let this profile do that to that one. Each row hands
-            over more than the row above it, and nothing is shared between
-            columns.
+            over more than the row above it.
           </p>
           <table className="w-full border-separate border-spacing-0">
             <thead>

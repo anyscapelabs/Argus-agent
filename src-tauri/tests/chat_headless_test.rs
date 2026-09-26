@@ -1,4 +1,5 @@
 use argus_lib::sessions::chat::NullSink;
+use std::collections::HashSet;
 use std::sync::Mutex;
 
 fn setup() -> (
@@ -23,7 +24,7 @@ fn setup() -> (
         jobs: std::sync::Mutex::new(std::collections::HashMap::new()),
         events: std::sync::Mutex::new(std::collections::HashMap::new()),
         turns: std::sync::Mutex::new(std::collections::HashSet::new()),
-        watching: Mutex::new(None),
+        watching: Mutex::new(HashSet::new()),
     };
 
     let sid = {
@@ -139,19 +140,26 @@ async fn a_watch_bus_is_dropped_only_once_nobody_is_left() {
 }
 
 #[tokio::test]
-async fn a_window_only_tails_one_chat_at_a_time() {
+async fn a_sub_agents_page_and_the_chat_that_started_it_are_both_tailed() {
     let (gw, _app, sid) = setup();
+    let child = format!("{sid}-child");
     let other = format!("{sid}-other");
 
-    gw.set_watching(Some(&sid));
+    gw.start_watching(&sid);
     assert!(gw.watching(&sid));
 
-    // Opening another chat retires the last, rather than leaving a task
-    // subscribed to a conversation nobody is looking at.
-    gw.set_watching(Some(&other));
-    assert!(!gw.watching(&sid));
-    assert!(gw.watching(&other));
+    // Opening the card does not take the chat down with it.
+    gw.start_watching(&child);
+    assert!(gw.watching(&sid));
+    assert!(gw.watching(&child));
 
-    gw.set_watching(None);
+    // Closing one leaves the other alone.
+    gw.stop_watching(&child);
+    assert!(!gw.watching(&child));
+    assert!(gw.watching(&sid));
+
+    gw.start_watching(&other);
+    gw.stop_watching_all();
+    assert!(!gw.watching(&sid));
     assert!(!gw.watching(&other));
 }

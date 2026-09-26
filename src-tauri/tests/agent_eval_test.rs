@@ -353,7 +353,7 @@ async fn setup(
         jobs: StdMutex::new(HashMap::new()),
         events: StdMutex::new(HashMap::new()),
         turns: StdMutex::new(HashSet::new()),
-        watching: StdMutex::new(None),
+        watching: StdMutex::new(HashSet::new()),
     };
 
     let session_id = {

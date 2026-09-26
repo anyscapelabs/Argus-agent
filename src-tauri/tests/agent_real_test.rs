@@ -112,7 +112,7 @@ async fn eval_real_terminal_task() {
         jobs: StdMutex::new(HashMap::new()),
         events: StdMutex::new(HashMap::new()),
         turns: StdMutex::new(HashSet::new()),
-        watching: StdMutex::new(None),
+        watching: StdMutex::new(HashSet::new()),
     };
 
     let session_id = {
@@ -320,7 +320,7 @@ async fn eval_real_copy_task() {
         jobs: StdMutex::new(HashMap::new()),
         events: StdMutex::new(HashMap::new()),
         turns: StdMutex::new(HashSet::new()),
-        watching: StdMutex::new(None),
+        watching: StdMutex::new(HashSet::new()),
     };
 
     let session_id = {

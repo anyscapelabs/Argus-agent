@@ -25,7 +25,7 @@ fn app() -> tauri::AppHandle<tauri::test::MockRuntime> {
         jobs: Mutex::new(HashMap::new()),
         events: Mutex::new(HashMap::new()),
         turns: Mutex::new(HashSet::new()),
-        watching: Mutex::new(None),
+        watching: Mutex::new(HashSet::new()),
     };
 
     std::fs::create_dir_all(&gw.jobs_dir).unwrap();

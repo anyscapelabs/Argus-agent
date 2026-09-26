@@ -361,7 +361,7 @@ async fn eval_real_browser_stale2_task() {
         jobs: StdMutex::new(HashMap::new()),
         events: StdMutex::new(HashMap::new()),
         turns: StdMutex::new(HashSet::new()),
-        watching: StdMutex::new(None),
+        watching: StdMutex::new(HashSet::new()),
     };
     let session_id = {
         let conn = gw.conn.lock().unwrap();

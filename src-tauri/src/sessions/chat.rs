@@ -1386,7 +1386,7 @@ pub async fn sess_watch_events(
     on_event: Channel<StreamEvent>,
 ) -> Result<(), String> {
     let mut rx = gw.subscribe(&session_id);
-    gw.set_watching(Some(&session_id));
+    gw.start_watching(&session_id);
 
     while gw.watching(&session_id) {
         if gw.turn_busy(&session_id) {
@@ -1405,18 +1405,18 @@ pub async fn sess_watch_events(
         }
     }
 
-    if gw.watching(&session_id) {
-        gw.set_watching(None);
-    }
-
+    gw.stop_watching(&session_id);
     gw.drop_bus(&session_id);
 
     Ok(())
 }
 
 #[tauri::command]
-pub fn sess_unwatch(gw: State<'_, Gateway>) {
-    gw.set_watching(None);
+pub fn sess_unwatch(gw: State<'_, Gateway>, session_id: Option<String>) {
+    match session_id {
+        Some(id) => gw.stop_watching(&id),
+        None => gw.stop_watching_all(),
+    }
 }
 
 #[tauri::command]

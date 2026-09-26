@@ -53,7 +53,7 @@ fn test_gw(tag: &str) -> (argus_lib::gateway::Gateway, PathBuf) {
         jobs: Mutex::new(HashMap::new()),
         events: Mutex::new(HashMap::new()),
         turns: Mutex::new(HashSet::new()),
-        watching: StdMutex::new(None),
+        watching: StdMutex::new(HashSet::new()),
     };
     (gw, base)
 }

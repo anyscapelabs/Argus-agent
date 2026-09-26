@@ -41,7 +41,7 @@ fn test_gw(tag: &str) -> (argus_lib::gateway::Gateway, std::path::PathBuf) {
         jobs: Mutex::new(HashMap::new()),
         events: Mutex::new(HashMap::new()),
         turns: Mutex::new(HashSet::new()),
-        watching: Mutex::new(None),
+        watching: Mutex::new(HashSet::new()),
     };
 
     (gw, base)

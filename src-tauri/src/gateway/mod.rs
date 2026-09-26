@@ -44,7 +44,7 @@ pub struct Gateway {
     pub jobs: Mutex<HashMap<String, Arc<Notify>>>,
     pub events: Mutex<HashMap<String, Bus>>,
     pub turns: Mutex<HashSet<String>>,
-    pub watching: Mutex<Option<String>>,
+    pub watching: Mutex<HashSet<String>>,
 }
 
 impl Gateway {
@@ -62,13 +62,27 @@ impl Gateway {
     pub fn watching(&self, session_id: &str) -> bool {
         self.watching
             .lock()
-            .map(|w| w.as_deref() == Some(session_id))
+            .map(|w| w.contains(session_id))
             .unwrap_or(false)
     }
 
-    pub fn set_watching(&self, session_id: Option<&str>) {
+    /// A set, not a slot: a sub-agent's own page is watched at the same time
+    /// as the chat that started it, and one must not take the other down.
+    pub fn start_watching(&self, session_id: &str) {
         if let Ok(mut w) = self.watching.lock() {
-            *w = session_id.map(|s| s.to_string());
+            w.insert(session_id.to_string());
+        }
+    }
+
+    pub fn stop_watching(&self, session_id: &str) {
+        if let Ok(mut w) = self.watching.lock() {
+            w.remove(session_id);
+        }
+    }
+
+    pub fn stop_watching_all(&self) {
+        if let Ok(mut w) = self.watching.lock() {
+            w.clear();
         }
     }
 

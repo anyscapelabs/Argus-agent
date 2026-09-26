@@ -95,7 +95,7 @@ pub fn run() {
                 jobs: Mutex::new(HashMap::new()),
                 events: Mutex::new(HashMap::new()),
                 turns: Mutex::new(HashSet::new()),
-                watching: Mutex::new(None),
+                watching: Mutex::new(HashSet::new()),
                 jobs_dir,
             });
 

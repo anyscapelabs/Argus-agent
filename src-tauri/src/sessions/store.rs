@@ -110,6 +110,10 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
             "agent_state",
             "ALTER TABLE sessions ADD COLUMN agent_state TEXT",
         ),
+        (
+            "profile_id",
+            "ALTER TABLE sessions ADD COLUMN profile_id TEXT",
+        ),
     ] {
         let has: bool = conn
             .query_row(
@@ -124,6 +128,21 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
             conn.execute(ddl, []).map_err(|err| err.to_string())?;
         }
     }
+
+    // The default is a real row rather than "a null profile means default",
+    // so the picker has one list and never branches on a null. Chats that
+    // predate profiles are pointed at it, so nothing existing has to migrate.
+    conn.execute(
+        "INSERT OR IGNORE INTO agent_profiles (id, name) VALUES ('default', '')",
+        [],
+    )
+    .map_err(|err| err.to_string())?;
+
+    conn.execute(
+        "UPDATE sessions SET profile_id = 'default' WHERE profile_id IS NULL",
+        [],
+    )
+    .map_err(|err| err.to_string())?;
 
     conn.pragma_update(None, "foreign_keys", true)
         .map_err(|err| err.to_string())?;
@@ -164,7 +183,8 @@ pub fn create_session(conn: &Connection, req: &NewSession) -> Result<Session, St
     let perm = req.permission.clone().unwrap_or_else(|| "ask".into());
 
     conn.execute(
-        "INSERT INTO sessions (id, title, model_id, permission, folder_id, web_search) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO sessions (id, title, model_id, permission, folder_id, web_search, profile_id) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'default')",
         params![id, req.title, req.model_id, perm, req.folder_id, req.web_search],
     )
     .map_err(|err| err.to_string())?;
@@ -263,9 +283,12 @@ pub fn create_child(
 ) -> Result<Session, String> {
     let id = Uuid::new_v4().to_string();
 
+    // A sub-agent is its parent's, working. A Senior Developer that fans out
+    // produces senior developers, so the profile comes along.
     conn.execute(
-        "INSERT INTO sessions (id, title, model_id, permission, parent_id, agent_name, agent_state)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'running')",
+        "INSERT INTO sessions (id, title, model_id, permission, parent_id, agent_name, agent_state, profile_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'running',
+                 COALESCE((SELECT profile_id FROM sessions WHERE id = ?5), 'default'))",
         params![id, title, model_id, permission, parent_id, name],
     )
     .map_err(|err| err.to_string())?;

@@ -349,6 +349,47 @@ export function agentSetKeep(n: number): Promise<number> {
   return invoke<number>("agent_set_keep", { n });
 }
 
+export type ProfileRow = {
+  id: string;
+  name: string;
+  instructions: string;
+  created_at: string;
+};
+
+export function profileList(): Promise<ProfileRow[]> {
+  return invoke<ProfileRow[]>("profile_list");
+}
+
+export function profileCreate(name: string): Promise<ProfileRow> {
+  return invoke<ProfileRow>("profile_create", { name });
+}
+
+export function profileEdit(
+  id: string,
+  patch: { name?: string; instructions?: string },
+): Promise<ProfileRow> {
+  return invoke<ProfileRow>("profile_edit", {
+    id,
+    name: patch.name ?? null,
+    instructions: patch.instructions ?? null,
+  });
+}
+
+export function profileDelete(id: string): Promise<void> {
+  return invoke<void>("profile_delete", { id });
+}
+
+export function sessSetProfile(
+  sessionId: string,
+  profileId: string,
+): Promise<void> {
+  return invoke<void>("sess_set_profile", { sessionId, profileId });
+}
+
+export function sessGetProfile(sessionId: string): Promise<string | null> {
+  return invoke<string | null>("sess_get_profile", { sessionId });
+}
+
 export function sessUnwatch(sessionId?: string): Promise<void> {
   return invoke<void>("sess_unwatch", { sessionId: sessionId ?? null });
 }

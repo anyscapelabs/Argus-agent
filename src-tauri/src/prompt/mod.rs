@@ -92,11 +92,17 @@ Write plain paragraphs; **bold**, *italic*, `code`, [text](url) and # headings \
 render as such. For tables you MUST use <table> with <tr><th><td> — markdown \
 pipe tables (| a | b |) render as literal text, never as a table. Write lists \
 as short sentences, not - or 1. items. For caveats <warning severity=\"...\">; \
-for collapsed reasoning <thinking>. Code fences and any other tags show up \
-literally — avoid them. Never fake tool output.\n\
+for collapsed reasoning <thinking>. For code use <codeblock language=\"...\"> \
+with the source inside — a ``` fence renders as literal text. Never fake tool \
+output.\n\
 ";
 
-fn stable_layer(conn: &Connection, web: bool, child: bool) -> Result<String, String> {
+fn stable_layer(
+    conn: &Connection,
+    web: bool,
+    child: bool,
+    profile_id: Option<&str>,
+) -> Result<String, String> {
     let mut s = String::from(BASE);
 
     if child {
@@ -108,6 +114,13 @@ fn stable_layer(conn: &Connection, web: bool, child: bool) -> Result<String, Str
 
     s.push_str(&crate::tools::section(web));
 
+    // Added to, never substituted for. A profile carrying its own system
+    // prompt would silently lose the sandbox boundary, the approval rules and
+    // the recovery section, and the user would not know what went missing.
+    if let Some(p) = profile_section(conn, profile_id) {
+        s.push_str(&p);
+    }
+
     if let Some(rules) = gw_store::kv_get(conn, "preference_rules") {
         if !rules.trim().is_empty() {
             s.push_str("\n\n<user-preferences>\n");
@@ -118,6 +131,52 @@ fn stable_layer(conn: &Connection, web: bool, child: bool) -> Result<String, Str
     }
 
     Ok(s)
+}
+
+/// A name is a label, not a mechanism. A profile called "Senior Developer"
+/// that says nothing behaves like base Argus with a friendlier tone, so only
+/// the instructions earn a layer.
+fn profile_section(conn: &Connection, profile_id: Option<&str>) -> Option<String> {
+    let id = profile_id?;
+    let body: String = conn
+        .query_row(
+            "SELECT instructions FROM agent_profiles WHERE id = ?1",
+            params![id],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+
+    if body.trim().is_empty() {
+        return None;
+    }
+
+    let name: String = conn
+        .query_row(
+            "SELECT name FROM agent_profiles WHERE id = ?1",
+            params![id],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+
+    let mut s = String::from("\n\n<profile>\n");
+
+    if !name.trim().is_empty() {
+        s.push_str(&format!(
+            "You are working as {}. Follow these instructions when compatible with the core rules above.\n",
+            name.trim()
+        ));
+    } else {
+        s.push_str("Follow these instructions when compatible with the core rules above.\n");
+    }
+
+    s.push_str(body.trim());
+    s.push_str("\n</profile>");
+
+    Some(s)
 }
 
 const PAST_INDEX_MAX: usize = 12;
@@ -193,9 +252,9 @@ fn past_index(conn: &Connection, session_id: &str) -> Option<String> {
 }
 
 pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String> {
-    let (model_id, compact_seq, ctx_tokens, web_search, parent_id) = conn
+    let (model_id, compact_seq, ctx_tokens, web_search, parent_id, profile_id) = conn
         .query_row(
-            "SELECT model_id, compact_seq, ctx_tokens, web_search, parent_id
+            "SELECT model_id, compact_seq, ctx_tokens, web_search, parent_id, profile_id
              FROM sessions WHERE id = ?1",
             params![session_id],
             |r| {
@@ -205,13 +264,14 @@ pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String
                     r.get::<_, i64>(2)?,
                     r.get::<_, i64>(3)? != 0,
                     r.get::<_, Option<String>>(4)?,
+                    r.get::<_, Option<String>>(5)?,
                 ))
             },
         )
         .map_err(|_| format!("session {session_id} not found"))?;
 
     let child = parent_id.is_some();
-    let stable = stable_layer(conn, web_search, child)?;
+    let stable = stable_layer(conn, web_search, child, profile_id.as_deref())?;
 
     let summary: Option<String> = conn
         .query_row(

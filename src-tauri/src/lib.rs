@@ -6,6 +6,7 @@ pub mod learning;
 pub mod library;
 pub mod mcp;
 pub mod memory;
+pub mod profiles;
 pub mod prompt;
 pub mod sessions;
 pub mod skills;
@@ -143,6 +144,12 @@ pub fn run() {
             sessions::sess_list_folders,
             sessions::newagent_prefs,
             sessions::set_newagent_prefs,
+            profiles::profile_list,
+            profiles::profile_create,
+            profiles::profile_edit,
+            profiles::profile_delete,
+            profiles::sess_set_profile,
+            profiles::sess_get_profile,
             sessions::chat::sess_chat_stream,
             sessions::chat::sess_watch_events,
             sessions::chat::sess_unwatch,

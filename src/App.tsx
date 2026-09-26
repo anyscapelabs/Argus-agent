@@ -18,7 +18,7 @@ import type { Session } from "./components/SessionList";
 import { sessExportJson, type ChatModel } from "./lib/ipc";
 import SubagentPage from "./components/SubagentPage";
 import { notifyDone } from "./lib/notify";
-import { profileLabel, profileStore, useProfiles } from "./stores/profiles";
+import { profileStore, useProfiles } from "./stores/profiles";
 import { isWorking, sessionStore, useSessions } from "./stores/sessions";
 import { toast } from "./stores/toast";
 
@@ -38,7 +38,7 @@ export type View =
 function App() {
   const st = useSessions();
   const { sessions, activeId, agentRuns } = st;
-  const { profiles, activeId: profileActive } = useProfiles();
+  const { activeId: profileActive } = useProfiles();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [view, setView] = useState<View>("new-agent");
   const [subagent, setSubagent] = useState<{
@@ -182,9 +182,6 @@ function App() {
         ? (activeSession?.title ?? "New chat")
         : null;
   const backToChat = () => setView("chat");
-  // Live read — a rename in the profiles page shows here with no reload.
-  const activeProfile = profiles.find((p) => p.id === profileActive);
-  const profileName = activeProfile === undefined ? null : profileLabel(activeProfile);
 
   const exportSession = async (sessionId: string) => {
     try {
@@ -256,14 +253,12 @@ function App() {
           onArchive={(id) => archiveSession(id)}
           onExport={exportSession}
           onDelete={(id) => deleteSession(id)}
-          profileName={profileName}
         />
         <div className="flex min-w-0 min-h-0 flex-1 flex-col">
           <Toolbar
             onToggleSidebar={toggleSidebar}
             sidebarOpen={sidebarOpen}
             chatTitle={chatTitle}
-            profileName={profileName}
             sessionId={activeId}
             onManageProfiles={() => {
               backView.current = view === "settings" ? backView.current : view;

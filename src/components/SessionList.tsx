@@ -45,9 +45,6 @@ type SessionListProps = {
   onArchive: (sessionId: string) => void;
   onExport: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
-  /// Which profile the list is scoped to. Shown so an empty list reads as
-  /// "none here" rather than "where did my chats go".
-  profileName: string | null;
 };
 
 function getMenuItems(
@@ -85,7 +82,6 @@ export default function SessionList({
   onArchive,
   onExport,
   onDelete,
-  profileName,
 }: SessionListProps) {
   const [open, setOpen] = useState(true);
 
@@ -104,9 +100,6 @@ export default function SessionList({
         aria-controls="session-list-panel"
       >
         <span className="text-xs font-medium">Sessions</span>
-        <span className="ml-auto text-xs text-text-tertiary">
-          {profileName ?? "Default"}
-        </span>
       </button>
       {open && (
         <div

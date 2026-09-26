@@ -8,7 +8,7 @@ import {
   RiBrainLine,
   RiToolsLine,
 } from "react-icons/ri";
-import { VscFolderLibrary, VscSettingsGear } from "react-icons/vsc";
+import { VscFolderLibrary } from "react-icons/vsc";
 
 import type { View } from "../App";
 import {
@@ -24,7 +24,6 @@ const TABS: { label: string; view: View; Icon: typeof RiBrainLine }[] = [
   { label: "Library", view: "library", Icon: VscFolderLibrary },
   { label: "Projects", view: "projects", Icon: PiToolbox },
   { label: "Connectors", view: "connectors", Icon: LuUnplug },
-  { label: "Settings", view: "settings", Icon: VscSettingsGear },
 ];
 
 type SidebarProps = {
@@ -42,7 +41,6 @@ type SidebarProps = {
   onArchive: (sessionId: string) => void;
   onExport: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
-  profileName: string | null;
 };
 
 export default function Sidebar({
@@ -60,7 +58,6 @@ export default function Sidebar({
   onArchive,
   onExport,
   onDelete,
-  profileName,
 }: SidebarProps) {
   const inSettings = activeView === "settings";
 
@@ -197,7 +194,6 @@ export default function Sidebar({
             onArchive={onArchive}
             onExport={onExport}
             onDelete={onDelete}
-            profileName={profileName}
           />
           </>
         )}

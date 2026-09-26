@@ -10,7 +10,6 @@ type ToolbarProps = {
   onToggleSidebar: () => void;
   sidebarOpen: boolean;
   chatTitle?: string | null;
-  profileName?: string | null;
   sessionId?: string | null;
   onManageProfiles: () => void;
   onBack?: () => void;
@@ -21,7 +20,6 @@ export default function Toolbar({
   onToggleSidebar,
   sidebarOpen,
   chatTitle,
-  profileName,
   sessionId,
   onManageProfiles,
   onBack,
@@ -99,11 +97,6 @@ export default function Toolbar({
             >
               {chatTitle}
             </button>
-            {profileName != null && profileName !== "" && (
-              <span className="truncate text-xs text-text-tertiary">
-                {profileName}
-              </span>
-            )}
             {onBack === undefined && (
               <Dropdown
                 items={menuItems}

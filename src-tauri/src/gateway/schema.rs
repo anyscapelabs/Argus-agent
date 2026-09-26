@@ -256,6 +256,7 @@ pub enum StreamEvent {
     TurnEnd {
         session_id: String,
     },
+    Refresh,
 }
 
 #[derive(Debug, Default)]

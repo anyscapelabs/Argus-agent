@@ -342,9 +342,16 @@ pub struct FanSink<'a> {
 }
 
 impl ChatSink for FanSink<'_> {
+    /// Only an approval crosses into the parent, because a human has to be
+    /// able to answer it and the parent chat is where approvals are answered.
+    /// Everything else — deltas, terminal output, and above all TurnEnd, which
+    /// would tear down the parent's own turn — stays on the child's own bus.
     fn emit(&self, ev: StreamEvent) {
-        self.gw.publish(&self.child_id, ev.clone());
-        self.gw.publish(&self.parent_id, ev);
+        if matches!(ev, StreamEvent::Approval { .. }) {
+            self.gw.publish(&self.parent_id, ev.clone());
+        }
+
+        self.gw.publish(&self.child_id, ev);
     }
 
     fn detached(&self) -> bool {
@@ -357,6 +364,30 @@ pub fn attr_escape(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+/// Put a message in a conversation without running a turn for it, and tell
+/// whoever is looking at that conversation to re-read it. This is how a card
+/// gets into the middle of a chat the agent is already answering.
+pub fn post(gw: &Gateway, session_id: &str, role: &str, body: &str) {
+    if let Ok(conn) = gw.conn.lock() {
+        let _ = store::add_msg(
+            &conn,
+            &NewMsg {
+                session_id: session_id.into(),
+                role: role.into(),
+                content: body.into(),
+                model_id: None,
+                provider_id: None,
+                tok_in: None,
+                tok_out: None,
+                tool_calls: None,
+                tool_call_id: None,
+            },
+        );
+    }
+
+    gw.publish(session_id, StreamEvent::Refresh);
 }
 
 pub fn announce<R: tauri::Runtime>(

@@ -190,3 +190,77 @@ fn mark_final_flags_only_the_final_turn() {
     assert_eq!(kinds[0].1, None);
     assert_eq!(kinds[1].1, Some("final".to_string()));
 }
+
+fn asst(conn: &rusqlite::Connection, session: &str, content: &str) -> String {
+    use argus_lib::sessions::schema::NewMsg;
+    argus_lib::sessions::store::add_msg_dedup(
+        conn,
+        &NewMsg {
+            session_id: session.into(),
+            role: "assistant".into(),
+            content: content.into(),
+            model_id: None,
+            provider_id: None,
+            tok_in: None,
+            tok_out: None,
+            tool_calls: None,
+            tool_call_id: None,
+        },
+    )
+    .unwrap()
+    .0
+    .id
+}
+
+fn assistants(conn: &rusqlite::Connection, session: &str) -> Vec<String> {
+    let mut stmt = conn
+        .prepare("SELECT content FROM messages WHERE session_id = ?1 AND role = 'assistant' ORDER BY seq")
+        .unwrap();
+    let rows = stmt
+        .query_map([session], |r| r.get::<_, String>(0))
+        .unwrap();
+    rows.flatten().collect()
+}
+
+#[test]
+fn the_same_answer_twice_is_still_one_answer() {
+    let conn = dupe_db();
+
+    let a = asst(&conn, "s1", "No pending changes.");
+    let b = asst(&conn, "s1", "No pending changes.");
+    let c = asst(&conn, "s1", "No pending changes.");
+
+    assert_eq!(a, b);
+    assert_eq!(b, c);
+    assert_eq!(assistants(&conn, "s1"), vec!["No pending changes."]);
+}
+
+#[test]
+fn a_second_answer_after_a_tool_result_is_its_own_message() {
+    let conn = dupe_db();
+
+    asst(&conn, "s1", "No pending changes.");
+    user_msg(
+        &conn,
+        "s1",
+        "<tool-result tool=\"terminal\">exit 0</tool-result>",
+    );
+    asst(&conn, "s1", "No pending changes.");
+
+    // The gap is the whole difference: same words, but something happened
+    // between them, so the second one is news.
+    assert_eq!(assistants(&conn, "s1").len(), 2);
+}
+
+#[test]
+fn a_different_answer_is_never_swallowed() {
+    let conn = dupe_db();
+
+    asst(&conn, "s1", "No pending changes.");
+    asst(&conn, "s1", "Actually there are three.");
+
+    assert_eq!(
+        assistants(&conn, "s1"),
+        vec!["No pending changes.", "Actually there are three."]
+    );
+}

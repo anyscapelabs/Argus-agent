@@ -423,6 +423,46 @@ pub fn add_msg(conn: &Connection, m: &NewMsg) -> Result<Msg, String> {
     get_msg(conn, &id)
 }
 
+/// A nudge rides the request, not the transcript, so a model asked to try
+/// again and answering the same way has said one thing twice — not two things.
+/// Overwrite the row it already wrote instead of stacking a copy under it, and
+/// say so, so the caller can stop asking.
+pub fn add_msg_dedup(conn: &Connection, m: &NewMsg) -> Result<(Msg, bool), String> {
+    if m.role != "assistant" {
+        return add_msg(conn, m).map(|msg| (msg, false));
+    }
+
+    let last: Option<(String, String, Option<String>)> = conn
+        .query_row(
+            "SELECT id, role, kind FROM messages WHERE session_id = ?1 ORDER BY seq DESC LIMIT 1",
+            params![m.session_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .ok();
+
+    let Some((id, role, kind)) = last else {
+        return add_msg(conn, m).map(|msg| (msg, false));
+    };
+
+    if role != "assistant" || kind.is_some() {
+        return add_msg(conn, m).map(|msg| (msg, false));
+    }
+
+    let same: bool = conn
+        .query_row(
+            "SELECT content = ?2 FROM messages WHERE id = ?1",
+            params![id, m.content],
+            |r| r.get(0),
+        )
+        .unwrap_or(false);
+
+    if !same {
+        return add_msg(conn, m).map(|msg| (msg, false));
+    }
+
+    get_msg(conn, &id).map(|msg| (msg, true))
+}
+
 pub fn get_msg(conn: &Connection, id: &str) -> Result<Msg, String> {
     conn.query_row(
         &format!("SELECT {MSG_COLS} FROM messages WHERE id = ?1"),

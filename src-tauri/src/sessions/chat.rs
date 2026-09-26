@@ -796,9 +796,9 @@ pub async fn send<R: tauri::Runtime>(
             serde_json::to_string(&stats.tool_calls).ok()
         };
 
-        let asst = {
+        let (asst, said_again) = {
             let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-            store::add_msg(
+            store::add_msg_dedup(
                 &conn,
                 &NewMsg {
                     session_id: session_id.into(),
@@ -818,13 +818,22 @@ pub async fn send<R: tauri::Runtime>(
         if stats.truncated {
             trunc_conts += 1;
 
-            if trunc_conts > MAX_TRUNC_CONTS {
+            // A model told to carry on and answering the same thing has
+            // nothing left to say. Asking again only buys another copy of the
+            // same words, which is how one answer ends up in the chat three
+            // times over.
+            if trunc_conts > MAX_TRUNC_CONTS || said_again {
                 if done {
-                    sink.emit(StreamEvent::Notice {
-                        msg: "the model's reply was cut off at its output limit twice — \
-                              partial work above is saved; send 'continue' to resume"
-                            .into(),
-                    });
+                    // A model that just repeated itself was not cut off — it had
+                    // nothing left to say. Blaming a limit it never hit would be
+                    // a worse lie than saying nothing.
+                    if !said_again {
+                        sink.emit(StreamEvent::Notice {
+                            msg: "the model's reply was cut off at its output limit twice — \
+                                  partial work above is saved; send 'continue' to resume"
+                                .into(),
+                        });
+                    }
 
                     if let Ok(conn) = gw.conn.lock() {
                         let _ = store::mark_final(&conn, &asst.id);

@@ -332,6 +332,12 @@ class SessionStore {
       return;
     }
 
+    if (ev.type === "refresh") {
+      void this.loadMsgs(sessionId);
+      void this.loadAgents(sessionId);
+      return;
+    }
+
     if (ev.type === "turn_end") {
       this.clearTurn(sessionId);
       void this.loadMsgs(sessionId);

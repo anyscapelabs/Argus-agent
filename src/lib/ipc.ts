@@ -184,6 +184,7 @@ export type StreamEvent =
       tok_out: number;
       cost: number;
     }
+  | { type: "refresh" }
   | { type: "err"; msg: string }
   | { type: "term"; idx: number; chunk: string }
   | { type: "term_end"; idx: number; code: number }

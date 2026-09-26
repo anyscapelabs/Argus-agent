@@ -1,6 +1,8 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
+use crate::gateway::store as gw_store;
+
 use super::schema::{Profile, DEFAULT_ID, MAX_PROFILES, NAME_MAX};
 
 fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Profile> {
@@ -157,4 +159,18 @@ pub fn of_session(conn: &Connection, session_id: &str) -> Result<Option<String>,
     .optional()
     .map(Option::flatten)
     .map_err(|err| err.to_string())
+}
+
+/// Which profile the picker was left on. Survives a restart, because
+/// re-opening the app and finding a different personality than the one you
+/// closed it with is its own small annoyance every single time.
+pub fn active(conn: &Connection) -> String {
+    gw_store::kv_get(conn, "profile.active")
+        .filter(|id| !id.is_empty())
+        .unwrap_or_else(|| DEFAULT_ID.into())
+}
+
+pub fn set_active(conn: &Connection, id: &str) -> Result<(), String> {
+    get(conn, id)?;
+    gw_store::kv_set(conn, "profile.active", id)
 }

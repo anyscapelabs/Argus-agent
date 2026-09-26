@@ -145,6 +145,8 @@ pub fn run() {
             sessions::newagent_prefs,
             sessions::set_newagent_prefs,
             profiles::profile_list,
+            profiles::profile_active,
+            profiles::profile_set_active,
             profiles::profile_create,
             profiles::profile_edit,
             profiles::profile_delete,

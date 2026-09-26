@@ -1,10 +1,12 @@
 import { useSyncExternalStore } from "react";
 
 import {
+  profileActive,
   profileCreate,
   profileDelete,
   profileEdit,
   profileList,
+  profileSetActive,
   sessGetProfile,
   sessSetProfile,
   type ProfileRow,
@@ -55,14 +57,17 @@ class ProfileStore {
 
   async load() {
     try {
-      const profiles = await profileList();
-      const known = profiles.some((p) => p.id === this.state.activeId);
+      const [profiles, saved] = await Promise.all([
+        profileList(),
+        profileActive(),
+      ]);
+      // The last pick survives a restart, unless the profile it named is
+      // gone — a stale id would scope every list and prompt to nothing.
+      const known = profiles.some((p) => p.id === saved);
 
       this.set({
         profiles,
-        // A profile the user deleted out from under the picker must not stay
-        // selected, or every new chat lands on a row that is not there.
-        activeId: known ? this.state.activeId : DEFAULT_ID,
+        activeId: known ? saved : DEFAULT_ID,
         loading: false,
       });
     } catch {
@@ -76,8 +81,8 @@ class ProfileStore {
 
   async create(name: string): Promise<ProfileRow> {
     const p = await profileCreate(name);
+    await this.setActive(p.id);
     await this.load();
-    this.set({ activeId: p.id });
     return p;
   }
 
@@ -97,8 +102,9 @@ class ProfileStore {
 
   /// Picks the profile a new chat starts on. Separate from picking the one an
   /// open chat belongs to, so the two never fight over the same field.
-  setActive(id: string) {
+  async setActive(id: string) {
     this.set({ activeId: id });
+    await profileSetActive(id).catch(() => {});
   }
 
   /// Reads what an open chat is actually on. A chat that has never been
@@ -117,6 +123,8 @@ class ProfileStore {
   async setForSession(sessionId: string, profileId: string) {
     await sessSetProfile(sessionId, profileId);
     this.set({ activeId: profileId });
+    // A chat you moved is a choice, and choices are what survive a restart.
+    await profileSetActive(profileId).catch(() => {});
   }
 }
 

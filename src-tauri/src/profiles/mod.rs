@@ -52,3 +52,15 @@ pub fn sess_get_profile(
     let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     store::of_session(&conn, &session_id)
 }
+
+#[tauri::command]
+pub fn profile_active(gw: State<'_, Gateway>) -> Result<String, String> {
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+    Ok(store::active(&conn))
+}
+
+#[tauri::command]
+pub fn profile_set_active(gw: State<'_, Gateway>, id: String) -> Result<(), String> {
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+    store::set_active(&conn, &id)
+}

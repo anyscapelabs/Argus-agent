@@ -21,13 +21,10 @@ const INPUT =
   "focus:border-accent";
 
 type Props = {
-  /// The chat the choice applies to, or null when none is open — in which
-  /// case the choice is the one the next chat starts on.
-  sessionId: string | null;
   onManage: () => void;
 };
 
-export default function ProfilePicker({ sessionId, onManage }: Props) {
+export default function ProfilePicker({ onManage }: Props) {
   const { profiles, activeId } = useProfiles();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -38,17 +35,11 @@ export default function ProfilePicker({ sessionId, onManage }: Props) {
 
   const current = profiles.find((p) => p.id === activeId);
 
+  // A pick changes what you are looking at. It does not hand the chat you
+  // happen to have open over to the new profile — the two are separate
+  // decisions and a list filter has no business editing a row.
   const pick = async (id: string) => {
-    if (sessionId === null) {
-      profileStore.setActive(id);
-      return;
-    }
-
-    try {
-      await profileStore.setForSession(sessionId, id);
-    } catch {
-      toast.error("Could not change the profile on this chat");
-    }
+    await profileStore.setActive(id);
   };
 
   const create = async () => {
@@ -62,12 +53,7 @@ export default function ProfilePicker({ sessionId, onManage }: Props) {
       await profileStore.create(n);
       setName("");
       setCreating(false);
-      toast.success(`Created ${n}`);
-
-      if (sessionId !== null) {
-        const id = profileStore.getState().activeId;
-        await profileStore.setForSession(sessionId, id);
-      }
+      toast.success(`${n} is empty until you give it instructions`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     }

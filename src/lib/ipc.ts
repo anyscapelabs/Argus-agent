@@ -380,6 +380,14 @@ export function profileDelete(id: string): Promise<void> {
   return invoke<void>("profile_delete", { id });
 }
 
+export function profileActive(): Promise<string> {
+  return invoke<string>("profile_active");
+}
+
+export function profileSetActive(id: string): Promise<void> {
+  return invoke<void>("profile_set_active", { id });
+}
+
 export function sessSetProfile(
   sessionId: string,
   profileId: string,

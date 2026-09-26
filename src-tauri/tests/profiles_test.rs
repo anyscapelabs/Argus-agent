@@ -385,3 +385,35 @@ fn a_listed_session_carries_the_profile_that_owns_it() {
     assert_eq!(by_id(&theirs).as_deref(), Some("default"));
     assert!(list.iter().all(|s| s.running_agents == 0));
 }
+
+#[test]
+fn nothing_picked_yet_means_the_default() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    assert_eq!(profiles::store::active(&conn), "default");
+}
+
+#[test]
+fn the_pick_survives_being_read_back() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let p = profiles::store::create(&conn, "Manager").unwrap();
+    profiles::store::set_active(&conn, &p.id).unwrap();
+
+    // A separate connection stands in for the next launch.
+    assert_eq!(profiles::store::active(&conn), p.id);
+}
+
+#[test]
+fn a_pick_that_names_a_missing_profile_is_refused() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    profiles::store::create(&conn, "Manager").unwrap();
+    profiles::store::set_active(&conn, "ghost").unwrap_err();
+}

@@ -259,7 +259,6 @@ function App() {
             onToggleSidebar={toggleSidebar}
             sidebarOpen={sidebarOpen}
             chatTitle={chatTitle}
-            sessionId={activeId}
             onManageProfiles={() => {
               backView.current = view === "settings" ? backView.current : view;
               setSettingsTab("profiles");

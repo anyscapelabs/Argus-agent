@@ -9,12 +9,7 @@ import {
   type SandboxProbe,
   type SandboxRun,
 } from "../../lib/ipc";
-
-const INPUT =
-  "w-full rounded-lg border border-border-primary bg-bg-hover-secondary " +
-  "px-2 py-1.5 font-mono text-xs text-text-primary " +
-  "placeholder:text-text-secondary focus:outline-none " +
-  "focus:ring-1 focus:ring-text-secondary";
+import { Btn, Card, INPUT, Note, Page, Row, Section, Segmented } from "./kit";
 
 const PROFILES: { id: SandboxProfile; label: string; blurb: string }[] = [
   {
@@ -115,164 +110,116 @@ export default function SandboxPage() {
   };
 
   return (
-    <div className="flex flex-col gap-5 px-2 py-3">
-      <div>
-        <h2 className="text-sm font-medium text-text-primary">Sandbox</h2>
-        <p className="text-xs text-text-secondary">
-          Isolated commands run under a boundary the OS enforces directly —
-          Landlock, seccomp and rlimits on Linux, sandbox-exec on macOS, Job
-          Objects on Windows. No container, no image. If a profile cannot be
-          enforced the command is refused, never run unconfined.
-        </p>
-      </div>
+    <Page>
+      <Section label="Default profile" note="Used when a command names none.">
+        <Card>
+          <Row
+            title="Profile"
+            desc={PROFILES.find((p) => p.id === profile)?.blurb}
+          >
+            <Segmented
+              value={profile}
+              opts={PROFILES.map((p) => ({ value: p.id, label: p.label }))}
+              onChange={setProfile}
+            />
+          </Row>
+        </Card>
+      </Section>
 
-      <div className="flex flex-col gap-2">
-        <span className="text-sm text-text-secondary">
-          Default profile{" "}
-          <span className="text-text-tertiary">(used when a command names none)</span>
-        </span>
+      <Section label="Network">
+        <Card>
+          <Row
+            stacked
+            title="Outbound ports"
+            desc="Project profile only."
+          >
+            <input
+              type="text"
+              value={ports}
+              placeholder="80, 443"
+              autoComplete="off"
+              onChange={(e) => setPorts(e.target.value)}
+              className={INPUT + " font-mono text-xs"}
+            />
+          </Row>
+          <Row
+            stacked
+            title="Trusted hosts"
+            desc="One per line. Clones and fetches from these count as trusted."
+          >
+            <textarea
+              value={hosts}
+              rows={4}
+              placeholder={"github.com\n"}
+              onChange={(e) => setHosts(e.target.value)}
+              className={INPUT + " resize-y font-mono text-xs"}
+            />
+          </Row>
+        </Card>
+      </Section>
 
-        {PROFILES.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            onClick={() => setProfile(p.id)}
-            className={
-              "rounded-lg border px-3 py-2 text-left transition-colors " +
-              (profile === p.id
-                ? "border-accent bg-bg-hover-secondary"
-                : "border-border-primary hover:bg-bg-hover-secondary")
+      <Section
+        label="Boundary check"
+        note="Runs a real command through the boundary and checks it was actually denied what it was not given. A backend that cannot prove this refuses to run isolated commands at all."
+      >
+        <Card>
+          <Row
+            title="Run self-test"
+            desc={
+              probe === null
+                ? "Landlock, seccomp and rlimits on Linux, sandbox-exec on macOS, Job Objects on Windows."
+                : `${probe.backend} · ${
+                    probe.ok ? "boundary confirmed" : "boundary unavailable"
+                  }`
             }
           >
-            <div className="text-sm text-text-primary">{p.label}</div>
-            <div className="text-xs text-text-secondary">{p.blurb}</div>
-          </button>
-        ))}
-      </div>
-
-      <label className="flex flex-col gap-1.5">
-        <span className="text-sm text-text-secondary">
-          Outbound ports{" "}
-          <span className="text-text-tertiary">(Project profile only)</span>
-        </span>
-        <input
-          type="text"
-          value={ports}
-          placeholder="80, 443"
-          autoComplete="off"
-          onChange={(e) => setPorts(e.target.value)}
-          className={INPUT}
-        />
-      </label>
-
-      <label className="flex flex-col gap-1.5">
-        <span className="text-sm text-text-secondary">
-          Trusted hosts{" "}
-          <span className="text-text-tertiary">
-            (one per line — clones and fetches from these count as trusted)
-          </span>
-        </span>
-        <textarea
-          value={hosts}
-          rows={3}
-          placeholder={"github.com\n"}
-          onChange={(e) => setHosts(e.target.value)}
-          className={INPUT + " resize-y"}
-        />
-      </label>
-
-      {err && <p className="text-xs text-red-400">{err}</p>}
-      {note && <p className="text-xs text-green-500">{note}</p>}
-
-      <div>
-        <button
-          type="button"
-          onClick={save}
-          disabled={busy}
-          className={
-            "rounded-md bg-accent px-3 py-1.5 text-sm font-medium " +
-            "text-bg-primary transition-opacity hover:opacity-90 " +
-            "disabled:opacity-50"
-          }
-        >
-          {busy ? "Saving…" : "Save"}
-        </button>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <h3 className="text-sm font-medium text-text-primary">Boundary check</h3>
-
-        <p className="text-xs text-text-secondary">
-          Runs a real command through the boundary and checks it was actually
-          denied what it was not given. A backend that cannot prove this
-          refuses to run isolated commands at all.
-        </p>
-
-        <div>
-          <button
-            type="button"
-            onClick={check}
-            disabled={checking}
-            className={
-              "rounded-md border border-border-primary px-3 py-1.5 text-sm " +
-              "text-text-primary transition-colors hover:bg-bg-hover-secondary " +
-              "disabled:opacity-50"
-            }
-          >
-            {checking ? "Checking…" : "Run self-test"}
-          </button>
-        </div>
-
-        {probe && (
-          <div
-            className={
-              "rounded-md border px-2 py-1.5 text-xs " +
-              (probe.ok
-                ? "border-green-500/30 text-green-500"
-                : "border-red-500/30 text-red-400")
-            }
-          >
-            <div className="font-mono">
-              {probe.backend} ·{" "}
-              {probe.ok ? "boundary confirmed" : "boundary unavailable"}
+            <Btn onClick={() => void check()} disabled={checking}>
+              {checking ? "Checking…" : "Run"}
+            </Btn>
+          </Row>
+          {probe !== null && !probe.ok && (
+            <div className="px-4 py-3.5">
+              <Note>{probe.detail}</Note>
             </div>
-            <div className="text-text-secondary">{probe.detail}</div>
-          </div>
-        )}
-      </div>
+          )}
+        </Card>
+      </Section>
 
-      <div className="flex flex-col gap-2">
-        <h3 className="text-sm font-medium text-text-primary">Recent runs</h3>
-
-        {runs.length === 0 ? (
-          <p className="text-xs text-text-secondary">Nothing has run yet.</p>
-        ) : (
-          <div className="flex flex-col gap-1">
-            {runs.map((r) => (
-              <div
-                key={r.id}
-                className="flex items-baseline gap-2 rounded-md bg-bg-hover-secondary px-2 py-1"
-              >
-                <span className="font-mono text-xs text-text-secondary">
+      <Section label="Recent runs" note="Command metadata and byte counts only — output is never written here.">
+        <Card>
+          {runs.length === 0 ? (
+            <div className="px-4 py-3.5">
+              <Note>Nothing has run yet.</Note>
+            </div>
+          ) : (
+            runs.map((r) => (
+              <div key={r.id} className="flex items-baseline gap-2 px-4 py-2.5">
+                <span className="font-mono text-xs text-text-tertiary">
                   {r.profile}
                 </span>
-                <span className="truncate font-mono text-xs text-text-primary">
+                <span className="min-w-0 flex-1 truncate font-mono text-xs text-text-primary">
                   {r.command}
                 </span>
-                <span className="ml-auto shrink-0 text-xs text-text-secondary">
+                <span className="shrink-0 font-mono text-xs text-text-tertiary">
                   exit {r.exit} · {r.termination} ·{" "}
                   {(r.durationMs / 1000).toFixed(1)}s
                   {r.truncated ? " · truncated" : ""}
                 </span>
               </div>
-            ))}
-          </div>
-        )}
+            ))
+          )}
+        </Card>
+      </Section>
 
-        <p className="text-xs text-text-tertiary">
-          Command metadata and byte counts only — output is never written here.
-        </p>
+      <div className="flex items-center gap-3">
+        <span className="min-w-0 flex-1">
+          {err !== null && <span className="text-xs text-red-400">{err}</span>}
+          {err === null && note !== "" && <Note>{note}</Note>}
+        </span>
+        <Btn variant="primary" onClick={() => void save()} disabled={busy}>
+          {busy ? "Saving…" : "Save"}
+        </Btn>
       </div>
-    </div>
+    </Page>
   );
 }

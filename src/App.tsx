@@ -329,7 +329,6 @@ function App() {
                 tab={settingsTab}
                 onTab={setSettingsTab}
                 onClose={() => setView(backView.current)}
-                onOpenSession={openSession}
               />
             )}
           </div>

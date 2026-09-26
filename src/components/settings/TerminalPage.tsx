@@ -6,6 +6,7 @@ import {
   termShellStatus,
   type TermShellStatus,
 } from "../../lib/ipc";
+import { Btn, Card, INPUT, Page, Row, Section } from "./kit";
 
 export default function TerminalPage() {
   const [status, setStatus] = useState<TermShellStatus | null>(null);
@@ -53,70 +54,64 @@ export default function TerminalPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4 px-2 py-3">
-      <div>
-        <h2 className="text-sm font-medium text-text-primary">Shell</h2>
-        <p className="text-xs text-text-secondary">
-          Auto-detected once at startup. Override only if detection guesses
-          wrong.
-        </p>
-      </div>
-      <div className="flex flex-col gap-1 text-xs">
-        <div className="flex gap-2">
-          <span className="w-20 shrink-0 text-text-secondary">Binary</span>
-          <span className="truncate font-mono text-text-primary">
-            {status?.binary ?? "…"}
-          </span>
-        </div>
-        <div className="flex gap-2">
-          <span className="w-20 shrink-0 text-text-secondary">Kind</span>
-          <span className="text-text-primary">{status?.kind ?? "…"}</span>
-        </div>
-        <div className="flex gap-2">
-          <span className="w-20 shrink-0 text-text-secondary">Version</span>
-          <span className="truncate font-mono text-text-primary">
-            {status?.version ?? "unknown"}
-          </span>
-        </div>
-        <div className="flex gap-2">
-          <span className="w-20 shrink-0 text-text-secondary">Source</span>
-          <span className="text-text-primary">{status?.source ?? "…"}</span>
-        </div>
-      </div>
-      <div className="flex gap-2">
-        <input
-          value={draft}
-          onChange={(evt) => setDraft(evt.target.value)}
-          placeholder="/usr/bin/bash"
-          spellCheck={false}
-          className={
-            "h-8 min-w-0 flex-1 rounded-lg border border-border-primary " +
-            "bg-bg-primary px-3 font-mono text-xs text-text-primary " +
-            "outline-none placeholder:text-text-secondary"
-          }
-        />
-        <button
-          type="button"
-          onClick={() => void onSave()}
-          className={
-            "h-8 shrink-0 rounded-lg bg-accent px-3 text-xs font-medium " +
-            "text-white"
-          }
-        >
-          Save
-        </button>
-        <button
-          type="button"
-          onClick={() => void onClear()}
-          className={
-            "h-8 shrink-0 rounded-lg border border-border-primary px-3 " +
-            "text-xs font-medium text-text-secondary hover:text-text-primary"
-          }
-        >
-          Auto
-        </button>
-      </div>
-      {err && <p className="text-xs text-red-400">{err}</p>}
-    </div>
+    <Page>
+      <Section
+        label="Detected shell"
+        note="Auto-detected once at startup. Override only if detection guesses wrong."
+      >
+        <Card>
+          <Row title="Binary">
+            <span className="font-mono text-xs text-text-secondary">
+              {status?.binary ?? "…"}
+            </span>
+          </Row>
+          <Row title="Kind">
+            <span className="text-xs text-text-secondary">
+              {status?.kind ?? "…"}
+            </span>
+          </Row>
+          <Row title="Version">
+            <span className="font-mono text-xs text-text-secondary">
+              {status?.version ?? "unknown"}
+            </span>
+          </Row>
+          <Row title="Source">
+            <span className="text-xs text-text-secondary">
+              {status?.source ?? "…"}
+            </span>
+          </Row>
+        </Card>
+      </Section>
+
+      <Section label="Override">
+        <Card>
+          <Row
+            stacked
+            title="Shell path"
+            desc="Leave empty to fall back to whatever was detected."
+          >
+            <div className="flex gap-2">
+              <input
+                value={draft}
+                onChange={(evt) => setDraft(evt.target.value)}
+                onKeyDown={(evt) => {
+                  if (evt.key === "Enter") void onSave();
+                }}
+                placeholder="/usr/bin/bash"
+                spellCheck={false}
+                className={INPUT + " font-mono text-xs"}
+              />
+              <Btn variant="primary" onClick={() => void onSave()}>
+                Save
+              </Btn>
+              <Btn onClick={() => void onClear()}>Auto</Btn>
+            </div>
+            {err !== null && (
+              <p className="text-xs text-red-400">{err}</p>
+            )}
+          </Row>
+        </Card>
+      </Section>
+    </Page>
   );
 }

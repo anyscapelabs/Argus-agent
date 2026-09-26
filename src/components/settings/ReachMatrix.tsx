@@ -1,7 +1,7 @@
 import { FiCheck } from "react-icons/fi";
 
 import { CAPABILITIES, profileLabel, useProfiles } from "../../stores/profiles";
-import { Segmented } from "./kit";
+import { Note, Segmented } from "./kit";
 
 export type GrantCell = { capability: string; target_id: string };
 
@@ -75,25 +75,14 @@ export default function ReachMatrix({
       </div>
 
       {reachAll ? (
-        <ul className="flex flex-col gap-1.5">
-          {targets.map((t) => (
-            <li
-              key={t.id}
-              className="flex items-center gap-2.5 rounded-lg bg-bg-secondary px-3 py-2"
-            >
-              <FiCheck size={14} className="shrink-0 text-accent" />
-              <span className="min-w-0 flex-1 truncate text-sm text-text-primary">
-                {profileLabel(t)}
-              </span>
-              <span className="shrink-0 text-xs text-text-tertiary">
-                full access
-              </span>
-            </li>
-          ))}
-        </ul>
+        <Note>
+          All {targets.length} of your other profiles, with every capability,
+          including ones you create later. Switch back to Specific to pick them
+          one at a time — the picks you had are kept.
+        </Note>
       ) : (
         <div className="overflow-x-auto">
-          <p className="mb-2 text-xs text-text-tertiary">
+          <p className="mb-3 text-xs text-text-tertiary">
             Tick a cell to let this profile do that to that one. Each row hands
             over more than the row above it, and nothing is shared between
             columns.

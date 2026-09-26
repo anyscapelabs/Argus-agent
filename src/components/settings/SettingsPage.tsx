@@ -5,7 +5,7 @@ import ModelsPage from "./ModelsPage";
 import ProfilesPage from "./ProfilesPage";
 import ProvidersPage from "./ProvidersPage";
 import SandboxPage from "./SandboxPage";
-import { SETTINGS_TITLE, type SettingsTab } from "./tabs";
+import { SETTINGS_DESC, SETTINGS_TITLE, type SettingsTab } from "./tabs";
 import TerminalPage from "./TerminalPage";
 import ThemePage from "./ThemePage";
 
@@ -13,14 +13,12 @@ type Props = {
   tab: SettingsTab;
   onTab: (tab: SettingsTab) => void;
   onClose: () => void;
-  onOpenSession: (id: string) => void;
 };
 
 export default function SettingsPage({
   tab,
   onTab,
   onClose,
-  onOpenSession,
 }: Props) {
   useEffect(() => {
     const onKey = (evt: KeyboardEvent) => {
@@ -39,21 +37,25 @@ export default function SettingsPage({
       {/* The reach grid needs columns a 3xl column does not have. */}
       <div
         className={
-          "mx-auto w-full px-6 py-6 " +
+          "mx-auto w-full px-8 py-10 " +
           (tab === "profiles" ? "max-w-5xl" : "max-w-3xl")
         }
       >
-        {tab !== "profiles" && (
-          <h1 className="mb-4 text-lg font-semibold text-text-primary">
+        <div className="mb-8 flex flex-col">
+          <h1 className="text-[22px] font-normal leading-tight text-text-primary">
             {SETTINGS_TITLE[tab]}
           </h1>
-        )}
+          <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+            {SETTINGS_DESC[tab]}
+          </p>
+        </div>
+
         {tab === "models" && <ModelsPage onNavigate={onTab} />}
         {tab === "providers" && <ProvidersPage />}
         {tab === "terminal" && <TerminalPage />}
         {tab === "sandbox" && <SandboxPage />}
         {tab === "agents" && <AgentsPage />}
-        {tab === "profiles" && <ProfilesPage onOpenSession={onOpenSession} />}
+        {tab === "profiles" && <ProfilesPage />}
         {tab === "theme" && <ThemePage />}
       </div>
     </div>

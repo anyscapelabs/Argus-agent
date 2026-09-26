@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { LuLaptop, LuMoon, LuSun } from "react-icons/lu";
 
 import {
   getTheme,
@@ -8,18 +7,51 @@ import {
   THEME_MODES,
   type ThemeMode,
 } from "../../lib/theme";
+import { Card, Note, Page, Section } from "./kit";
 
-const ICONS: Record<ThemeMode, typeof LuSun> = {
-  light: LuSun,
-  dark: LuMoon,
-  system: LuLaptop,
-};
+/// A miniature of the window, drawn in the palette it stands for. Three grey
+/// bars and a sidebar beat a sun-and-moon icon every time: you can see what you
+/// are picking, not just what it is called.
+function Preview({ mode, sysDark }: { mode: ThemeMode; sysDark: boolean }) {
+  const dark = mode === "system" ? sysDark : mode === "dark";
+  const surface = dark ? "#2a2a2a" : "#f4f4f2";
+  const chrome = dark ? "#1f1f1f" : "#e8e8e4";
+  const bar = dark ? "#4a4a4a" : "#c8c8c2";
+  const side = dark ? "#383838" : "#dcdcd6";
 
-const BLURBS: Record<ThemeMode, string> = {
-  light: "White background, dark text.",
-  dark: "Near-black background, light text.",
-  system: "Follows your desktop's appearance setting.",
-};
+  return (
+    <div
+      className="flex aspect-4/3 w-full overflow-hidden rounded-lg"
+      style={{ background: chrome }}
+    >
+      <div className="w-1/4 p-2" style={{ background: side }}>
+        <div className="mb-1.5 h-1 w-3/4 rounded-full" style={{ background: bar }} />
+        <div className="mb-1.5 h-1 w-3/4 rounded-full" style={{ background: bar }} />
+        <div className="h-1 w-1/2 rounded-full" style={{ background: bar }} />
+      </div>
+      <div className="flex flex-1 flex-col gap-1.5 p-2.5">
+        <div
+          className="h-1.5 w-1/2 rounded-full"
+          style={{ background: bar }}
+        />
+        <div
+          className="flex-1 rounded-md p-2"
+          style={{ background: surface }}
+        >
+          <div
+            className="mb-1.5 h-1 w-4/5 rounded-full"
+            style={{ background: bar }}
+          />
+          <div
+            className="mb-1.5 h-1 w-3/5 rounded-full"
+            style={{ background: bar }}
+          />
+          <div className="h-1 w-2/5 rounded-full" style={{ background: bar }} />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function ThemePage() {
   const [mode, setMode] = useState<ThemeMode>(getTheme);
@@ -43,56 +75,62 @@ export default function ThemePage() {
     mode === "system" ? (sysDark ? "dark" : "light") : mode;
 
   return (
-    <div className="flex flex-col gap-2 px-2 py-3">
-      <div>
-        <h2 className="text-sm font-medium text-text-primary">Appearance</h2>
-        <p className="text-xs text-text-secondary">
-          Argus repaints immediately. Nothing reloads and no work is lost.
-        </p>
-      </div>
+    <Page>
+      <Section label="Theme">
+        <div className="grid grid-cols-3 gap-4">
+          {THEME_MODES.map((opt) => {
+            const active = opt.value === mode;
 
-      <div className="mt-1 flex flex-col gap-1.5">
-        {THEME_MODES.map((opt) => {
-          const Icon = ICONS[opt.value];
-          const active = opt.value === mode;
-
-          return (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => pick(opt.value)}
-              aria-pressed={active}
-              className={
-                "flex items-center gap-3 rounded-lg border px-3 py-2.5 " +
-                "text-left transition-colors " +
-                (active
-                  ? "border-accent bg-bg-hover-secondary"
-                  : "border-border-primary hover:bg-bg-hover-primary")
-              }
-            >
-              <Icon
-                size={16}
-                className={active ? "text-text-primary" : "text-text-secondary"}
-              />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm text-text-primary">{opt.label}</div>
-                <div className="text-xs text-text-secondary">
-                  {BLURBS[opt.value]}
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => pick(opt.value)}
+                aria-pressed={active}
+                className="flex flex-col gap-2.5 focus:outline-none"
+              >
+                <div
+                  className={
+                    "overflow-hidden rounded-xl border-2 p-1.5 transition-colors " +
+                    (active
+                      ? "border-text-primary"
+                      : "border-transparent hover:border-border-primary")
+                  }
+                >
+                  <Preview mode={opt.value} sysDark={sysDark} />
                 </div>
-              </div>
-              {opt.value === "system" && (
-                <span className="shrink-0 text-xs text-text-secondary">
-                  {sysDark ? "dark" : "light"}
+                <span
+                  className={
+                    "text-xs " +
+                    (active
+                      ? "text-text-primary"
+                      : "text-text-secondary")
+                  }
+                >
+                  {opt.label}
+                  {opt.value === "system" && (
+                    <span className="text-text-tertiary">
+                      {" "}
+                      · {sysDark ? "dark" : "light"}
+                    </span>
+                  )}
                 </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+              </button>
+            );
+          })}
+        </div>
+      </Section>
 
-      <p className="mt-1 text-xs text-text-tertiary">
-        Showing the {live} palette.
-      </p>
-    </div>
+      <Section label="Now showing">
+        <Card>
+          <div className="px-4 py-3.5">
+            <Note>
+              The {live} palette. Argus repaints immediately — nothing reloads
+              and no work is lost.
+            </Note>
+          </div>
+        </Card>
+      </Section>
+    </Page>
   );
 }

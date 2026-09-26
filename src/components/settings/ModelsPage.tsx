@@ -11,6 +11,7 @@ import { useModels } from "../../hooks/useModels";
 import { useProviderLogo } from "../../hooks/useProviderLogo";
 import { useProviders } from "../../hooks/useProviders";
 import type { ProviderModel } from "../../lib/ipc";
+import { Page } from "./kit";
 
 type SwitchProps = {
   on: boolean;
@@ -295,9 +296,7 @@ export default function ModelsPage({ onNavigate }: ModelsPageProps) {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <h2 className="text-sm font-semibold text-text-primary">Models</h2>
-
+    <Page>
       <div className="relative">
         <LuSearch
           size={14}
@@ -313,6 +312,6 @@ export default function ModelsPage({ onNavigate }: ModelsPageProps) {
       </div>
 
       {renderBody()}
-    </div>
+    </Page>
   );
 }

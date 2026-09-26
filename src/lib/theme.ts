@@ -4,9 +4,9 @@ const KEY = "argus.theme";
 const QUERY = "(prefers-color-scheme: dark)";
 
 export const THEME_MODES: { value: ThemeMode; label: string }[] = [
+  { value: "system", label: "System" },
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
-  { value: "system", label: "System" },
 ];
 
 function isMode(v: string | null): v is ThemeMode {

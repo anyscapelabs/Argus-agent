@@ -1,5 +1,6 @@
 import { useProviderLogo } from "../../hooks/useProviderLogo";
 import type { Provider } from "../../lib/ipc";
+import { Btn } from "./kit";
 
 type ConnectedProviderRowProps = {
   provider: Provider;
@@ -57,7 +58,7 @@ function ConnectedProviderRow({
   const isPopular = variant === "popular";
 
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-border-primary px-2 py-1 last:border-b-0">
+    <div className="flex items-center gap-4 px-4 py-3.5">
       <div className="flex min-w-0 items-center gap-3">
         <ProviderLogo id={provider.id} name={provider.name} />
         <span className="truncate text-sm font-medium text-text-primary">
@@ -71,21 +72,9 @@ function ConnectedProviderRow({
       </div>
 
       {isPopular ? (
-        <button
-          type="button"
-          onClick={() => onConnect?.(provider.id)}
-          className="shrink-0 rounded-full border border-border-primary bg-bg-hover-secondary px-4 py-1.5 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover-primary"
-        >
-          Connect
-        </button>
+        <Btn onClick={() => onConnect?.(provider.id)}>Connect</Btn>
       ) : (
-        <button
-          type="button"
-          onClick={() => onDisconnect?.(provider.id)}
-          className="shrink-0 rounded-full border border-border-primary bg-bg-hover-secondary px-4 py-1.5 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover-primary"
-        >
-          Disconnect
-        </button>
+        <Btn onClick={() => onDisconnect?.(provider.id)}>Disconnect</Btn>
       )}
     </div>
   );
@@ -103,11 +92,15 @@ export default function ConnectedProviderList({
         ? "No popular providers."
         : "No connected providers.";
 
-    return <p className="text-sm text-text-secondary">{msg}</p>;
+    return (
+      <div className="px-4 py-3.5">
+        <p className="text-xs text-text-secondary">{msg}</p>
+      </div>
+    );
   }
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-border-primary">
+    <>
       {providers.map((p) => (
         <ConnectedProviderRow
           key={p.id}
@@ -117,6 +110,6 @@ export default function ConnectedProviderList({
           variant={variant}
         />
       ))}
-    </div>
+    </>
   );
 }

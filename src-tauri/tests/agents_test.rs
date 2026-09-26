@@ -386,3 +386,86 @@ fn reading_a_sub_agent_hands_back_the_end_of_its_answer_not_the_start() {
     assert_eq!(clipped.chars().count(), 500);
     assert!(clipped.ends_with("TAIL"), "the summary cut off the head");
 }
+
+#[test]
+fn keeping_everything_prunes_nothing_but_still_sweeps_orphans() {
+    let app = app();
+    let pid = parent(&app);
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    for i in 0..5 {
+        let c = store::create_child(&conn, &pid, &format!("a{i}"), "work", None, "never").unwrap();
+        store::set_agent_state(&conn, &c.id, "done", None).unwrap();
+    }
+
+    assert_eq!(agents::cleanup(&conn, agents::KEEP_ALL).unwrap(), 0);
+    assert_eq!(store::children_of(&conn, &pid).unwrap().len(), 5);
+}
+
+#[test]
+fn a_child_whose_parent_is_gone_is_swept_however_old_or_new_it_is() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    // Written with the key off, which is how one gets there at all: deleting a
+    // parent cascades its children, so an orphan can only predate the pragma
+    // or come from a db that was written while it was off.
+    conn.pragma_update(None, "foreign_keys", false).unwrap();
+    conn.execute(
+        "INSERT INTO sessions (id, title, permission, parent_id, agent_name, agent_state, created_at)
+         VALUES ('orphan', 'lost', 'never', 'no-such-parent', 'lost', 'running', '2026-01-01 00:00:00')",
+        [],
+    )
+    .unwrap();
+    conn.pragma_update(None, "foreign_keys", true).unwrap();
+
+    // Nothing reaches an orphan: not the sidebar, not a card. Left alone it
+    // would sit in the db forever, and even a generous cap would not touch it.
+    assert_eq!(agents::cleanup(&conn, 200).unwrap(), 1);
+    assert!(agents::get(&conn, "orphan").is_err());
+}
+
+#[test]
+fn retention_is_the_users_choice_and_survives_a_restart() {
+    let app = app();
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    assert_eq!(
+        agents::keep(&conn),
+        agents::KEEP_DEFAULT,
+        "a db that predates the setting still prunes"
+    );
+
+    agents::set_keep(&conn, agents::KEEP_ALL).unwrap();
+    assert_eq!(agents::keep(&conn), 0);
+
+    agents::set_keep(&conn, 50).unwrap();
+    assert_eq!(agents::keep(&conn), 50);
+
+    agents::set_keep(&conn, 999_999_999).unwrap();
+    assert_eq!(agents::keep(&conn), 100_000, "clamped, not trusted");
+    agents::set_keep(&conn, agents::KEEP_DEFAULT).unwrap();
+}
+
+#[test]
+fn a_child_with_no_state_recorded_is_history_not_a_live_turn() {
+    let app = app();
+    let pid = parent(&app);
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    for i in 0..4 {
+        let c = store::create_child(&conn, &pid, &format!("a{i}"), "work", None, "never").unwrap();
+        conn.execute(
+            "UPDATE sessions SET agent_state = NULL, created_at = ?2 WHERE id = ?1",
+            rusqlite::params![c.id, format!("2026-01-01 00:00:0{i}")],
+        )
+        .unwrap();
+    }
+
+    assert_eq!(agents::cleanup(&conn, 3).unwrap(), 1);
+    assert_eq!(store::children_of(&conn, &pid).unwrap().len(), 3);
+}

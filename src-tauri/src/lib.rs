@@ -1,3 +1,4 @@
+pub mod agents;
 pub mod connectors;
 pub mod gateway;
 pub mod jobs;
@@ -51,6 +52,7 @@ pub fn run() {
             tools::sandbox::schema::migrate(&conn)?;
             jobs::schema::migrate(&conn)?;
             jobs::reconcile(&conn)?;
+            agents::reconcile(&conn)?;
 
             let _ = mcp::sync_from(&conn);
 
@@ -143,6 +145,9 @@ pub fn run() {
             sessions::chat::sess_chat_stream,
             sessions::chat::sess_watch_events,
             sessions::chat::sess_unwatch,
+            agents::agent_list,
+            agents::agent_read,
+            agents::agent_kill,
             jobs::job_list,
             jobs::job_read,
             jobs::job_kill,

@@ -762,10 +762,24 @@ function normalizeMd(src: string): string {
   };
 
   let k = 0;
+  let inTag = false;
   while (k < lines.length) {
     if (depth > 0) {
       out.push(lines[k]);
       depth = Math.max(0, depth + depthDelta(lines[k]));
+      k++;
+      continue;
+    }
+
+    // Markdown does not belong inside a tag. A multi-line terminal command
+    // carries `#` comments and backticks, and rewriting those turns a shell
+    // script into headings before anyone has parsed a single attribute.
+    if (inTag) {
+      out.push(lines[k]);
+      if (findTagEnd(lines[k], 0) !== -1) {
+        inTag = false;
+      }
+
       k++;
       continue;
     }
@@ -792,6 +806,15 @@ function normalizeMd(src: string): string {
     }
 
     const line = lines[k];
+    const lt = line.indexOf("<");
+
+    if (lt !== -1 && findTagEnd(line, lt + 1) === -1) {
+      inTag = true;
+      out.push(line);
+      k++;
+      continue;
+    }
+
     const d = depthDelta(line);
 
     if (d > 0) {

@@ -120,6 +120,15 @@ fn running_count(conn: &rusqlite::Connection, parent_id: &str) -> Result<i64, St
     .map_err(|e| e.to_string())
 }
 
+/// Record how a child ended and report whether it was the last one in. Both
+/// happen under one lock on purpose: settle-then-count as two steps lets two
+/// children finishing together both see an empty chair and both call the
+/// parent back.
+pub fn settle(conn: &rusqlite::Connection, child_id: &str, parent_id: &str, state: &str) -> bool {
+    let _ = store::set_agent_state(conn, child_id, state, None);
+    running_count(conn, parent_id).unwrap_or(0) == 0
+}
+
 pub struct Spec {
     pub parent_id: String,
     pub name: String,
@@ -127,6 +136,10 @@ pub struct Spec {
     pub prompt: String,
     pub model_id: Option<String>,
     pub permission: String,
+    /// Call the parent back when this is the last one still running. Without
+    /// it a fan-out ends in silence: the parent says it will report when they
+    /// finish, the turn closes, and nothing ever asks it again.
+    pub wake: bool,
 }
 
 /// Create the child, start its turn, detach. The caller gets the card back the
@@ -185,9 +198,10 @@ pub fn spawn<R: tauri::Runtime>(
     let cid = child_id.clone();
     let nm = name.clone();
     let ti = title.clone();
+    let wake = spec.wake;
 
     tauri::async_runtime::spawn(async move {
-        supervise(&app2, &cid, &parent, &nm, &ti, &prompt, &live, cancel).await;
+        supervise(&app2, &cid, &parent, &nm, &ti, &prompt, &live, cancel, wake).await;
     });
 
     let conn = gw.conn.lock().map_err(|e| e.to_string())?;
@@ -221,6 +235,7 @@ async fn supervise<R: tauri::Runtime>(
     prompt: &str,
     parent: &crate::sessions::schema::Session,
     cancel: Arc<Notify>,
+    wake: bool,
 ) {
     let gw = app.state::<Gateway>();
 
@@ -257,9 +272,13 @@ async fn supervise<R: tauri::Runtime>(
         Err(_) => "did not finish",
     };
 
-    if let Ok(conn) = gw.conn.lock() {
-        let _ = store::set_agent_state(&conn, child_id, state, None);
-    }
+    // Settle the state and ask whether this was the last one in one lock, or
+    // two children can both see an empty chair and both call the parent back.
+    let last = if let Ok(conn) = gw.conn.lock() {
+        settle(&conn, child_id, parent_id, state)
+    } else {
+        false
+    };
 
     let summary = report(&answer, &outcome, verdict);
     let body = format!(
@@ -272,7 +291,13 @@ async fn supervise<R: tauri::Runtime>(
         chat::attr_escape(title)
     );
 
-    chat::post(gw.inner(), parent_id, "assistant", &body);
+    // The last one out calls the parent back, so the turn that fanned out
+    // gets to finish the job it said it would. Every other one just lands.
+    if wake && last {
+        chat::announce(app, gw.inner(), parent_id, &body, true);
+    } else {
+        chat::post(gw.inner(), parent_id, "assistant", &body);
+    }
 
     let _ = app.emit(
         "agent-done",

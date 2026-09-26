@@ -60,6 +60,7 @@ fn spec(parent_id: &str, name: &str) -> agents::Spec {
         prompt: "do the thing".into(),
         model_id: None,
         permission: "never".into(),
+        wake: false,
     }
 }
 
@@ -628,4 +629,42 @@ fn a_failed_sub_agent_tells_the_parent_why_even_when_it_wrote_a_lot() {
         "a clean run warns about nothing"
     );
     assert!(!clean.contains("It finished: "));
+}
+
+#[test]
+fn only_the_last_sub_agent_out_calls_the_parent_back() {
+    let app = app();
+    let pid = parent(&app);
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let a = store::create_child(&conn, &pid, "a", "a", None, "never").unwrap();
+    let b = store::create_child(&conn, &pid, "b", "b", None, "never").unwrap();
+
+    assert!(
+        !agents::settle(&conn, &a.id, &pid, "done"),
+        "one of two is still running — the parent must not be called yet"
+    );
+
+    assert!(
+        agents::settle(&conn, &b.id, &pid, "done"),
+        "the last one out is the one that wakes the parent"
+    );
+}
+
+#[test]
+fn a_parent_whose_children_all_failed_still_gets_called_back() {
+    let app = app();
+    let pid = parent(&app);
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let a = store::create_child(&conn, &pid, "a", "a", None, "never").unwrap();
+    let b = store::create_child(&conn, &pid, "b", "b", None, "never").unwrap();
+
+    assert!(!agents::settle(&conn, &a.id, &pid, "failed"));
+    assert!(
+        agents::settle(&conn, &b.id, &pid, "failed"),
+        "a fan-out that went badly is exactly when the parent needs to hear"
+    );
 }

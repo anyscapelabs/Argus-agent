@@ -50,8 +50,8 @@ const TOOLS: &[ToolMeta] = &[
     },
     ToolMeta {
         name: "agent.spawn",
-        desc: "Start a sub-agent on one self-contained piece of a larger task and get a card back immediately. The prompt must stand alone — the sub-agent cannot see this conversation. Use it for work that splits into independent parts: researching N separate things, inspecting N separate files, auditing N separate call sites. Start every piece before waiting on any of them. At most four run at a time, and a sub-agent cannot start further sub-agents.",
-        args: "{\"name\":\"...\",\"title\":\"...\",\"prompt\":\"...\"}",
+        desc: "Start a sub-agent on one self-contained piece of a larger task and get a card back immediately. The prompt must stand alone — the sub-agent cannot see this conversation. Use it for work that splits into independent parts: researching N separate things, inspecting N separate files, auditing N separate call sites. Start every piece before waiting on any of them. At most four run at a time, and a sub-agent cannot start further sub-agents. When the last one finishes you are called back automatically with every result, so end your turn after starting them rather than sleeping or polling.",
+        args: "{\"name\":\"...\",\"title\":\"...\",\"prompt\":\"...\",\"wake\":true}",
         mutating: true,
     },
     ToolMeta {
@@ -956,6 +956,7 @@ pub async fn exec<R: tauri::Runtime>(
                     prompt: prompt.to_string(),
                     model_id,
                     permission: perm,
+                    wake: args["wake"].as_bool().unwrap_or(true),
                 },
             )?;
 

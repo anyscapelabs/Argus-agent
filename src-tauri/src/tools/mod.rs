@@ -959,17 +959,25 @@ pub async fn exec<R: tauri::Runtime>(
                 },
             )?;
 
+            // The card is a message of its own. Left inside this tool result
+            // it would be rendered as a work step and never drawn at all.
+            crate::sessions::chat::post(
+                gw,
+                &sid,
+                "assistant",
+                &format!(
+                    "<agent id=\"{id}\" name=\"{name}\" state=\"running\">\n{title}\n</agent>",
+                    id = run.id,
+                    name = crate::sessions::chat::attr_escape(&run.name),
+                    title = crate::sessions::chat::attr_escape(&run.title),
+                ),
+            );
+
             return Ok(format!(
-                "sub-agent {} is running as \"{}\" ({}). Do not wait for it and do \
-                 not start the same work again. Its card is in this chat; its answer \
-                 arrives here when it finishes.\n<agent id=\"{}\" name=\"{}\" \
-                 state=\"running\">\n{}\n</agent>",
-                run.id,
-                crate::sessions::chat::attr_escape(&run.name),
-                crate::sessions::chat::attr_escape(&run.title),
-                run.id,
-                crate::sessions::chat::attr_escape(&run.name),
-                crate::sessions::chat::attr_escape(&run.title)
+                "sub-agent {} is running as \"{}\". Do not wait for it and do not \
+                 start the same work again. Its card is in this chat; its answer \
+                 arrives here when it finishes.",
+                run.id, run.name
             ));
         }
         "agent.list" => {

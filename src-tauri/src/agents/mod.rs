@@ -248,7 +248,7 @@ async fn supervise<R: tauri::Runtime>(
         chat::attr_escape(title)
     );
 
-    chat::announce(app, gw.inner(), parent_id, &body, true);
+    chat::post(gw.inner(), parent_id, "assistant", &body);
 
     let _ = app.emit(
         "agent-done",

@@ -53,6 +53,7 @@ pub fn run() {
             jobs::schema::migrate(&conn)?;
             jobs::reconcile(&conn)?;
             agents::reconcile(&conn)?;
+            agents::cleanup(&conn, agents::keep(&conn))?;
 
             let _ = mcp::sync_from(&conn);
 
@@ -148,6 +149,8 @@ pub fn run() {
             agents::agent_list,
             agents::agent_read,
             agents::agent_kill,
+            agents::agent_keep,
+            agents::agent_set_keep,
             jobs::job_list,
             jobs::job_read,
             jobs::job_kill,

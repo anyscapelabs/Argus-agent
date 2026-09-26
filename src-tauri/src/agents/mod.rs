@@ -308,25 +308,60 @@ pub fn reconcile(conn: &rusqlite::Connection) -> Result<usize, String> {
     .map_err(|e| e.to_string())
 }
 
-/// How many finished children a conversation keeps. Their transcripts are
-/// read back through the card, so this is the depth of the paper trail.
-pub const KEEP_PER_PARENT: usize = 200;
+/// How many finished children a conversation keeps before the oldest go. Their
+/// transcripts are read back through the card, so this is the depth of the
+/// paper trail. `KEEP_ALL` is what the user picks when they want all of it.
+pub const KEEP_DEFAULT: usize = 200;
+pub const KEEP_ALL: usize = 0;
+
+const KEEP_KEY: &str = "agents.keep";
+
+/// The retention the user chose. Defaults rather than zeroing, so a db that
+/// predates the setting still prunes rather than growing forever.
+pub fn keep(conn: &rusqlite::Connection) -> usize {
+    crate::gateway::store::kv_get(conn, KEEP_KEY)
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .map_or(KEEP_DEFAULT, |n| n.clamp(0, 100_000) as usize)
+}
+
+pub fn set_keep(conn: &rusqlite::Connection, n: usize) -> Result<(), String> {
+    crate::gateway::store::kv_set(conn, KEEP_KEY, &n.min(100_000).to_string())
+}
 
 /// Drop the oldest finished children of any conversation that has more than
 /// `keep` of them. Running children are never touched, and the cap is counted
 /// per parent — a busy conversation never prunes a quiet one's history.
+/// `keep == KEEP_ALL` keeps everything and only collects orphans.
 pub fn cleanup(conn: &rusqlite::Connection, keep: usize) -> Result<usize, String> {
-    conn.execute(
-        "DELETE FROM sessions WHERE id IN (
-             SELECT id FROM (
-                 SELECT id, ROW_NUMBER() OVER (
-                     PARTITION BY parent_id ORDER BY created_at DESC, id DESC) AS rn
-                 FROM sessions
-                 WHERE parent_id IS NOT NULL AND agent_state <> 'running'
-             ) WHERE rn > ?1)",
-        params![keep as i64],
-    )
-    .map_err(|e| e.to_string())
+    // A child whose parent is gone is unreachable from the sidebar and from
+    // every card, so nothing else will ever remove it. Age means nothing here.
+    let orphans = conn
+        .execute(
+            "DELETE FROM sessions WHERE parent_id IS NOT NULL
+               AND parent_id NOT IN (SELECT id FROM sessions)",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+
+    if keep == KEEP_ALL {
+        return Ok(orphans);
+    }
+
+    let over = conn
+        .execute(
+            "DELETE FROM sessions WHERE id IN (
+                 SELECT id FROM (
+                     SELECT id, ROW_NUMBER() OVER (
+                         PARTITION BY parent_id ORDER BY created_at DESC, id DESC) AS rn
+                     FROM sessions
+                     WHERE parent_id IS NOT NULL
+                       AND COALESCE(agent_state, 'done') <> 'running'
+                 ) WHERE rn > ?1)",
+            params![keep as i64],
+        )
+        .map_err(|e| e.to_string())?;
+
+    Ok(orphans + over)
 }
 
 #[tauri::command]
@@ -364,6 +399,19 @@ pub struct AgentRead {
 #[tauri::command]
 pub fn agent_kill(gw: tauri::State<'_, Gateway>, id: String) -> Result<bool, String> {
     kill(&gw, &id)
+}
+
+#[tauri::command]
+pub fn agent_keep(gw: tauri::State<'_, Gateway>) -> Result<usize, String> {
+    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    Ok(keep(&conn))
+}
+
+#[tauri::command]
+pub fn agent_set_keep(gw: tauri::State<'_, Gateway>, n: i64) -> Result<usize, String> {
+    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+    set_keep(&conn, n.clamp(0, 100_000) as usize)?;
+    Ok(keep(&conn))
 }
 
 pub const PROMPT_SECTION: &str = "PARALLEL WORK\n\

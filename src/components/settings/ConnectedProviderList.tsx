@@ -13,11 +13,9 @@ function ProviderLogo({ id, name }: { id: string; name: string }) {
 
   if (uri) {
     return (
-      <img
-        src={uri}
-        alt=""
-        className="h-7 w-7 shrink-0 rounded-md object-contain p-1 invert"
-      />
+      <span className="logo-plate flex h-7 w-7 shrink-0 items-center justify-center rounded-md">
+        <img src={uri} alt="" className="h-5 w-5 object-contain" />
+      </span>
     );
   }
 

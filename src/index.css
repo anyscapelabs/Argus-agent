@@ -95,13 +95,13 @@
     color-scheme: light;
 
     --bg-primary: #ffffff;
-    --bg-secondary: #f4f4f2;
-    --border-primary: #00000024;
+    --bg-secondary: #fbfbfa;
+    --border-primary: #0000001f;
     --text-primary: #161616;
     --text-secondary: #4d4d4d;
-    --text-tertiary: #6b6b6b;
-    --bg-hover-primary: #e4e4e0;
-    --bg-hover-secondary: #d9d9d4;
+    --text-tertiary: #707070;
+    --bg-hover-primary: #f2f2ef;
+    --bg-hover-secondary: #ebebe7;
     --accent: #161616;
     --scrollbar-thumb: #c4c4bf;
   }
@@ -114,19 +114,38 @@
   color-scheme: light;
 
   --bg-primary: #ffffff;
-  --bg-secondary: #f4f4f2;
-  --border-primary: #00000024;
+  --bg-secondary: #fbfbfa;
+  --border-primary: #0000001f;
   --text-primary: #161616;
   --text-secondary: #4d4d4d;
-  --text-tertiary: #6b6b6b;
-  --bg-hover-primary: #e4e4e0;
-  --bg-hover-secondary: #d9d9d4;
+  --text-tertiary: #707070;
+  --bg-hover-primary: #f2f2ef;
+  --bg-hover-secondary: #ebebe7;
   --accent: #161616;
   --scrollbar-thumb: #c4c4bf;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
+}
+
+/* Gateway marks ship white on transparent. That is already the right colour on
+   a dark plate and invisible on a white one, so the flip belongs to the light
+   theme only — the plate itself must not be flipped with it, hence the target
+   is the mark inside the plate, not the plate. */
+.logo-plate {
+  background: var(--bg-primary);
+  box-shadow: inset 0 0 0 1px var(--border-primary);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .logo-plate img {
+    filter: invert(1);
+  }
+}
+
+:root[data-theme="light"] .logo-plate img {
+  filter: invert(1);
 }
 
 html,

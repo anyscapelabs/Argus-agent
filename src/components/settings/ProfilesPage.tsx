@@ -1,19 +1,27 @@
 import { useEffect, useState } from "react";
 import { FiPlus } from "react-icons/fi";
+import { LuChevronRight } from "react-icons/lu";
 
+import type { ProfileRow } from "../../lib/ipc";
 import { profileStore, profileLabel, useProfiles } from "../../stores/profiles";
-import { Page, ProfileAvatar } from "./kit";
+import { Card, Page, ProfileAvatar, Section } from "./kit";
 import ProfileDetail from "./ProfileDetail";
 
-const ADD =
-  "flex flex-col items-center justify-center gap-3 rounded-xl border " +
-  "border-dashed border-border-primary px-4 py-6 text-sm text-" +
-  "text-secondary transition-colors hover:border-text-tertiary " +
-  "hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40";
+const ROW =
+  "flex w-full items-center gap-4 px-4 py-3.5 text-left " +
+  "transition-colors hover:bg-bg-hover-secondary";
 
-const TILE =
-  "flex flex-col items-center gap-3 rounded-xl border border-border-primary " +
-  "bg-bg-secondary px-4 py-6 transition-colors hover:bg-bg-hover-secondary";
+/// The one line that tells two profiles apart. Instructions live on the detail
+/// page; what you want here is how far this one reaches.
+function reach(p: ProfileRow): string {
+  if (p.reach_all) return "Reaches every profile";
+
+  if (p.grants > 0) {
+    return `Reaches ${p.grants} profile${p.grants === 1 ? "" : "s"}`;
+  }
+
+  return "Reaches nothing yet";
+}
 
 export default function ProfilesPage() {
   const { profiles, loading, activeId } = useProfiles();
@@ -41,41 +49,55 @@ export default function ProfilesPage() {
 
   return (
     <Page>
-      <div className="grid grid-cols-3 gap-3">
-        {profiles.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            onClick={() => setOpenId(p.id)}
-            className={TILE}
-          >
-            <span className="relative">
-              <ProfileAvatar name={p.name} size={44} />
+      <Section label="Profiles">
+        <Card>
+          {profiles.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => setOpenId(p.id)}
+              className={ROW}
+            >
+              <ProfileAvatar name={p.name} size={32} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm text-text-primary">
+                  {profileLabel(p)}
+                </span>
+                <span className="mt-0.5 block truncate text-xs text-text-tertiary">
+                  {reach(p)}
+                </span>
+              </span>
               {p.id === activeId && (
-                <span className="absolute -right-0.5 -bottom-0.5 h-3 w-3 rounded-full border-2 border-bg-secondary bg-accent" />
+                <span className="shrink-0 text-xs text-text-secondary">
+                  Current
+                </span>
               )}
+              <LuChevronRight
+                size={14}
+                className="shrink-0 text-text-tertiary"
+              />
+            </button>
+          ))}
+
+          <button
+            type="button"
+            onClick={() => void profileStore.create("New profile")}
+            disabled={profiles.length >= 10}
+            className={
+              ROW +
+              " text-text-secondary disabled:cursor-not-allowed " +
+              "disabled:opacity-40 disabled:hover:bg-transparent"
+            }
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border-primary">
+              <FiPlus size={13} />
             </span>
-            <span className="max-w-full truncate text-sm text-text-primary">
-              {profileLabel(p)}
-            </span>
-            <span className="line-clamp-2 min-h-8 text-center text-xs leading-snug text-text-tertiary">
-              {p.instructions.trim() === ""
-                ? "No instructions yet"
-                : p.instructions.trim().replace(/\s+/g, " ")}
+            <span className="min-w-0 flex-1 truncate text-sm">
+              New profile
             </span>
           </button>
-        ))}
-
-        <button
-          type="button"
-          onClick={() => void profileStore.create("New profile")}
-          disabled={profiles.length >= 10}
-          className={ADD}
-        >
-          <FiPlus size={18} />
-          <span>New profile</span>
-        </button>
-      </div>
+        </Card>
+      </Section>
     </Page>
   );
 }

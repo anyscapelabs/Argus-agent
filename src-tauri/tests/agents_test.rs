@@ -461,6 +461,68 @@ fn reading_a_sub_agent_hands_back_the_end_of_its_answer_not_the_start() {
 }
 
 #[test]
+fn a_sub_agents_answer_is_its_report_not_the_last_thing_it_said() {
+    let app = app();
+    let pid = parent(&app);
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let run = store::create_child(&conn, &pid, "scout", "work", None, "never").unwrap();
+
+    let report = "R".repeat(4_000) + "THE-END";
+    for (seq, role, body) in [
+        (1, "user", "go look"),
+        (2, "assistant", report.as_str()),
+        (
+            3,
+            "assistant",
+            "Delivered in my previous reply, nothing more to do.",
+        ),
+    ] {
+        conn.execute(
+            "INSERT INTO messages (id, session_id, seq, role, content, active, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 1, datetime('now'))",
+            rusqlite::params![format!("m{seq}"), run.id, seq, role, body],
+        )
+        .unwrap();
+    }
+
+    let got = agents::get(&conn, &run.id).unwrap().result.unwrap();
+    assert!(
+        got.ends_with("THE-END"),
+        "the parent got the closing filler instead of the report: {}",
+        &got[..got.len().min(80)]
+    );
+}
+
+#[test]
+fn a_sub_agents_answer_ignores_what_it_wrote_in_an_earlier_turn() {
+    let app = app();
+    let pid = parent(&app);
+    let gw = app.state::<Gateway>();
+    let conn = gw.conn.lock().unwrap();
+
+    let run = store::create_child(&conn, &pid, "scout", "work", None, "never").unwrap();
+
+    for (seq, role, body) in [
+        (1, "user", "first question"),
+        (2, "assistant", &"A".repeat(9_000)),
+        (3, "user", "second question"),
+        (4, "assistant", "short answer"),
+    ] {
+        conn.execute(
+            "INSERT INTO messages (id, session_id, seq, role, content, active, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 1, datetime('now'))",
+            rusqlite::params![format!("m{seq}"), run.id, seq, role, body],
+        )
+        .unwrap();
+    }
+
+    let got = agents::get(&conn, &run.id).unwrap().result.unwrap();
+    assert_eq!(got, "short answer", "a later turn wins, long or not");
+}
+
+#[test]
 fn keeping_everything_prunes_nothing_but_still_sweeps_orphans() {
     let app = app();
     let pid = parent(&app);

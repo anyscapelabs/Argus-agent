@@ -52,11 +52,17 @@ fn run_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<AgentRun> {
     })
 }
 
+/// A child's answer is the one big block of prose it wrote, not whatever it
+/// said last. A turn that ends on "already delivered that above" would
+/// otherwise hand the parent 300 characters of nothing.
 const COLS: &str = "s.id, s.parent_id, s.agent_name, s.title, s.agent_state, \
-                    (SELECT content FROM messages m WHERE m.session_id = s.id
-                       AND m.role = 'assistant' AND m.active = 1
-                       AND m.content NOT LIKE '<tool-result%'
-                     ORDER BY m.seq DESC LIMIT 1), s.created_at";
+                    (SELECT content FROM messages m WHERE m.session_id = s.id \
+                       AND m.role = 'assistant' AND m.active = 1 \
+                       AND m.content NOT LIKE '<tool-result%' \
+                       AND m.seq > COALESCE((SELECT MAX(seq) FROM messages u \
+                             WHERE u.session_id = s.id AND u.role = 'user' \
+                               AND u.content NOT LIKE '<tool-result%'), 0) \
+                     ORDER BY length(m.content) DESC, m.seq DESC LIMIT 1), s.created_at";
 
 pub fn list(conn: &rusqlite::Connection, parent_id: &str) -> Result<Vec<AgentRun>, String> {
     let mut stmt = conn
@@ -275,7 +281,10 @@ fn last_assistant(gw: &Gateway, session_id: &str) -> Option<String> {
     conn.query_row(
         "SELECT content FROM messages WHERE session_id = ?1 AND role = 'assistant'
            AND active = 1 AND content NOT LIKE '<tool-result%'
-         ORDER BY seq DESC LIMIT 1",
+           AND seq > COALESCE((SELECT MAX(seq) FROM messages u
+                 WHERE u.session_id = ?1 AND u.role = 'user'
+                   AND u.content NOT LIKE '<tool-result%'), 0)
+         ORDER BY length(content) DESC, seq DESC LIMIT 1",
         params![session_id],
         |r| r.get::<_, String>(0),
     )

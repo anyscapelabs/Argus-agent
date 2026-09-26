@@ -2,10 +2,9 @@ import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
 import { FiArrowLeft, FiUsers } from "react-icons/fi";
 
+import ChatTranscript from "./ChatTranscript";
 import { agentList, type AgentRun } from "../lib/ipc";
 import { sessionStore, useSessions } from "../stores/sessions";
-import AgentBubble from "./AgentBubble";
-import UserBubble from "./UserBubble";
 
 type Props = {
   agentId: string;
@@ -22,9 +21,10 @@ const VERDICT: Record<string, string> = {
 };
 
 export default function SubagentPage({ agentId, parentId, onBack }: Props) {
-  const { msgs, turns } = useSessions();
   const [run, setRun] = useState<AgentRun | null>(null);
   const [missing, setMissing] = useState(false);
+  const { turns } = useSessions();
+  const waiting = turns[agentId]?.approval ?? null;
 
   const reload = useCallback(async () => {
     try {
@@ -57,19 +57,13 @@ export default function SubagentPage({ agentId, parentId, onBack }: Props) {
     };
   }, [agentId, reload]);
 
-  const rows = msgs[agentId] ?? [];
-  const state = run?.state ?? "running";
-  const turn = turns[agentId];
-  const live = turn !== undefined && turn.err === null;
-  const waiting = turn?.approval ?? null;
-
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b border-border-primary px-4 py-2.5">
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary cursor-pointer"
+          className="flex cursor-pointer items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary"
         >
           <FiArrowLeft size={14} />
           Back
@@ -79,61 +73,53 @@ export default function SubagentPage({ agentId, parentId, onBack }: Props) {
           {run?.name ?? "Sub-agent"}
         </span>
         <span className="shrink-0 text-xs text-text-secondary">
-          {VERDICT[state] ?? state}
+          {VERDICT[run?.state ?? "running"] ?? run?.state}
         </span>
       </div>
 
       {run !== null && run.title.length > 0 && (
-        <div className="shrink-0 px-4 pt-3 text-sm text-text-secondary">
-          {run.title}
+        <div className="shrink-0 px-6 pt-4 text-sm text-text-secondary">
+          <div className="mx-auto w-full min-w-0 max-w-[700px]">{run.title}</div>
         </div>
       )}
 
       {waiting !== null && (
-        <div className="mx-4 mt-3 flex shrink-0 items-center gap-2 rounded-lg border border-border-primary px-3 py-2 text-xs text-text-secondary">
-          <span className="min-w-0 flex-1">
-            This sub-agent needs your approval to run a command. Approvals are
-            answered in the chat that started it.
-          </span>
-          <button
-            type="button"
-            onClick={onBack}
-            className="shrink-0 cursor-pointer text-text-primary underline"
+        <div className="shrink-0 px-6 pt-3">
+          <div
+            className={
+              "mx-auto flex w-full min-w-0 max-w-[700px] items-center gap-2 " +
+              "rounded-lg border border-border-primary px-3 py-2 text-xs " +
+              "text-text-secondary"
+            }
           >
-            Go there
-          </button>
+            <span className="min-w-0 flex-1">
+              This sub-agent needs your approval to run a command. Approvals
+              are answered in the chat that started it.
+            </span>
+            <button
+              type="button"
+              onClick={onBack}
+              className="shrink-0 cursor-pointer text-text-primary underline"
+            >
+              Go there
+            </button>
+          </div>
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        {missing ? (
-          <p className="text-sm text-text-secondary">
+      {missing ? (
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+          <p className="mx-auto w-full min-w-0 max-w-[700px] text-sm text-text-secondary">
             That sub-agent is no longer around.
           </p>
-        ) : rows.length === 0 && !live ? (
-          <p className="text-sm text-text-secondary">
-            {state === "running"
-              ? "Working — nothing said yet."
-              : "It said nothing."}
-          </p>
-        ) : (
-          <>
-            {rows.map((m) =>
-              m.role === "assistant" ? (
-                <AgentBubble key={m.id} text={m.content} />
-              ) : m.role === "tool" ? null : (
-                <div key={m.id}>
-                  <div className="mb-1 text-xs text-text-tertiary">
-                    {m.role === "system" ? "Prompt from Argus" : "You"}
-                  </div>
-                  <UserBubble>{m.content}</UserBubble>
-                </div>
-              ),
-            )}
-            {live && <AgentBubble text={turn.text} caret />}
-          </>
-        )}
-      </div>
+        </div>
+      ) : (
+        <ChatTranscript
+          sessionId={agentId}
+          readOnly
+          userLabel="Prompt from Argus"
+        />
+      )}
 
       <div className="shrink-0 border-t border-border-primary px-4 py-2.5 text-xs text-text-tertiary">
         This is a sub-agent's own transcript. It reports to the conversation

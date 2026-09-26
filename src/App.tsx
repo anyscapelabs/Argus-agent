@@ -9,7 +9,7 @@ import MemoryPage from "./components/MemoryPage";
 import NewAgentPage from "./components/NewAgentPage";
 import ProjectsPage from "./components/ProjectsPage";
 import SettingsPage from "./components/settings/SettingsPage";
-import type { SettingsTab } from "./components/settings/SettingsSidebar";
+import type { SettingsTab } from "./components/settings/tabs";
 import Sidebar from "./components/Sidebar";
 import SkillsPage from "./components/SkillsPage";
 import Toasts from "./components/Toasts";
@@ -245,6 +245,9 @@ function App() {
           onSelectSession={openSession}
           onNavigate={setView}
           activeView={view}
+          settingsTab={settingsTab}
+          onSettingsTab={setSettingsTab}
+          onBack={() => setView(backView.current)}
           activeSessionId={activeId}
           sessions={sidebarSessions}
           onArchive={(id) => archiveSession(id)}

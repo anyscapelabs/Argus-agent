@@ -5,19 +5,9 @@ import ModelsPage from "./ModelsPage";
 import ProfilesPage from "./ProfilesPage";
 import ProvidersPage from "./ProvidersPage";
 import SandboxPage from "./SandboxPage";
-import SettingsSidebar, { type SettingsTab } from "./SettingsSidebar";
+import { SETTINGS_TITLE, type SettingsTab } from "./tabs";
 import TerminalPage from "./TerminalPage";
 import ThemePage from "./ThemePage";
-
-const TITLES: Record<SettingsTab, string> = {
-  models: "Models",
-  providers: "Providers",
-  terminal: "Terminal",
-  sandbox: "Sandbox",
-  agents: "Sub-agents",
-  profiles: "Profiles",
-  theme: "Appearance",
-};
 
 type Props = {
   tab: SettingsTab;
@@ -39,21 +29,18 @@ export default function SettingsPage({ tab, onTab, onClose }: Props) {
   }, [onClose]);
 
   return (
-    <div className="flex h-full w-full overflow-hidden">
-      <SettingsSidebar activeTab={tab} onTabChange={onTab} />
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl px-6 py-6">
-          <h1 className="mb-4 text-lg font-semibold text-text-primary">
-            {TITLES[tab]}
-          </h1>
-          {tab === "models" && <ModelsPage onNavigate={onTab} />}
-          {tab === "providers" && <ProvidersPage />}
-          {tab === "terminal" && <TerminalPage />}
-          {tab === "sandbox" && <SandboxPage />}
-          {tab === "agents" && <AgentsPage />}
-          {tab === "profiles" && <ProfilesPage />}
-          {tab === "theme" && <ThemePage />}
-        </div>
+    <div className="h-full w-full overflow-y-auto">
+      <div className="mx-auto w-full max-w-3xl px-6 py-6">
+        <h1 className="mb-4 text-lg font-semibold text-text-primary">
+          {SETTINGS_TITLE[tab]}
+        </h1>
+        {tab === "models" && <ModelsPage onNavigate={onTab} />}
+        {tab === "providers" && <ProvidersPage />}
+        {tab === "terminal" && <TerminalPage />}
+        {tab === "sandbox" && <SandboxPage />}
+        {tab === "agents" && <AgentsPage />}
+        {tab === "profiles" && <ProfilesPage />}
+        {tab === "theme" && <ThemePage />}
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import { BsLayoutSidebarInset } from "react-icons/bs";
+import { FiArrowLeft } from "react-icons/fi";
 import { IoSearchOutline } from "react-icons/io5";
 import { LuUnplug } from "react-icons/lu";
 import { PiToolbox } from "react-icons/pi";
@@ -10,6 +11,11 @@ import {
 import { VscFolderLibrary, VscSettingsGear } from "react-icons/vsc";
 
 import type { View } from "../App";
+import {
+  SETTINGS_TABS,
+  type SettingsTab,
+  type TabIcon,
+} from "./settings/tabs";
 import SessionList, { type Session } from "./SessionList";
 
 const TABS: { label: string; view: View; Icon: typeof RiBrainLine }[] = [
@@ -28,6 +34,9 @@ type SidebarProps = {
   onSelectSession: (sessionId: string) => void;
   onNavigate: (view: View) => void;
   activeView: View;
+  settingsTab: SettingsTab;
+  onSettingsTab: (tab: SettingsTab) => void;
+  onBack: () => void;
   activeSessionId: string | null;
   sessions: Session[];
   onArchive: (sessionId: string) => void;
@@ -42,12 +51,17 @@ export default function Sidebar({
   onSelectSession,
   onNavigate,
   activeView,
+  settingsTab,
+  onSettingsTab,
+  onBack,
   activeSessionId,
   sessions,
   onArchive,
   onExport,
   onDelete,
 }: SidebarProps) {
+  const inSettings = activeView === "settings";
+
   return (
     <aside
       className={
@@ -85,84 +99,139 @@ export default function Sidebar({
               className="text-text-secondary"
             />
           </button>
+          {inSettings ? (
+            <button
+              type="button"
+              onClick={onBack}
+              className={
+                "flex h-7 items-center gap-1 rounded-md pl-1 pr-2 " +
+                "text-xs font-medium text-text-secondary " +
+                "transition-colors hover:bg-bg-hover-primary " +
+                "hover:text-text-primary"
+              }
+              aria-label="Back out of settings"
+            >
+              <FiArrowLeft size={14} />
+              <span>Back</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={
+                "flex h-7 w-7 items-center justify-center rounded-md " +
+                "text-text-secondary transition-colors " +
+                "hover:bg-bg-hover-primary hover:text-text-primary " +
+                "focus:bg-bg-hover-primary focus:text-text-primary " +
+                "focus-visible:bg-bg-hover-primary " +
+                "focus-visible:text-text-primary"
+              }
+              aria-label="Search"
+            >
+              <IoSearchOutline size={18} className="text-text-secondary" />
+            </button>
+          )}
+        </div>
+        {inSettings ? (
+          <>
+            <h2 className="px-4 pb-1 pt-2 text-sm font-semibold text-text-primary">
+              Settings
+            </h2>
+            <nav className="flex flex-col gap-0.5 px-2">
+              {SETTINGS_TABS.map(({ tab, label, Icon }) => (
+                <SidebarRow
+                  key={tab}
+                  label={label}
+                  Icon={Icon}
+                  active={tab === settingsTab}
+                  onClick={() => onSettingsTab(tab)}
+                />
+              ))}
+            </nav>
+          </>
+        ) : (
+          <>
           <button
             type="button"
+            onClick={onNewAgent}
             className={
-              "flex h-7 w-7 items-center justify-center rounded-md " +
-              "text-text-secondary transition-colors " +
-              "hover:bg-bg-hover-primary hover:text-text-primary " +
-              "focus:bg-bg-hover-primary focus:text-text-primary " +
-              "focus-visible:bg-bg-hover-primary " +
-              "focus-visible:text-text-primary"
+              "mx-2 mt-1 flex items-center gap-2 rounded-md px-2 py-1 " +
+              "transition-colors focus:outline-none " +
+              `${
+                activeView === "new-agent"
+                  ? "bg-bg-hover-primary text-text-primary"
+                  : "text-text-secondary hover:bg-bg-hover-primary"
+              }`
             }
-            aria-label="Search"
           >
-            <IoSearchOutline size={18} className="text-text-secondary" />
+            <RiAiAgentLine
+              size={16}
+              className={
+                activeView === "new-agent"
+                  ? "text-text-primary"
+                  : "text-text-secondary"
+              }
+            />
+            <span className="text-sm font-medium">New Agent</span>
           </button>
-        </div>
-        <button
-          type="button"
-          onClick={onNewAgent}
-          className={
-            "mx-2 mt-1 flex items-center gap-2 rounded-md px-2 py-1 " +
-            "transition-colors focus:outline-none " +
-            `${
-              activeView === "new-agent"
-                ? "bg-bg-hover-primary text-text-primary"
-                : "text-text-secondary hover:bg-bg-hover-primary"
-            }`
-          }
-        >
-          <RiAiAgentLine
-            size={16}
-            className={
-              activeView === "new-agent"
-                ? "text-text-primary"
-                : "text-text-secondary"
-            }
-          />
-          <span className="text-sm font-medium">New Agent</span>
-        </button>
-        <nav className="flex flex-col gap-0.5 px-2">
-          {TABS.map(({ label, view, Icon }) => {
-            const isActive = activeView === view;
+          <nav className="flex flex-col gap-0.5 px-2">
+            {TABS.map(({ label, view, Icon }) => {
+              const isActive = activeView === view;
 
-            return (
-              <button
-                key={label}
-                type="button"
-                onClick={() => onNavigate(view)}
-                className={
-                  "flex items-center gap-2 rounded-md px-2 py-1 " +
-                  "transition-colors focus:outline-none " +
-                  `${
-                    isActive
-                      ? "bg-bg-hover-primary text-text-primary"
-                      : "text-text-secondary hover:bg-bg-hover-primary " +
-                        "focus-visible:bg-bg-hover-primary"
-                  }`
-                }
-              >
-                <Icon
-                  size={16}
-                  className={
-                    isActive ? "text-text-primary" : "text-text-secondary"
-                  }
+              return (
+                <SidebarRow
+                  key={label}
+                  label={label}
+                  Icon={Icon}
+                  active={isActive}
+                  onClick={() => onNavigate(view)}
                 />
-                <span className="text-sm font-medium">{label}</span>
-              </button>
-            );
-          })}
-        </nav>
-        <SessionList
-          onSelect={onSelectSession}
-          activeSessionId={activeSessionId}
-          sessions={sessions}
-          onArchive={onArchive}
-          onExport={onExport}
-          onDelete={onDelete}
-        />
+              );
+            })}
+          </nav>
+          <SessionList
+            onSelect={onSelectSession}
+            activeSessionId={activeSessionId}
+            sessions={sessions}
+            onArchive={onArchive}
+            onExport={onExport}
+            onDelete={onDelete}
+          />
+          </>
+        )}
       </div>
     </aside>
+  );
+}
+
+type SidebarRowProps = {
+  label: string;
+  Icon: TabIcon;
+  active: boolean;
+  onClick: () => void;
+};
+
+function SidebarRow({ label, Icon, active, onClick }: SidebarRowProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      className={
+        "flex items-center gap-2 rounded-md px-2 py-1 transition-colors " +
+        "focus:outline-none " +
+        `${
+          active
+            ? "bg-bg-hover-primary text-text-primary"
+            : "text-text-secondary hover:bg-bg-hover-primary " +
+              "focus-visible:bg-bg-hover-primary"
+        }`
+      }
+    >
+      <Icon
+        size={16}
+        className={active ? "text-text-primary" : "text-text-secondary"}
+      />
+      <span className="text-sm font-medium">{label}</span>
+    </button>
   );
 }

@@ -204,7 +204,12 @@ export default function ChatTranscript({
     >
       <div className="mx-auto flex w-full min-w-0 max-w-[700px] flex-col gap-3">
         {groups.map((group, gi) => {
-          const assistants = group.agent.filter((a) => a.role === "assistant");
+          // A wake — a sub-agent or a job reporting back — is stored as
+          // `system`. It is the app speaking, not the model, but it is still
+          // something the user was told and has to be able to read.
+          const assistants = group.agent.filter(
+            (a) => a.role === "assistant" || a.role === "system",
+          );
           const live = running && gi === groups.length - 1;
           const buildWorkSteps = (
             msgs: MsgRow[],

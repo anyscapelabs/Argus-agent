@@ -329,8 +329,10 @@ impl ChatSink for BusSink<'_> {
 }
 
 /// A sub-agent runs in its own session but answers to the chat that spawned
-/// it. Its text, its tools and its approval prompts all land in the parent's
-/// stream, because that is the window a human opened to watch this work.
+/// it. Only an approval crosses into the parent, because a human has to be
+/// able to answer it and the parent chat is where approvals are answered.
+/// Everything else — deltas, terminal output, and above all TurnEnd, which
+/// would end the parent's turn out from under it — stays in the child.
 ///
 /// The one thing it will not do is ask when nobody is there. `detached` keys
 /// off the parent being attached, so the moment that window closes the agent

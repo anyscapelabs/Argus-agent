@@ -27,6 +27,9 @@ type Props = {
   header?: ReactNode;
   dividers?: boolean;
   maxH?: string;
+  /// Replaces the item list wholesale, for a panel that is a form rather
+  /// than a menu. Outside-click and Escape still apply — they live above it.
+  panel?: ReactNode;
 };
 
 const THUMB_MIN = 24;
@@ -40,6 +43,7 @@ export default function Dropdown({
   header,
   dividers = true,
   maxH,
+  panel,
 }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -131,7 +135,10 @@ export default function Dropdown({
           }
         >
           {header !== undefined && <div className="px-2">{header}</div>}
-          <div className="relative">
+          {panel !== undefined ? (
+            panel
+          ) : (
+            <div className="relative">
             <div
               ref={listRef}
               onScroll={syncBar}
@@ -207,7 +214,8 @@ export default function Dropdown({
                 className="absolute right-[3px] top-2 h-6 w-[5px] cursor-default rounded-full bg-scrollbar-thumb"
               />
             )}
-          </div>
+            </div>
+          )}
         </div>
       )}
     </div>

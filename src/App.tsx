@@ -8,7 +8,8 @@ import LibraryPage from "./components/LibraryPage";
 import MemoryPage from "./components/MemoryPage";
 import NewAgentPage from "./components/NewAgentPage";
 import ProjectsPage from "./components/ProjectsPage";
-import SettingsModal from "./components/SettingsModal";
+import SettingsPage from "./components/settings/SettingsPage";
+import type { SettingsTab } from "./components/settings/SettingsSidebar";
 import Sidebar from "./components/Sidebar";
 import SkillsPage from "./components/SkillsPage";
 import Toasts from "./components/Toasts";
@@ -16,7 +17,10 @@ import Toolbar from "./components/Toolbar";
 import type { Session } from "./components/SessionList";
 import { sessExportJson, type ChatModel } from "./lib/ipc";
 import SubagentPage from "./components/SubagentPage";
+
+const DEFAULT_PROFILE = "default";
 import { notifyDone } from "./lib/notify";
+import { profileLabel, profileStore, useProfiles } from "./stores/profiles";
 import { isWorking, sessionStore, useSessions } from "./stores/sessions";
 import { toast } from "./stores/toast";
 
@@ -28,22 +32,27 @@ export type View =
   | "skills"
   | "library"
   | "projects"
-  | "connectors";
+  | "connectors"
+  | "settings";
 
 function App() {
   const st = useSessions();
   const { sessions, activeId, agentRuns } = st;
+  const { profiles, activeId: profileActive } = useProfiles();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [view, setView] = useState<View>("new-agent");
   const [subagent, setSubagent] = useState<{
     id: string;
     parent: string;
   } | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("providers");
   const [pendingPrompt, setPendingPrompt] = useState("");
   const notified = useRef(new Set<string>());
   const viewRef = useRef(view);
   viewRef.current = view;
+  // Settings is an overlay in shape only — it remembers where it came from
+  // so Escape puts the user back where they were, not on a fixed default.
+  const backView = useRef<View>("new-agent");
   const activeRef = useRef(activeId);
   activeRef.current = activeId;
 
@@ -124,6 +133,7 @@ function App() {
 
   const openSession = (sessionId: string) => {
     sessionStore.select(sessionId);
+    void profileStore.loadForSession(sessionId);
     setView("chat");
   };
 
@@ -148,6 +158,15 @@ function App() {
       permission,
       webSearch,
     );
+
+    // The picker is the only place a profile is chosen, so a new chat starts
+    // on whatever it last had selected.
+    if (profileStore.getState().activeId !== DEFAULT_PROFILE) {
+      await profileStore
+        .setForSession(row.id, profileStore.getState().activeId)
+        .catch(() => {});
+    }
+
     await sessionStore.select(row.id);
     setView("chat");
     sessionStore.send(row.id, text);
@@ -163,6 +182,9 @@ function App() {
         ? (activeSession?.title ?? "New chat")
         : null;
   const backToChat = () => setView("chat");
+  // Live read — a rename in the profiles page shows here with no reload.
+  const activeProfile = profiles.find((p) => p.id === profileActive);
+  const profileName = activeProfile === undefined ? null : profileLabel(activeProfile);
 
   const exportSession = async (sessionId: string) => {
     try {
@@ -234,8 +256,19 @@ function App() {
             onToggleSidebar={toggleSidebar}
             sidebarOpen={sidebarOpen}
             chatTitle={chatTitle}
+            profileName={profileName}
+            sessionId={activeId}
+            onManageProfiles={() => {
+              backView.current = view === "settings" ? backView.current : view;
+              setSettingsTab("profiles");
+              setView("settings");
+            }}
             onBack={view === "subagent" ? backToChat : undefined}
-            onSettings={() => setSettingsOpen(true)}
+            onSettings={() => {
+              backView.current = view === "settings" ? backView.current : view;
+              setSettingsTab("providers");
+              setView("settings");
+            }}
           />
           <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
             {view === "new-agent" && (
@@ -270,13 +303,16 @@ function App() {
             {view === "library" && <LibraryPage />}
             {view === "projects" && <ProjectsPage />}
             {view === "connectors" && <ConnectorsPage />}
+            {view === "settings" && (
+              <SettingsPage
+                tab={settingsTab}
+                onTab={setSettingsTab}
+                onClose={() => setView(backView.current)}
+              />
+            )}
           </div>
         </div>
       </div>
-      <SettingsModal
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-      />
       <DocViewer />
       <Toasts />
     </div>

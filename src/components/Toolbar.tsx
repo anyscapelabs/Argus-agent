@@ -1,15 +1,18 @@
 import { BsLayoutSidebarInset } from "react-icons/bs";
-import { CgProfile } from "react-icons/cg";
 import { FiArrowLeft, FiChevronDown } from "react-icons/fi";
 import { LuArchive, LuDownload, LuTrash2 } from "react-icons/lu";
 import { VscSettingsGear } from "react-icons/vsc";
 
 import Dropdown, { type DropdownItem } from "./Dropdown";
+import ProfilePicker from "./ProfilePicker";
 
 type ToolbarProps = {
   onToggleSidebar: () => void;
   sidebarOpen: boolean;
   chatTitle?: string | null;
+  profileName?: string | null;
+  sessionId?: string | null;
+  onManageProfiles: () => void;
   onBack?: () => void;
   onSettings: () => void;
 };
@@ -18,6 +21,9 @@ export default function Toolbar({
   onToggleSidebar,
   sidebarOpen,
   chatTitle,
+  profileName,
+  sessionId,
+  onManageProfiles,
   onBack,
   onSettings,
 }: ToolbarProps) {
@@ -93,6 +99,11 @@ export default function Toolbar({
             >
               {chatTitle}
             </button>
+            {profileName != null && profileName !== "" && (
+              <span className="truncate text-xs text-text-tertiary">
+                {profileName}
+              </span>
+            )}
             {onBack === undefined && (
               <Dropdown
                 items={menuItems}
@@ -125,20 +136,10 @@ export default function Toolbar({
         )}
       </div>
       <div className="flex h-9 items-center gap-1 pr-2">
-        <button
-          type="button"
-          className={
-            "flex h-7 w-7 items-center justify-center rounded-md " +
-            "text-text-secondary transition-colors " +
-            "hover:bg-bg-hover-primary hover:text-text-primary " +
-            "focus:bg-bg-hover-primary focus:text-text-primary " +
-            "focus-visible:bg-bg-hover-primary " +
-            "focus-visible:text-text-primary"
-          }
-          aria-label="Profile"
-        >
-          <CgProfile size={18} className="text-text-secondary" />
-        </button>
+        <ProfilePicker
+          sessionId={sessionId ?? null}
+          onManage={onManageProfiles}
+        />
         <button
           type="button"
           onClick={onSettings}

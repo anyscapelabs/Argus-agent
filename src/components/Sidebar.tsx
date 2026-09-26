@@ -7,7 +7,7 @@ import {
   RiBrainLine,
   RiToolsLine,
 } from "react-icons/ri";
-import { VscFolderLibrary } from "react-icons/vsc";
+import { VscFolderLibrary, VscSettingsGear } from "react-icons/vsc";
 
 import type { View } from "../App";
 import SessionList, { type Session } from "./SessionList";
@@ -18,6 +18,7 @@ const TABS: { label: string; view: View; Icon: typeof RiBrainLine }[] = [
   { label: "Library", view: "library", Icon: VscFolderLibrary },
   { label: "Projects", view: "projects", Icon: PiToolbox },
   { label: "Connectors", view: "connectors", Icon: LuUnplug },
+  { label: "Settings", view: "settings", Icon: VscSettingsGear },
 ];
 
 type SidebarProps = {

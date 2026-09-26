@@ -17,7 +17,7 @@ import type { Session } from "./components/SessionList";
 import { sessExportJson, type ChatModel } from "./lib/ipc";
 import SubagentPage from "./components/SubagentPage";
 import { notifyDone } from "./lib/notify";
-import { sessionStore, useSessions } from "./stores/sessions";
+import { isWorking, sessionStore, useSessions } from "./stores/sessions";
 import { toast } from "./stores/toast";
 
 export type View =
@@ -31,7 +31,8 @@ export type View =
   | "connectors";
 
 function App() {
-  const { sessions, activeId, turns, agentRuns } = useSessions();
+  const st = useSessions();
+  const { sessions, activeId, agentRuns } = st;
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [view, setView] = useState<View>("new-agent");
   const [subagent, setSubagent] = useState<{
@@ -209,7 +210,7 @@ function App() {
     .map((s) => ({
       id: s.id,
       title: s.title,
-      status: turns[s.id] !== undefined ? "live" : "inactive",
+      status: isWorking(st, s.id) ? "live" : "inactive",
     }));
 
   return (

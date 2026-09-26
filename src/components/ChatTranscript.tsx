@@ -80,7 +80,8 @@ export default function ChatTranscript({
   readOnly = false,
   userLabel,
 }: Props) {
-  const { msgs, turns, stopped } = useSessions();
+  const st = useSessions();
+  const { msgs, turns, stopped } = st;
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
   const rafRef = useRef(0);
@@ -88,6 +89,11 @@ export default function ChatTranscript({
   const rows = msgs[sessionId] ?? [];
   const turn = turns[sessionId];
   const running = turn !== undefined && turn.err === null;
+  // The turn can be over while the work is not. A parent that fanned out and
+  // said it would report when the children finish has not finished saying it.
+  const waiting = running
+    ? 0
+    : (st.sessions.find((s) => s.id === sessionId)?.running_agents ?? 0);
   const wasStopped = stopped[sessionId] === true && !running;
 
   const groups = groupTurns(rows, turn, sessionId);
@@ -469,6 +475,13 @@ export default function ChatTranscript({
             </div>
           );
         })}
+        {waiting > 0 && (
+          <div className="text-xs text-text-tertiary">
+            {waiting === 1
+              ? "Waiting on a sub-agent — Argus reports when it finishes."
+              : `Waiting on ${waiting} sub-agents — Argus reports when they finish.`}
+          </div>
+        )}
         {running && turn?.status != null && (
           <div className="text-xs text-text-tertiary">
             {turn.status.attempt > 1

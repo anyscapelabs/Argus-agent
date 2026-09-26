@@ -71,6 +71,19 @@ type State = {
   agentRuns: Record<string, AgentRun>;
 };
 
+/// A conversation is not finished while a sub-agent is still working under it.
+/// A parent's turn ending is not the end of the job — it promised to report
+/// when the children finish, and the children are what knows they have not.
+export function isWorking(state: State, id: string): boolean {
+  if (state.turns[id] !== undefined) {
+    return true;
+  }
+
+  const row = state.sessions.find((s) => s.id === id);
+
+  return row !== undefined && row.running_agents > 0;
+}
+
 class SessionStore {
   private state: State = {
     sessions: [],
@@ -348,6 +361,9 @@ class SessionStore {
     if (ev.type === "refresh") {
       void this.loadMsgs(sessionId);
       void this.loadAgents(sessionId);
+      // A sub-agent just landed. The count of the ones still working is what
+      // keeps this conversation reading as unfinished, so it has to be re-read.
+      void this.loadSessions();
       return;
     }
 

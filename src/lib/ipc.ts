@@ -149,6 +149,7 @@ export type SessionRow = {
   compact_seq: number;
   compactions: number;
   web_search: boolean;
+  running_agents: number;
 };
 
 export type MsgRow = {

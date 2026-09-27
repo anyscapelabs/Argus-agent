@@ -38,6 +38,9 @@ petgraph = "0.8"
 libc = "0.2"
 chromiumoxide = "0.9"
 tauri-plugin-notification = "2"
+zip = "8.6.0"
+pdf-extract = "0.12.1"
+tauri-plugin-dialog = "2.8.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 landlock = "0.4"
@@ -56,3 +59,4 @@ windows = { version = "0.58", features = [
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
+zip = "8.6.0"

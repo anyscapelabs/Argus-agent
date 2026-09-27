@@ -6,12 +6,14 @@ use crate::Gateway;
 pub mod usage;
 
 /// What a command does when it runs. `Local` answers here and costs nothing;
-/// `Prompt` expands to text and goes to the model like any other message.
+/// `Prompt` expands to text and goes to the model like any other message;
+/// `Client` is the app's own — it lives in the window, not in this process.
 #[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
 pub enum Kind {
     Local,
     Prompt,
+    Client,
 }
 
 #[derive(Serialize, Clone, Copy)]
@@ -46,7 +48,7 @@ pub const CMDS: &[Cmd] = &[
     Cmd {
         name: "clear",
         desc: "Remove the files waiting to be sent with the next message.",
-        kind: Kind::Local,
+        kind: Kind::Client,
         arg: None,
         tpl: None,
     },
@@ -111,6 +113,12 @@ pub async fn slash_run(
 
     let arg = arg.unwrap_or_default().trim().to_string();
 
+    // The window handles these before they get here. A backend that answered
+    // one would be claiming an effect it cannot have.
+    if cmd.kind == Kind::Client {
+        return Err(format!("/{name} is handled by the app, not the backend."));
+    }
+
     // A macro's argument goes into the text it expands to, so an empty one
     // produces a prompt about nothing. A local command supplies its own
     // default, so it is never refused here.
@@ -128,9 +136,6 @@ pub async fn slash_run(
             Ok(SlashOut::said(usage::report(&conn, &arg)?))
         }
         "compact" => compact(&gw, session_id.as_deref()).await,
-        "clear" => Ok(SlashOut::said(
-            "Cleared the files waiting to be sent.".into(),
-        )),
         "help" => Ok(SlashOut::said(help())),
         _ => Ok(SlashOut {
             text: None,
@@ -169,10 +174,10 @@ pub fn help() -> String {
             out.push('\n');
         }
 
-        let tail = if c.kind == Kind::Prompt {
-            " — expands to a prompt"
-        } else {
-            ""
+        let tail = match c.kind {
+            Kind::Prompt => " — expands to a prompt",
+            Kind::Client => " — handled by the app",
+            Kind::Local => "",
         };
 
         match c.arg {

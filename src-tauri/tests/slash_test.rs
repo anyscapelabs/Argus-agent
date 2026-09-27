@@ -174,3 +174,19 @@ fn a_prompt_macro_substitutes_its_argument() {
         "every placeholder must fill: {out}"
     );
 }
+
+#[test]
+fn a_client_command_is_refused_rather_than_answered_by_the_backend() {
+    let c = argus_lib::slash::CMDS
+        .iter()
+        .find(|c| c.name == "clear")
+        .expect("clear is in the registry");
+
+    // The files it drops are the window's, not the library's, so a backend
+    // that answered it would be claiming an effect it cannot have.
+    assert_eq!(c.kind, argus_lib::slash::Kind::Client);
+    assert!(
+        argus_lib::slash::help().contains("handled by the app"),
+        "help must say who runs it"
+    );
+}

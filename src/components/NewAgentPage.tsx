@@ -108,6 +108,12 @@ export default function NewAgentPage({
           onSend(txt, model, permission, webSearch);
         }}
         onSlash={(name, arg) => {
+          if (name === "clear") {
+            attachStore.clear();
+            setNote("Cleared the attached files.");
+            return;
+          }
+
           // No session yet, so a local command answers here and a macro has
           // to start one — the same path a typed prompt takes.
           void slashRun(name, null, arg)

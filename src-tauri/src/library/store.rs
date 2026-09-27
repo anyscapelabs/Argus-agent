@@ -291,19 +291,9 @@ pub fn preview(
     max_chars: usize,
 ) -> Result<LibPreview, String> {
     let item = get(conn, dir, &id)?;
-    let text = match item.ext.as_str() {
-        "txt" | "md" | "csv" => fs::read(abs_path(dir, &item.path)).ok().and_then(|b| {
-            if b.len() > 200_000 {
-                None
-            } else {
-                Some(String::from_utf8_lossy(&b).into_owned())
-            }
-        }),
-        "docx" => fs::read(abs_path(dir, &item.path))
-            .ok()
-            .and_then(|b| super::doc::preview_docx(&b)),
-        _ => None,
-    };
+    let text = fs::read(abs_path(dir, &item.path))
+        .ok()
+        .and_then(|b| super::extract::text(&b, &item.ext));
     let (text, truncated) = match text {
         Some(t) => {
             let n = t.chars().count();

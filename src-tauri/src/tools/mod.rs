@@ -3,6 +3,7 @@ pub mod conn_oauth;
 pub mod connector;
 pub mod fs;
 pub mod grep;
+pub mod library;
 pub mod notepad;
 pub mod profile;
 pub mod recover;
@@ -772,6 +773,7 @@ pub async fn exec<R: tauri::Runtime>(
         .chain(browser::META.iter())
         .chain(notepad::META.iter())
         .chain(profile::META.iter())
+        .chain(library::META.iter())
         .chain(connector::META.iter())
         .chain(conn_oauth::META.iter())
         .find(|t| t.name == name)
@@ -1274,6 +1276,12 @@ pub async fn exec<R: tauri::Runtime>(
         "notepad.append" => notepad::append(&args),
         "notepad.replace" => notepad::replace(&args),
         "notepad.clear" => notepad::clear(&args),
+        "library.read" => {
+            let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+            let out = library::read(&conn, &gw.library_dir, &args);
+            drop(conn);
+            out
+        }
         "profile.list" | "profile.read" => {
             let conn = gw.conn.lock().map_err(|e| e.to_string())?;
 
@@ -1321,6 +1329,7 @@ pub fn is_mutating(name: &str) -> bool {
         .chain(browser::META.iter())
         .chain(notepad::META.iter())
         .chain(profile::META.iter())
+        .chain(library::META.iter())
         .chain(connector::META.iter())
         .chain(conn_oauth::META.iter())
         .find(|t| t.name == name)
@@ -1347,6 +1356,7 @@ pub fn tool_specs(web: bool) -> Vec<crate::gateway::schema::ToolSpec> {
         .chain(browser::META.iter())
         .chain(notepad::META.iter())
         .chain(profile::META.iter())
+        .chain(library::META.iter())
         .chain(connector::META.iter())
         .chain(conn_oauth::META.iter())
     {

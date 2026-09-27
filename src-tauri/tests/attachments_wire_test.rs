@@ -82,7 +82,7 @@ fn add(
 }
 
 #[test]
-fn an_image_goes_inline_and_a_document_gets_named() {
+fn an_image_and_a_document_both_reach_the_model_in_one_turn() {
     let dir = lib_dir();
     let conn = db(&dir);
     let sid = session(&conn);
@@ -116,12 +116,13 @@ fn an_image_goes_inline_and_a_document_gets_named() {
     assert_eq!(m.images.len(), 1, "images: {:?}", m.images);
     assert!(m.images[0].ends_with("shot.png"), "{}", m.images[0]);
 
-    // It cannot see the document, so it has to be told it is there.
-    assert!(m.content.contains("Notes.md"), "{}", m.content);
-    assert!(m.content.contains("library.read"), "{}", m.content);
+    // The document's text comes with it. Making the model call a tool to learn
+    // what the user just attached spends a turn to arrive where it already was.
+    assert!(m.content.contains("eleven percent"), "{}", m.content);
+    assert!(m.content.contains("--- Notes.md ---"), "{}", m.content);
     assert!(
-        !m.content.contains("eleven percent"),
-        "a document must not be inlined: {}",
+        !m.content.contains("library.read"),
+        "nothing to open: {}",
         m.content
     );
     assert!(
@@ -129,6 +130,36 @@ fn an_image_goes_inline_and_a_document_gets_named() {
         "{}",
         m.content
     );
+}
+
+#[test]
+fn a_document_with_no_readable_text_is_listed_rather_than_dropped() {
+    let dir = lib_dir();
+    let conn = db(&dir);
+    let sid = session(&conn);
+
+    // Mostly replacement characters: a file the extractor will not claim is
+    // text. It still has to reach the model as something it can open.
+    let junk = vec![0xffu8; 64 * 1024];
+    let doc = add(&conn, &dir, "Scan", "bin", &junk);
+
+    say(
+        &conn,
+        &sid,
+        "what is this",
+        Some(
+            &serde_json::json!([
+                { "id": doc, "name": "Scan.bin", "kind": "doc", "sz": junk.len() }
+            ])
+            .to_string(),
+        ),
+    );
+
+    let p = argus_lib::prompt::project(&conn, &sid, &dir).unwrap();
+    let m = p.msgs.last().unwrap();
+
+    assert!(m.content.contains("Scan.bin"), "{}", m.content);
+    assert!(m.content.contains("library.read"), "{}", m.content);
 }
 
 #[test]

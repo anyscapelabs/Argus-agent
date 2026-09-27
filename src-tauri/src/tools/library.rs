@@ -5,7 +5,7 @@ use super::ToolMeta;
 
 pub const META: &[ToolMeta] = &[ToolMeta {
     name: "library.read",
-    desc: "Read a file from the user's library as text. Use it when a message arrived with an attachment you cannot see the contents of, or when the user asks about a file they have added. Pass the id exactly as it was given. Works on documents, spreadsheets, presentations, PDFs, source code and plain text; an image is already attached to the message and does not need reading. Never returns an empty string: a file with no extractable text says so, so an empty result means the call failed rather than the file being blank.",
+    desc: "Read a file from the user's library as text. Most attached documents arrive with their contents in the message already, so reach for this when the attachment listing named a file instead — one too large to include, or one you need more of than the message carried. Also use it when the user asks about a file they have added earlier. Pass the id exactly as it was given. Works on documents, spreadsheets, presentations, PDFs, source code and plain text; an image is already attached to the message and does not need reading. Never returns an empty string: a file with no extractable text says so, so an empty result means the call failed rather than the file being blank.",
     args: "{\"id\":\"...\",\"max_chars\":12000}",
     mutating: false,
 }];

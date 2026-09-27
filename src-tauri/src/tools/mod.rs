@@ -618,7 +618,14 @@ pub fn normalize_actions(text: &str) -> String {
         let tail = &rest[start..];
 
         let Some(close) = tail.find(TOOL_CALL_CLOSE) else {
-            out.push_str(tail);
+            // Cut the opening tag and keep what the model wrote inside it —
+            // that body is the answer, and dropping the tail with the tag is
+            // how a whole reply used to disappear. With no `>` there is nothing
+            // to tell the tag from the text after it, so nothing is kept.
+            match tag_end(tail) {
+                Some(i) => out.push_str(&tail[i + 1..]),
+                None => {}
+            }
 
             return out;
         };

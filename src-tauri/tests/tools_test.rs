@@ -44,14 +44,23 @@ fn drops_unsalvageable_tool_call() {
     assert_eq!(normalize_actions("<tool_call???' </tool_call>"), "");
 }
 
-// Nothing says where an unclosed block stops, so the tail is the answer and
-// only the answer. Dropping it lost whole replies.
+// The tag goes, the answer stays. Dropping the tail with the tag is how a whole
+// reply disappeared; keeping the tag is raw protocol syntax in the transcript.
 #[test]
-fn keeps_the_tail_of_an_unclosed_tool_call() {
+fn keeps_the_body_of_an_unclosed_tool_call() {
     assert_eq!(
-        normalize_actions("a <tool_callweb.search b"),
-        "a <tool_callweb.search b"
+        normalize_actions(
+            "a <tool_call>\n{\"name\": \"agent.list\"\n\nHere is your summary anyway."
+        ),
+        "a \n{\"name\": \"agent.list\"\n\nHere is your summary anyway."
     );
+}
+
+// No `>` anywhere, so nothing marks where the tag stops and the text after it
+// cannot be told from part of the tag. All that is left is the raw fragment.
+#[test]
+fn drops_a_tool_call_with_no_tag_end() {
+    assert_eq!(normalize_actions("a <tool_callweb.search b"), "a ");
 }
 
 #[test]

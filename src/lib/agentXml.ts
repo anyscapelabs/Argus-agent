@@ -635,10 +635,12 @@ function inlineOutside(line: string): string {
     .join("");
 }
 
-// Component tags whose multi-line bodies stay raw. Tables and headings are
+// Component tags whose bodies can span lines. Tables and headings are
 // prose-level and never counted; inline tags never span lines.
-const DEPTH_TAGS =
-  "thinking|plan|step|action|approval|diff|terminal|sandbox|email-draft|browser-action|memory-ref|warning|error|codeblock";
+const PROSE_BODY = "thinking|plan|step|warning|error";
+const PAYLOAD_BODY =
+  "action|approval|diff|terminal|sandbox|email-draft|browser-action|memory-ref|codeblock";
+const DEPTH_TAGS = `${PROSE_BODY}|${PAYLOAD_BODY}`;
 // Attribute-safe: quoted `>` (common in terminal commands) must not end the tag.
 const TAG_ATTRS = `(?:"[^"]*"|'[^']*'|[^<>"'])*`;
 
@@ -656,10 +658,36 @@ function depthDelta(line: string): number {
   return d;
 }
 
-// Complete single-line blocks (`<action>{...}</action>`) are shielded so
-// prose normalization never rewrites their bodies (backticks in commands
-// would otherwise break arg parsing and hide the step hint).
-const SINGLE_RE = new RegExp(`<(${DEPTH_TAGS})\\b${TAG_ATTRS}>.*?</\\1>`, "g");
+// Which of these bodies the model writes as prose, as opposed to payload. A
+// plan step or a thought is something the user reads, so its markdown has to
+// be normalized like any other prose or it reaches them as the characters the
+// model typed. A terminal or a diff stays raw on purpose: a shell script's
+// `#` is a comment, not a heading.
+const PROSE_TAGS = new Set(PROSE_BODY.split("|"));
+
+function trackTags(stack: string[], line: string): string[] {
+  const next = [...stack];
+  let m: RegExpExecArray | null;
+  DEPTH_RE.lastIndex = 0;
+  while ((m = DEPTH_RE.exec(line)) !== null) {
+    const t = m[0];
+    if (t.startsWith("</")) {
+      next.pop();
+    } else if (!t.endsWith("/>")) {
+      next.push(t.slice(1).split(/[\s/>]/, 1)[0]);
+    }
+  }
+  return next;
+}
+
+// Complete single-line payload blocks (`<action>{...}</action>`) are shielded
+// so prose normalization never rewrites their bodies (backticks in commands
+// would otherwise break arg parsing and hide the step hint). Prose bodies are
+// deliberately not shielded: they are the text the user is meant to read.
+const SINGLE_RE = new RegExp(
+  `<(${PAYLOAD_BODY})\\b${TAG_ATTRS}>.*?</\\1>`,
+  "g",
+);
 
 function shieldLine(line: string): {
   text: string;
@@ -763,10 +791,21 @@ function normalizeMd(src: string): string {
 
   let k = 0;
   let inTag = false;
+  let openTags: string[] = [];
+
   while (k < lines.length) {
     if (depth > 0) {
-      out.push(lines[k]);
-      depth = Math.max(0, depth + depthDelta(lines[k]));
+      const line = lines[k];
+      const inner = openTags[openTags.length - 1];
+
+      out.push(
+        inner !== undefined && PROSE_TAGS.has(inner)
+          ? normalizeMdLine(line)
+          : line,
+      );
+
+      depth = Math.max(0, depth + depthDelta(line));
+      openTags = depth === 0 ? [] : trackTags(openTags, line);
       k++;
       continue;
     }
@@ -829,6 +868,7 @@ function normalizeMd(src: string): string {
       out.push(normalizeMdLine(line));
     }
     depth = Math.max(0, depth + d);
+    openTags = depth === 0 ? [] : trackTags(openTags, line);
     k++;
   }
 

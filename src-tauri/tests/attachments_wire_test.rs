@@ -389,3 +389,41 @@ fn history_sent_to_the_model_carries_no_tool_markup() {
     );
     assert!(all.contains("Reading it now."), "{all}");
 }
+
+// The model re-reads what it said, not how we drew it. A `<thinking>` block and
+// a `<final/>` marker are the renderer's business and a closed turn's
+// bookkeeping; feeding them back spends context and re-teaches the markup.
+#[test]
+fn history_sent_to_the_model_carries_no_display_markup() {
+    use argus_lib::sessions::schema::NewMsg;
+
+    let dir = lib_dir();
+    let conn = db(&dir);
+    let sid = session(&conn);
+
+    argus_lib::sessions::store::add_msg(
+        &conn,
+        &NewMsg {
+            session_id: sid.clone(),
+            role: "assistant".into(),
+            content: "<thinking>the file says hello</thinking>\nthe answer is hello.\n<final/>"
+                .into(),
+            model_id: None,
+            provider_id: None,
+            tok_in: None,
+            tok_out: None,
+            tool_calls: None,
+            tool_call_id: None,
+            attachments: None,
+        },
+    )
+    .unwrap();
+
+    let p = argus_lib::prompt::project(&conn, &sid, &dir).unwrap();
+    let all: String = p.msgs.iter().map(|m| format!("{}\n", m.content)).collect();
+
+    assert!(!all.contains("<thinking>"), "{all}");
+    assert!(!all.contains("the file says hello"), "{all}");
+    assert!(!all.contains("<final/>"), "{all}");
+    assert!(all.contains("the answer is hello."), "{all}");
+}

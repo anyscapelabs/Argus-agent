@@ -196,7 +196,10 @@ pub async fn compact(gw: &Gateway, session_id: &str) -> Result<Option<Compaction
     for (seq, role, content) in middle {
         transcript.push_str(&format!(
             "[{seq}] {role}: {}\n",
-            truncate_chars(content, 1000)
+            truncate_chars(
+                &crate::tools::strip_actions(&crate::prompt::strip_display_tags(content)),
+                1000
+            )
         ));
     }
 

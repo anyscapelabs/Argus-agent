@@ -2,7 +2,9 @@ pub mod compressor;
 pub mod config;
 
 use std::path::Path;
+use std::sync::OnceLock;
 
+use regex::Regex;
 use rusqlite::params;
 use rusqlite::Connection;
 use serde::Serialize;
@@ -410,13 +412,29 @@ fn to_wire(
 
             WireMsg {
                 role: role.clone(),
-                content: crate::tools::strip_actions(&content),
+                content: strip_display_tags(&crate::tools::strip_actions(&content)),
                 images,
                 tool_calls: calls,
                 tool_call_id: None,
             }
         })
         .collect()
+}
+
+// The model re-reads what it said, not how we drew it. `<thinking>` and
+// `<plan>`/`<step>` are the renderer's business, and `<final/>` is a marker
+// for a turn that has already closed. Feeding them back teaches the markup and
+// spends context on it. A sub-agent's `<agent-done>` report stays: that is
+// content, not bookkeeping, and the parent may still need it.
+pub fn strip_display_tags(text: &str) -> String {
+    static THINKING: OnceLock<Regex> = OnceLock::new();
+
+    let re = THINKING.get_or_init(|| {
+        Regex::new(r"(?s)<thinking\b[^>]*>.*?</thinking>").expect("thinking pattern")
+    });
+
+    let out = re.replace_all(text, "");
+    out.replace("<final/>", "").replace("<final />", "")
 }
 
 /// The file behind an attachment, or nothing if it is gone. A message outlives

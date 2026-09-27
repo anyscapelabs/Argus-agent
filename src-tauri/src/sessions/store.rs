@@ -125,6 +125,11 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
             "attachments",
             "ALTER TABLE messages ADD COLUMN attachments TEXT",
         ),
+        (
+            "messages",
+            "local",
+            "ALTER TABLE messages ADD COLUMN local INTEGER NOT NULL DEFAULT 0",
+        ),
     ] {
         let has: bool = conn
             .query_row(
@@ -444,7 +449,7 @@ pub fn delete_session(conn: &Connection, id: &str) -> Result<(), String> {
 }
 
 const MSG_COLS: &str =
-    "id, session_id, seq, role, content, model_id, provider_id, tok_in, tok_out, active, vote, tool_calls, tool_call_id, kind, created_at, attachments";
+    "id, session_id, seq, role, content, model_id, provider_id, tok_in, tok_out, active, vote, tool_calls, tool_call_id, kind, created_at, attachments, local";
 
 fn row_msg(r: &rusqlite::Row) -> rusqlite::Result<Msg> {
     Ok(Msg {
@@ -464,6 +469,7 @@ fn row_msg(r: &rusqlite::Row) -> rusqlite::Result<Msg> {
         kind: r.get(13)?,
         created_at: r.get(14)?,
         attachments: r.get(15)?,
+        local: r.get::<_, i64>(16)? != 0,
     })
 }
 
@@ -478,6 +484,24 @@ pub fn mark_final(conn: &Connection, id: &str) -> Result<(), String> {
 }
 
 pub fn add_msg(conn: &Connection, m: &NewMsg) -> Result<Msg, String> {
+    insert(conn, m, false)
+}
+
+/// A line the app answered itself. It belongs to the conversation and not to
+/// what the model is told, and the flag is set here and nowhere else — the
+/// frontend cannot mark a message of its own as invisible.
+pub fn add_local_msg(conn: &Connection, session_id: &str, content: &str) -> Result<Msg, String> {
+    let m = NewMsg {
+        session_id: session_id.into(),
+        role: "user".into(),
+        content: content.into(),
+        ..Default::default()
+    };
+
+    insert(conn, &m, true)
+}
+
+fn insert(conn: &Connection, m: &NewMsg, local: bool) -> Result<Msg, String> {
     let id = Uuid::new_v4().to_string();
     let seq: i64 = conn
         .query_row(
@@ -488,8 +512,8 @@ pub fn add_msg(conn: &Connection, m: &NewMsg) -> Result<Msg, String> {
         .map_err(|err| err.to_string())?;
 
     conn.execute(
-        "INSERT INTO messages (id, session_id, seq, role, content, model_id, provider_id, tok_in, tok_out, tool_calls, tool_call_id, attachments)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        "INSERT INTO messages (id, session_id, seq, role, content, model_id, provider_id, tok_in, tok_out, tool_calls, tool_call_id, attachments, local)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         params![
             id,
             m.session_id,
@@ -502,7 +526,8 @@ pub fn add_msg(conn: &Connection, m: &NewMsg) -> Result<Msg, String> {
             m.tok_out,
             m.tool_calls,
             m.tool_call_id,
-            m.attachments
+            m.attachments,
+            local
         ],
     )
     .map_err(|err| err.to_string())?;
@@ -628,9 +653,12 @@ pub fn has_unreplied_duplicate(
 }
 
 pub fn clean_dangling(conn: &Connection, session_id: &str) -> Result<usize, String> {
+    // `local = 0` or the card a local row holds is greyed out the next time
+    // the chat is opened: nothing ever answers a line the app answered itself,
+    // which is exactly the shape this query exists to catch.
     conn.execute(
         "UPDATE messages SET active = 0 \
-         WHERE session_id = ?1 AND role = 'user' AND active = 1 \
+         WHERE session_id = ?1 AND role = 'user' AND active = 1 AND local = 0 \
          AND NOT EXISTS (\
            SELECT 1 FROM messages a \
            WHERE a.session_id = messages.session_id AND a.seq > messages.seq \

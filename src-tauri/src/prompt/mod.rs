@@ -312,10 +312,13 @@ pub fn project(
         system.push_str(&index);
     }
 
+    // `local = 0` is the one place a line the app answered itself is kept out
+    // of the model's history. It is a real turn in the transcript and was never
+    // a question put to anyone.
     let mut stmt = conn
         .prepare(
             "SELECT role, content, tool_calls, tool_call_id, attachments FROM messages
-             WHERE session_id = ?1 AND active = 1 AND seq > ?2
+             WHERE session_id = ?1 AND active = 1 AND local = 0 AND seq > ?2
              ORDER BY seq",
         )
         .map_err(|err| err.to_string())?;

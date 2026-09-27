@@ -113,7 +113,7 @@ pub async fn compact(gw: &Gateway, session_id: &str) -> Result<Option<Compaction
         let mut stmt = conn
             .prepare(
                 "SELECT seq, role, content FROM messages
-                 WHERE session_id = ?1 AND active = 1 AND seq > ?2
+                 WHERE session_id = ?1 AND active = 1 AND local = 0 AND seq > ?2
                  ORDER BY seq",
             )
             .map_err(|err| err.to_string())?;

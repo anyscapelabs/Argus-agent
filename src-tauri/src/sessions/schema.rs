@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS messages (
   vote        TEXT,
   tool_calls  TEXT,
   tool_call_id TEXT,
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  local       INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_msgs_session ON messages(session_id, seq);
 
@@ -141,6 +142,11 @@ pub struct Msg {
     /// JSON array of `{id, name, kind, sz}`. An id the library holds.
     #[serde(default)]
     pub attachments: Option<String>,
+    /// The app answered this line itself. It is a real turn in the transcript
+    /// and nothing else — `prompt::project` keeps it out of the model's
+    /// history, because the model was never asked.
+    #[serde(default)]
+    pub local: bool,
 }
 
 #[derive(Deserialize, Debug, Default)]

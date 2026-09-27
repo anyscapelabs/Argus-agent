@@ -24,7 +24,7 @@ const TURNS: &str = "
               9223372036854775807
             )) AS end_at
     FROM messages u
-    WHERE u.role = 'user' AND u.active = 1
+    WHERE u.role = 'user' AND u.active = 1 AND u.local = 0
       AND u.content NOT LIKE '<tool-result%'
       AND u.created_at >= datetime('now', ?1)
 ";
@@ -146,7 +146,7 @@ fn by_day(conn: &Connection, window: &str) -> Result<Vec<DayUsage>, String> {
 
 /// An argument that is silently ignored is how a number gets trusted when it
 /// was computed over the wrong window, so a wrong word is refused by name.
-fn window_of(arg: &str) -> Result<(&'static str, &'static str, &'static str), String> {
+pub fn window_of(arg: &str) -> Result<(&'static str, &'static str, &'static str), String> {
     match arg {
         "" | "week" => Ok(("week", "This week", "-7 days")),
         "today" => Ok(("today", "Today", "0 days")),

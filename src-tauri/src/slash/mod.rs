@@ -103,6 +103,36 @@ fn find(name: &str) -> Option<&'static Cmd> {
     CMDS.iter().find(|c| c.name == name)
 }
 
+/// Commands the app answers by itself, with no model and no tokens. A turn of
+/// one of these is stored in the chat and kept out of what the model is told, so
+/// this list is what decides whether such a line can be written at all.
+///
+/// Not the same question as `Kind::Local`: `/compact` is local in the sense
+/// that it runs in this process, but it costs a model call and is not a turn.
+pub fn answered_locally(name: &str) -> bool {
+    matches!(name, "usage")
+}
+
+/// The line a local turn is stored as. The name and the argument are checked
+/// before the row is written: a turn that can never render is worse than a
+/// refusal, because it looks like the feature randomly not working.
+pub fn local_turn_text(name: &str, arg: &str) -> Result<String, String> {
+    if !answered_locally(name) {
+        return Err(format!("/{name} is not answered by the app itself."));
+    }
+
+    let arg = arg.trim();
+
+    if name == "usage" {
+        usage::window_of(arg)?;
+    }
+
+    Ok(match arg.is_empty() {
+        true => format!("/{name}"),
+        false => format!("/{name} {arg}"),
+    })
+}
+
 #[tauri::command]
 pub fn slash_list() -> Vec<Cmd> {
     CMDS.to_vec()

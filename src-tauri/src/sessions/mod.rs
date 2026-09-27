@@ -113,6 +113,21 @@ pub fn sess_add_message(gw: State<'_, Gateway>, msg: NewMsg) -> Result<Msg, Stri
     store::add_msg(&conn, &msg)
 }
 
+/// Store a line the app answered itself as a turn in the chat. It is never
+/// shown to the model, so the transcript can draw a card under it without the
+/// conversation the model reads containing a command it was never sent.
+#[tauri::command]
+pub fn sess_run_local(
+    gw: State<'_, Gateway>,
+    session_id: String,
+    name: String,
+    arg: Option<String>,
+) -> Result<Msg, String> {
+    let text = crate::slash::local_turn_text(&name, arg.as_deref().unwrap_or_default())?;
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+    store::add_local_msg(&conn, &session_id, &text)
+}
+
 #[tauri::command]
 pub fn sess_supersede_from(
     gw: State<'_, Gateway>,

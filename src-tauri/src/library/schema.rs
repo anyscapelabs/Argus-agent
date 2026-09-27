@@ -53,7 +53,10 @@ pub struct LibItem {
     pub created_at: String,
 }
 
+/// Tauri converts the top-level command args, not the fields inside a struct,
+/// so a nested payload has to say which spelling it wants.
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct NewLibItem {
     pub source_path: String,
     pub name: String,

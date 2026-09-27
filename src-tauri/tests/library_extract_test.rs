@@ -192,3 +192,19 @@ fn a_long_file_is_cut_at_the_limit_and_says_so() {
 
     assert!(out.contains("truncated at 500 characters"), "{out}");
 }
+
+#[test]
+fn the_picker_payload_deserializes_the_camel_case_the_frontend_sends() {
+    // Tauri rewrites the top-level command args, not the fields inside a
+    // struct. A payload that does not deserialize is a picker that silently
+    // adds nothing, which is exactly how this reached a screenshot.
+    let item: argus_lib::library::schema::NewLibItem = serde_json::from_value(serde_json::json!({
+        "sourcePath": "/home/u/shot.png",
+        "name": "shot",
+        "sessionId": "s1",
+    }))
+    .expect("camelCase must deserialize");
+
+    assert_eq!(item.source_path, "/home/u/shot.png");
+    assert_eq!(item.session_id.as_deref(), Some("s1"));
+}

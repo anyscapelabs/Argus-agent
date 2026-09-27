@@ -106,8 +106,11 @@ class AttachStore {
           name,
           src: srcFor(item, path),
         });
-      } catch {
-        refused.push(`${name} could not be added`);
+      } catch (e) {
+        // The backend says why -- a name it refused, a file that moved, a
+        // disk that is full. "Could not be added" is none of those.
+        const why = e instanceof Error ? e.message : String(e);
+        refused.push(`${name}: ${why}`);
       }
     }
 

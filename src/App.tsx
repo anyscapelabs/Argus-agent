@@ -93,8 +93,8 @@ function App() {
     const unAgent = listen<{ id: string; name: string; state: string }>(
       "agent-done",
       () => {
-        if (activeId !== null) {
-          sessionStore.loadAgents(activeId);
+        if (activeRef.current !== null) {
+          sessionStore.loadAgents(activeRef.current);
         }
 
         sessionStore.loadSessions();

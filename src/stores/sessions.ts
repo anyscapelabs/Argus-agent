@@ -24,6 +24,7 @@ import {
   type SessionRow,
   type StreamEvent,
 } from "../lib/ipc";
+import { attachStore } from "./attachments";
 
 export type PendingApproval = {
   id: string;
@@ -405,6 +406,10 @@ class SessionStore {
     const prev = this.state.turns[sessionId];
     if (prev !== undefined && prev.err === null) return;
 
+    // Read before the optimistic row, and cleared only once the send lands:
+    // a failure the user retries must not silently drop their files.
+    const attachments = attachStore.payload();
+
     const pending: MsgRow = {
       id: `${PENDING_PREFIX}${Date.now()}`,
       session_id: sessionId,
@@ -454,7 +459,8 @@ class SessionStore {
     this.onTurnStart?.(sessionId);
 
     try {
-      await sessChatStream(sessionId, content, chan);
+      await sessChatStream(sessionId, content, chan, attachments);
+      attachStore.clear();
       const snippet = (this.state.turns[sessionId]?.text ?? "")
         .split("\n")[0]
         .trim()

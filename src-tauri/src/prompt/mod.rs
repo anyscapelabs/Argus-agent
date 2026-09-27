@@ -378,10 +378,10 @@ fn to_wire(
                 .unwrap_or_default();
 
             let (images, note) = attachments(att.as_deref(), resolve);
-            let content = if note.is_empty() {
-                content.clone()
-            } else {
-                format!("{content}\n\n{note}")
+            let content = match (content.is_empty(), note.is_empty()) {
+                (_, true) => content.clone(),
+                (true, false) => note,
+                (false, false) => format!("{content}\n\n{note}"),
             };
 
             if role == "user" && content.starts_with("<tool-result") {

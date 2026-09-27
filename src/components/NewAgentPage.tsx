@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useChatModels } from "../hooks/useChatModels";
 import type { ChatModel } from "../lib/ipc";
 import { newagentPrefs, setNewagentPrefs } from "../lib/ipc";
+import { attachStore } from "../stores/attachments";
 import ChatInput from "./ChatInput";
 
 type NewAgentPageProps = {
@@ -89,7 +90,7 @@ export default function NewAgentPage({
         }}
         onSubmit={() => {
           const txt = draft.trim();
-          if (txt.length === 0) return;
+          if (txt.length === 0 && attachStore.payload().length === 0) return;
           onSend(txt, model, permission, webSearch);
         }}
       />

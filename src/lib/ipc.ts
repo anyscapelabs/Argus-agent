@@ -168,6 +168,7 @@ export type MsgRow = {
   tool_calls?: string | null;
   tool_call_id?: string | null;
   kind?: string | null;
+  attachments?: string | null;
   created_at: string;
 };
 
@@ -304,8 +305,14 @@ export function sessChatStream(
   sessionId: string,
   content: string,
   onEvent: Channel<StreamEvent>,
+  attachments?: Attachment[],
 ): Promise<void> {
-  return invoke<void>(CMD_SESS_STREAM, { sessionId, content, onEvent });
+  return invoke<void>(CMD_SESS_STREAM, {
+    sessionId,
+    content,
+    onEvent,
+    attachments: attachments ? JSON.stringify(attachments) : null,
+  });
 }
 
 export function sessWatchEvents(
@@ -881,6 +888,18 @@ export function libraryList(kind?: string): Promise<LibItem[]> {
   return invoke<LibItem[]>("library_list", { kind: kind ?? null });
 }
 
+// A file the user picked off their disk. Argus copies it into the library,
+// so the original can move or be deleted afterwards.
+export function libraryAdd(
+  sourcePath: string,
+  name: string,
+  sessionId?: string,
+): Promise<LibItem> {
+  return invoke<LibItem>("library_add", {
+    item: { sourcePath, name, sessionId: sessionId ?? null },
+  });
+}
+
 export function librarySearch(query: string): Promise<LibItem[]> {
   return invoke<LibItem[]>("library_search", { query });
 }
@@ -914,6 +933,15 @@ export function libraryPreview(
 export function libraryDownload(id: string): Promise<LibDownload> {
   return invoke<LibDownload>("library_download", { id });
 }
+
+// A file a message carries, as the backend wants it recorded: a library id
+// and enough to show a chip. No path, because a path can move.
+export type Attachment = {
+  id: string;
+  name: string;
+  kind: string;
+  sz: number;
+};
 
 export type NewAgentPrefs = {
   modelId: string | null;

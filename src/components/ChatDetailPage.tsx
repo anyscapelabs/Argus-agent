@@ -3,6 +3,7 @@ import { useState } from "react";
 import ChatInput from "./ChatInput";
 import ChatTranscript from "./ChatTranscript";
 import { useChatModels } from "../hooks/useChatModels";
+import { attachStore } from "../stores/attachments";
 import { sessionStore, useSessions } from "../stores/sessions";
 
 type Props = { sessionId: string; onOpenAgent?: (id: string) => void };
@@ -24,6 +25,7 @@ export default function ChatDetailPage({ sessionId, onOpenAgent }: Props) {
 
       <div className="flex w-full shrink-0 justify-center pb-3 pt-2">
         <ChatInput
+          sessionId={sessionId}
           placeholder="Reply to Argus…"
           value={draft}
           onChange={setDraft}
@@ -37,7 +39,9 @@ export default function ChatDetailPage({ sessionId, onOpenAgent }: Props) {
           onStop={() => sessionStore.stop(sessionId)}
           onSubmit={() => {
             const txt = draft.trim();
-            if (txt.length === 0 || running) {
+            // A message of only files is a message. The backend writes the
+            // attachment note, so an empty body is not an empty turn.
+            if ((txt.length === 0 && attachStore.payload().length === 0) || running) {
               return;
             }
 

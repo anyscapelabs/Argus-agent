@@ -13,7 +13,7 @@ import ToolActivity, {
 } from "./agent/ToolActivity";
 import { parseDbTime } from "../lib/relativeTime";
 import { sessionStore, useSessions, type Turn } from "../stores/sessions";
-import { learningRecordCorrection, type MsgRow } from "../lib/ipc";
+import { learningRecordCorrection, type Attachment, type MsgRow } from "../lib/ipc";
 import { toast } from "../stores/toast";
 
 const SCROLL_LINE = 40;
@@ -27,6 +27,32 @@ type Props = {
 };
 
 type TurnGroup = { usr: MsgRow | null; agent: MsgRow[] };
+
+// Stored as a JSON string, because a TEXT column cannot hold a list. A row
+// written before attachments existed has nothing, which is not a failure.
+function parseFiles(row: MsgRow | null): Attachment[] {
+  const raw = row?.attachments;
+  if (raw === null || raw === undefined) {
+    return [];
+  }
+
+  try {
+    const found: unknown = JSON.parse(raw);
+    if (!Array.isArray(found)) {
+      return [];
+    }
+
+    return found.filter(
+      (it): it is Attachment =>
+        typeof it === "object" &&
+        it !== null &&
+        typeof (it as Attachment).id === "string" &&
+        typeof (it as Attachment).name === "string",
+    );
+  } catch {
+    return [];
+  }
+}
 
 function groupTurns(
   rows: MsgRow[],
@@ -382,6 +408,7 @@ export default function ChatTranscript({
                     <div className="text-xs text-text-tertiary">{userLabel}</div>
                   )}
                   <UserBubble
+                    files={parseFiles(group.usr)}
                     timestamp={parseDbTime(group.usr.created_at) ?? undefined}
                     onRetry={
                       readOnly

@@ -15,6 +15,8 @@ export type DropdownItem = {
   danger?: boolean;
   hasSubmenu?: boolean;
   toggleable?: boolean;
+  /// Opens a panel in place of the list rather than closing the menu.
+  stayOpen?: boolean;
   active?: boolean;
 };
 
@@ -172,7 +174,9 @@ export default function Dropdown({
                           }));
                         }
                         it.onClick?.();
-                        if (it.toggleable !== true) close();
+                        if (it.toggleable !== true && it.stayOpen !== true) {
+                          close();
+                        }
                       }}
                       className={
                         "flex w-full items-center gap-2 rounded-xl px-2 py-1 " +

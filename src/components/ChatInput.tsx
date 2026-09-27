@@ -1,3 +1,5 @@
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
 import { FiChevronDown } from "react-icons/fi";
 import { HiArrowUp, HiPlus, HiStop } from "react-icons/hi";
@@ -13,7 +15,10 @@ import { RiAttachment2 } from "react-icons/ri";
 
 import { useChatModels } from "../hooks/useChatModels";
 import type { ChatModel } from "../lib/ipc";
+import { attachStore, useAttachments } from "../stores/attachments";
+import AttachChips from "./AttachChips";
 import Dropdown, { type DropdownItem } from "./Dropdown";
+import LibraryPanel from "./LibraryPanel";
 
 const COLLAPSED_HEIGHT = 40;
 const MAX_HEIGHT = 240;
@@ -31,6 +36,8 @@ type ChatInputProps = {
   onWebSearchChange?: (next: boolean) => void;
   running?: boolean;
   onStop?: () => void;
+  /// Null for a new chat, where there is no session to hang files off yet.
+  sessionId?: string | null;
 };
 
 const PERM_LABEL: Record<string, string> = {
@@ -51,10 +58,13 @@ export default function ChatInput({
   onWebSearchChange,
   running = false,
   onStop,
+  sessionId = null,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const { models, loading } = useChatModels();
   const [picked, setPicked] = useState<ChatModel | null>(null);
+  const [browsing, setBrowsing] = useState(false);
+  const [dropping, setDropping] = useState(false);
   const selected = model ?? picked;
 
   useEffect(() => {
@@ -70,19 +80,52 @@ export default function ChatInput({
       textarea.scrollHeight > MAX_HEIGHT ? "auto" : "hidden";
   }, [value]);
 
-  const empty = value.trim().length === 0;
+  // A drop carries real paths, same as the dialog does, so both land in the
+  // store and the cap and the copy happen in one place.
+  useEffect(() => {
+    const webview = getCurrentWebview();
+    const pending = webview.onDragDropEvent((event) => {
+      if (event.payload.type === "over") {
+        setDropping(true);
+        return;
+      }
+
+      setDropping(false);
+      if (event.payload.type === "drop") {
+        void attachStore.addPaths(event.payload.paths, sessionId ?? undefined);
+      }
+    });
+
+    return () => {
+      void pending.then((un) => un());
+    };
+  }, [sessionId]);
+
+  const { items } = useAttachments();
+
+  // Files alone are worth sending: the backend writes the attachment note, so
+  // an empty box with chips on it is not an empty turn.
+  const empty = value.trim().length === 0 && items.length === 0;
 
   const addItems: DropdownItem[] = [
     {
       label: "Add files or photos",
       Icon: RiAttachment2,
-      onClick: () => {},
+      onClick: async () => {
+        const pickedPaths = await open({ multiple: true });
+        if (pickedPaths === null) {
+          return;
+        }
+
+        const paths = Array.isArray(pickedPaths) ? pickedPaths : [pickedPaths];
+        await attachStore.addPaths(paths, sessionId ?? undefined);
+      },
     },
     {
       label: "Add from library",
       Icon: LuLibrary,
-      hasSubmenu: true,
-      onClick: () => {},
+      stayOpen: true,
+      onClick: () => setBrowsing(true),
     },
     {
       label: "Add project",
@@ -149,7 +192,16 @@ export default function ChatInput({
         ];
 
   return (
-    <div className="flex w-[700px] max-w-full flex-col rounded-2xl border border-border-primary bg-bg-secondary p-3">
+    <div
+      className={
+        "flex w-[700px] max-w-full flex-col rounded-2xl border bg-bg-secondary p-3 " +
+        (dropping
+          ? "border-accent ring-2 ring-accent/30"
+          : "border-border-primary")
+      }
+    >
+      <AttachChips />
+
       <textarea
         ref={textareaRef}
         value={value}
@@ -176,6 +228,11 @@ export default function ChatInput({
             items={addItems}
             side="top"
             align="left"
+            panel={
+              browsing ? (
+                <LibraryPanel onBack={() => setBrowsing(false)} />
+              ) : undefined
+            }
             trigger={({ open, toggle }) => (
               <button
                 type="button"

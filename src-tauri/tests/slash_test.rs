@@ -87,6 +87,19 @@ fn a_bare_slash_is_the_default_window_rather_than_an_error() {
     assert_eq!(out.requests, 1, "{out:?}");
 }
 
+// The window is a SQLite modifier, and `0 days` is a no-op rather than
+// "midnight" — it asked for the instant the query ran, so every request in the
+// history fell outside it and the Today tab drew its empty state.
+#[test]
+fn today_counts_from_midnight_rather_than_from_now() {
+    let (conn, _sid) = db();
+    log(&conn, "opus", "ok", 100, 50, 1.0);
+
+    let out = usage::report(&conn, "today").unwrap();
+
+    assert_eq!(out.requests, 1, "{out:?}");
+}
+
 #[test]
 fn a_bad_period_is_refused_by_name() {
     let (conn, _sid) = db();

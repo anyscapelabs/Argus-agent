@@ -149,7 +149,7 @@ fn by_day(conn: &Connection, window: &str) -> Result<Vec<DayUsage>, String> {
 pub fn window_of(arg: &str) -> Result<(&'static str, &'static str, &'static str), String> {
     match arg {
         "" | "week" => Ok(("week", "This week", "-7 days")),
-        "today" => Ok(("today", "Today", "0 days")),
+        "today" => Ok(("today", "Today", "start of day")),
         "month" => Ok(("month", "This month", "-30 days")),
         _ => Err(format!(
             "/usage takes today, week or month — not \"{arg}\"."

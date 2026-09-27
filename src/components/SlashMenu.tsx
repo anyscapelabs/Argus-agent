@@ -1,36 +1,30 @@
 import { useEffect, useRef, useState } from "react";
 
-import { slashList, type SlashCmd } from "../lib/ipc";
+import type { SlashCmd } from "../lib/ipc";
 
 const MAX = 7;
 
 type Props = {
   /// The text after the leading `/`, which is the prefix being filtered on.
   query: string;
+  cmds: SlashCmd[];
   onPick: (cmd: SlashCmd) => void;
+  /// The command is already fully typed and can answer as it stands.
+  onRun: (cmd: SlashCmd) => void;
   onClose: () => void;
 };
 
-export default function SlashMenu({ query, onPick, onClose }: Props) {
-  const [all, setAll] = useState<SlashCmd[] | null>(null);
+export default function SlashMenu({
+  query,
+  cmds,
+  onPick,
+  onRun,
+  onClose,
+}: Props) {
   const [at, setAt] = useState(0);
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  // A dozen rows, fetched once per mount. Filtering is local because it
-  // happens on every keystroke and a round trip per keypress is not a menu.
-  useEffect(() => {
-    let live = true;
-    void slashList()
-      .then((cmds) => live && setAll(cmds))
-      .catch(() => live && setAll([]));
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  const hits = (all ?? [])
-    .filter((c) => c.name.startsWith(query))
-    .slice(0, MAX);
+  const hits = cmds.filter((c) => c.name.startsWith(query)).slice(0, MAX);
 
   useEffect(() => {
     setAt(0);
@@ -61,10 +55,21 @@ export default function SlashMenu({ query, onPick, onClose }: Props) {
 
       if (e.key === "Enter" || e.key === "Tab") {
         const hit = hits[at];
-        if (hit !== undefined) {
-          e.preventDefault();
-          onPick(hit);
+        if (hit === undefined) {
+          return;
         }
+
+        e.preventDefault();
+
+        // A local command answers without an argument, so a line that already
+        // spells its name in full is the whole command. Completing it would ask
+        // for a second Enter to say what the first one already said.
+        if (e.key === "Enter" && query === hit.name && hit.kind === "local") {
+          onRun(hit);
+          return;
+        }
+
+        onPick(hit);
         return;
       }
 
@@ -78,11 +83,7 @@ export default function SlashMenu({ query, onPick, onClose }: Props) {
     return () => {
       document.removeEventListener("keydown", onKey, true);
     };
-  }, [hits, at, onPick, onClose]);
-
-  if (all === null) {
-    return null;
-  }
+  }, [hits, at, query, onPick, onRun, onClose]);
 
   if (hits.length === 0) {
     return (

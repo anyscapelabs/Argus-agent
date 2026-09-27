@@ -14,7 +14,7 @@ import {
 import { RiAttachment2 } from "react-icons/ri";
 
 import { useChatModels } from "../hooks/useChatModels";
-import type { ChatModel, SlashCmd } from "../lib/ipc";
+import { slashList, type ChatModel, type SlashCmd } from "../lib/ipc";
 import { attachStore, useAttachments } from "../stores/attachments";
 import AttachChips from "./AttachChips";
 import Dropdown, { type DropdownItem } from "./Dropdown";
@@ -74,7 +74,21 @@ export default function ChatInput({
   const [browsing, setBrowsing] = useState(false);
   const [slashOff, setSlashOff] = useState(false);
   const [dropping, setDropping] = useState(false);
+  const [cmds, setCmds] = useState<SlashCmd[]>([]);
   const selected = model ?? picked;
+
+  // The command list lives here, not in the menu, because the box has to know
+  // whether the menu has something to offer before it lets go of Enter.
+  useEffect(() => {
+    let live = true;
+    void slashList()
+      .then((list) => live && setCmds(list))
+      .catch(() => live && setCmds([]));
+
+    return () => {
+      live = false;
+    };
+  }, []);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -123,6 +137,9 @@ export default function ChatInput({
   const asCall = SLASH_CALL.exec(value);
   const showMenu = asSlash !== null && !running;
   const query = asSlash?.[1] ?? "";
+  // What the menu would complete to. Empty means it has nothing, and Enter is
+  // then an ordinary send rather than a keystroke that goes nowhere.
+  const hit = cmds.find((c) => c.name.startsWith(query));
 
   const addItems: DropdownItem[] = [
     {
@@ -165,11 +182,19 @@ export default function ChatInput({
     },
   ];
 
-  // Accepting a command fills the box with the name and its argument, and
-  // leaves the caret after them, so the argument is typed rather than guessed.
+  // Completing a command fills the box with its name and leaves the caret
+  // after it. The argument stays a hint in the menu: pasting "today | week |
+  // month" into the box would send a window called that.
   const accept = (cmd: SlashCmd) => {
-    onChange(cmd.arg === null ? `/${cmd.name} ` : `/${cmd.name} ${cmd.arg} `);
+    onChange(`/${cmd.name} `);
     textareaRef.current?.focus();
+  };
+
+  // The menu can tell the line is already the whole command, which the
+  // textarea cannot: it never sees the keystroke the menu took.
+  const run = (cmd: SlashCmd) => {
+    onChange("");
+    onSlash?.(cmd.name, "");
   };
 
   // A line that is exactly `/name arg` is a command. Anything else — a path,
@@ -249,9 +274,9 @@ export default function ChatInput({
             onChange(event.target.value);
           }}
           onKeyDown={(event) => {
-            // The menu takes Enter and Tab while it is open, and it stops
-            // them at the document, so this only sees a bare Enter.
-            if (event.key !== "Enter" || event.shiftKey || showMenu) {
+            // The menu takes Enter and Tab while it has something to complete,
+            // and it stops them at the document, so this only sees the rest.
+            if (event.key !== "Enter" || event.shiftKey || hit !== undefined) {
               return;
             }
 
@@ -267,7 +292,9 @@ export default function ChatInput({
         {showMenu && !slashOff && (
           <SlashMenu
             query={query}
+            cmds={cmds}
             onPick={accept}
+            onRun={run}
             onClose={() => setSlashOff(true)}
           />
         )}

@@ -74,6 +74,19 @@ fn an_empty_history_reports_zeroes_rather_than_an_error() {
     assert!(out.cost.is_finite(), "a NaN here blanks the whole card");
 }
 
+// `/usage` on its own has to answer. The box runs the command the moment the
+// name is fully typed, so the backend is what makes a bare `/usage` legal.
+#[test]
+fn a_bare_slash_is_the_default_window_rather_than_an_error() {
+    let (conn, _sid) = db();
+    log(&conn, "opus", "ok", 100, 50, 1.0);
+
+    let out = usage::report(&conn, "").unwrap();
+
+    assert_eq!(out.window, "week", "{out:?}");
+    assert_eq!(out.requests, 1, "{out:?}");
+}
+
 #[test]
 fn a_bad_period_is_refused_by_name() {
     let (conn, _sid) = db();

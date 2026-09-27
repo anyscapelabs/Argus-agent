@@ -14,7 +14,7 @@ import ToolActivity, {
 } from "./agent/ToolActivity";
 import { parseDbTime } from "../lib/relativeTime";
 import { sessionStore, useSessions, type Turn } from "../stores/sessions";
-import { learningRecordCorrection, type Attachment, type MsgRow } from "../lib/ipc";
+import { learningRecordCorrection, type Attachment, type MsgRow, type UsageWindow } from "../lib/ipc";
 import { toast } from "../stores/toast";
 
 const SCROLL_LINE = 40;
@@ -56,6 +56,15 @@ function parseFiles(row: MsgRow | null): Attachment[] {
   } catch {
     return [];
   }
+}
+
+// The window a stored `/usage` was asked for, so reopening a chat lands on the
+// tab that was chosen rather than on whatever the default is now. The backend
+// refuses anything else, so an unrecognised word can only mean the bare form.
+function localWindow(content: string): UsageWindow {
+  const arg = /^\/usage\s+(\S+)/i.exec(content)?.[1] ?? "";
+
+  return arg === "today" || arg === "month" ? arg : "week";
 }
 
 function groupTurns(
@@ -241,6 +250,24 @@ export default function ChatTranscript({
     >
       <div className="mx-auto flex w-full min-w-0 max-w-[700px] flex-col gap-3">
         {groups.map((group, gi) => {
+          // A line the app answered itself. It is a real turn in the
+          // transcript and the model was never asked, so there is no
+          // assistant row under it, no work label, and nothing to retry —
+          // just the line and what it drew.
+          if (group.usr?.local === true) {
+            return (
+              <div key={group.usr.id} className="flex flex-col gap-3">
+                <UserBubble
+                  files={parseFiles(group.usr)}
+                  timestamp={parseDbTime(group.usr.created_at) ?? undefined}
+                >
+                  {group.usr.content}
+                </UserBubble>
+                <UsageCard window={localWindow(group.usr.content)} />
+              </div>
+            );
+          }
+
           // A wake — a sub-agent or a job reporting back — is stored as
           // `system`. It is the app speaking, not the model, but it is still
           // something the user was told and has to be able to read.
@@ -524,21 +551,17 @@ export default function ChatTranscript({
             </div>
           );
         })}
-        {notes.map((note, ni) =>
-          note.kind === "usage" ? (
-            <UsageCard key={`note-${ni}`} initial={note.report} />
-          ) : (
-            <div
-              key={`note-${ni}`}
-              className={
-                "rounded-xl border border-border-primary bg-bg-secondary px-3 py-2 " +
-                "font-mono text-xs whitespace-pre-wrap text-text-primary"
-              }
-            >
-              {note.text}
-            </div>
-          ),
-        )}
+        {notes.map((note, ni) => (
+          <div
+            key={`note-${ni}`}
+            className={
+              "rounded-xl border border-border-primary bg-bg-secondary px-3 py-2 " +
+              "font-mono text-xs whitespace-pre-wrap text-text-primary"
+            }
+          >
+            {note.text}
+          </div>
+        ))}
         {waiting > 0 && (
           <div className="text-xs text-text-tertiary">
             {waiting === 1

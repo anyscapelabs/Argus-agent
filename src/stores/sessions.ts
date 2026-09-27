@@ -11,6 +11,7 @@ import {
   sessListMessages,
   sessListSessions,
   sessResolveApproval,
+  sessRunLocal,
   sessSaveSession,
   sessSetModel,
   sessSetPermission,
@@ -22,7 +23,6 @@ import {
   type AgentRun,
   type Attachment,
   type MsgRow,
-  type Usage,
   type SessionRow,
   type StreamEvent,
 } from "../lib/ipc";
@@ -46,10 +46,9 @@ export type Turn = {
 export type TurnStatus = { providerId: string; attempt: number };
 
 // A slash command answered in the window rather than in the transcript: a line
-// of the app speaking, or a card it drew.
-export type Note =
-  | { kind: "text"; text: string }
-  | { kind: "usage"; report: Usage };
+// of the app speaking. `/usage` is not one of these — it is a stored turn, so
+// the card survives a reload and sits where the user put it.
+export type Note = { kind: "text"; text: string };
 
 const EMPTY_TXT = "";
 const DEF_TITLE = "New chat";
@@ -417,6 +416,14 @@ class SessionStore {
     this.set({
       notes: { ...this.state.notes, [sessionId]: [...existing, note] },
     });
+  }
+
+  // A line the app answers itself. The backend stores it as a turn and keeps
+  // it out of what the model is told, so this is a conversation entry that
+  // survives a reload rather than something that lives in the window.
+  async runLocal(sessionId: string, name: string, arg: string) {
+    await sessRunLocal(sessionId, name, arg);
+    await this.loadMsgs(sessionId);
   }
 
   unwatch(sessionId: string | null) {

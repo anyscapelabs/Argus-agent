@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { slashRun, type Usage, type UsageWindow } from "../lib/ipc";
 
@@ -8,36 +8,42 @@ const WINDOWS: { key: UsageWindow; label: string }[] = [
   { key: "month", label: "Month" },
 ];
 
-type Props = { initial: Usage };
+type Props = {
+  /// Which window to open on. The stored turn carries it, so `/usage month`
+  /// comes back on Month rather than on whatever the default is today.
+  window?: UsageWindow;
+};
 
-export default function UsageCard({ initial }: Props) {
-  const [report, setReport] = useState(initial);
-  const [busy, setBusy] = useState(false);
+export default function UsageCard({ window: start = "week" }: Props) {
+  const [win, setWin] = useState<UsageWindow>(start);
+  const [report, setReport] = useState<Usage | null>(null);
 
-  // A local command, so switching the window costs a query and no tokens. The
-  // note keeps whatever window it ended on.
-  const pick = async (win: UsageWindow) => {
-    if (win === report.window || busy) {
-      return;
-    }
+  // The card is a view, not a snapshot. The turn stores the line the user
+  // typed and the numbers are read when it is drawn, so a chat reopened
+  // tomorrow is not showing what was true when `/usage` was run.
+  useEffect(() => {
+    let live = true;
+    setReport(null);
 
-    setBusy(true);
+    void slashRun("usage", null, win)
+      .then((out) => {
+        if (live && out.usage !== null) {
+          setReport(out.usage);
+        }
+      })
+      // A window that will not load is not worth blanking the card, and there
+      // is nothing to retry: the next tab change asks again.
+      .catch(() => {});
 
-    try {
-      const out = await slashRun("usage", null, win);
-      if (out.usage !== null) {
-        setReport(out.usage);
-      }
-    } catch {
-      // Leave the card on what it had. A window that will not load is not
-      // worth blanking the numbers the user is reading.
-    } finally {
-      setBusy(false);
-    }
-  };
+    return () => {
+      live = false;
+    };
+  }, [win]);
 
-  const rate = report.requests > 0 ? report.failed / report.requests : 0;
-  const empty = report.requests === 0 && report.days.length === 0;
+  const rate =
+    report !== null && report.requests > 0 ? report.failed / report.requests : 0;
+  const empty =
+    report !== null && report.requests === 0 && report.days.length === 0;
 
   return (
     <div
@@ -51,13 +57,13 @@ export default function UsageCard({ initial }: Props) {
 
         <div className="flex shrink-0 gap-1">
           {WINDOWS.map((w) => {
-            const on = w.key === report.window;
+            const on = w.key === win;
 
             return (
               <button
                 key={w.key}
                 type="button"
-                onClick={() => void pick(w.key)}
+                onClick={() => setWin(w.key)}
                 className={
                   "rounded-md px-2.5 py-1 text-xs transition-colors " +
                   (on
@@ -72,32 +78,45 @@ export default function UsageCard({ initial }: Props) {
         </div>
       </div>
 
-      <div className="grid grid-cols-5 divide-x divide-border-primary">
-        <Stat n={report.requests.toLocaleString()} label="Requests" />
-        <Stat n={tokens(report.tokIn + report.tokOut)} label="Tokens" />
-        <Stat n={money(report.cost)} label="Spend" />
-        <Stat n={duration(report.workedMs)} label="Worked for" />
-        <Stat
-          n={`${(rate * 100).toFixed(rate > 0 && rate < 0.01 ? 1 : 0)}%`}
-          label={report.failed > 0 ? `Failed · ${report.failed}` : "Failed"}
-        />
-      </div>
-
-      <div className="mt-5 mb-2 flex items-baseline justify-between">
-        <div className="text-sm text-text-primary">Activity</div>
-        <div className="text-xs text-text-tertiary">{report.label}</div>
-      </div>
-
-      <Calendar days={report.days} window={report.window} />
-
-      {empty ? (
-        <div className="mt-4 text-sm text-text-tertiary">
-          Nothing sent in this window yet.
-        </div>
+      {report === null ? (
+        <Loading />
       ) : (
-        <Models models={report.models} />
+        <>
+          <div className="grid grid-cols-5 divide-x divide-border-primary">
+            <Stat n={report.requests.toLocaleString()} label="Requests" />
+            <Stat n={tokens(report.tokIn + report.tokOut)} label="Tokens" />
+            <Stat n={money(report.cost)} label="Spend" />
+            <Stat n={duration(report.workedMs)} label="Worked for" />
+            <Stat
+              n={`${(rate * 100).toFixed(rate > 0 && rate < 0.01 ? 1 : 0)}%`}
+              label={report.failed > 0 ? `Failed · ${report.failed}` : "Failed"}
+            />
+          </div>
+
+          <div className="mt-5 mb-2 flex items-baseline justify-between">
+            <div className="text-sm text-text-primary">Activity</div>
+            <div className="text-xs text-text-tertiary">{report.label}</div>
+          </div>
+
+          <Calendar days={report.days} window={report.window} />
+
+          {empty ? (
+            <div className="mt-4 text-sm text-text-tertiary">
+              Nothing sent in this window yet.
+            </div>
+          ) : (
+            <Models models={report.models} />
+          )}
+        </>
       )}
     </div>
+  );
+}
+
+// The same height the numbers take, so the card does not jump when they land.
+function Loading() {
+  return (
+    <div className="h-[168px] animate-pulse rounded-xl bg-bg-hover-primary" />
   );
 }
 

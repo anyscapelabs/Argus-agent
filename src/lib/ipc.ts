@@ -18,6 +18,7 @@ const CMD_SESS_MOD = "sess_set_model";
 const CMD_SESS_WEB = "sess_set_web_search";
 const CMD_SESS_EXP = "sess_export_json";
 const CMD_SESS_MSGS = "sess_list_messages";
+const CMD_SESS_LOCAL = "sess_run_local";
 const CMD_SESS_VOTE = "sess_set_vote";
 const CMD_SESS_SUP = "sess_supersede_from";
 const CMD_SESS_CLEAN = "sess_clean_dangling";
@@ -169,6 +170,9 @@ export type MsgRow = {
   tool_call_id?: string | null;
   kind?: string | null;
   attachments?: string | null;
+  /// The app answered this line itself, so it is a turn the transcript draws
+  /// and a line the model is never shown.
+  local?: boolean;
   created_at: string;
 };
 
@@ -251,6 +255,16 @@ export function sessExportJson(sessionId: string): Promise<string> {
 
 export function sessListMessages(sessionId: string): Promise<MsgRow[]> {
   return invoke<MsgRow[]>(CMD_SESS_MSGS, { sessionId });
+}
+
+/// Store a line the app answers itself as a turn. The backend refuses a command
+/// it does not answer that way, so this is only ever called for `/usage`.
+export function sessRunLocal(
+  sessionId: string,
+  name: string,
+  arg: string,
+): Promise<MsgRow> {
+  return invoke<MsgRow>(CMD_SESS_LOCAL, { sessionId, name, arg });
 }
 
 export function sessSetVote(

@@ -1,6 +1,11 @@
 use argus_lib::prompt::{budget, project, tools_budget, BASE};
 use argus_lib::tools::{section, tool_specs};
 
+// No library in these tests, so this is never walked.
+fn dir() -> std::path::PathBuf {
+    std::path::PathBuf::new()
+}
+
 fn setup() -> (rusqlite::Connection, String) {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -75,7 +80,7 @@ fn setup() -> (rusqlite::Connection, String) {
 #[test]
 fn projection_has_no_skill_index() {
     let (conn, sid) = setup();
-    let p = project(&conn, &sid).unwrap();
+    let p = project(&conn, &sid, &dir()).unwrap();
 
     assert!(!p.system.contains("alpha-skill"), "skill index leaked");
     assert!(!p.system.contains("beta-skill"), "skill index leaked");
@@ -85,7 +90,7 @@ fn projection_has_no_skill_index() {
 #[test]
 fn projection_has_no_automatic_memories() {
     let (conn, sid) = setup();
-    let p = project(&conn, &sid).unwrap();
+    let p = project(&conn, &sid, &dir()).unwrap();
 
     assert!(!p.system.contains("marker0"), "memory dump leaked");
     assert!(!p.system.contains("marker1"), "memory dump leaked");
@@ -110,7 +115,7 @@ fn model_catalog_hides_bash_run_and_keeps_terminal() {
 #[test]
 fn admin_and_password_rules_survive() {
     let (conn, sid) = setup();
-    let p = project(&conn, &sid).unwrap();
+    let p = project(&conn, &sid, &dir()).unwrap();
 
     assert!(
         p.system.contains("privilege \"admin\"") || section(false).contains("privilege \"admin\"")
@@ -122,7 +127,7 @@ fn admin_and_password_rules_survive() {
 fn summary_is_optional_and_delimited() {
     let (conn, sid) = setup();
 
-    let plain = project(&conn, &sid).unwrap();
+    let plain = project(&conn, &sid, &dir()).unwrap();
     assert!(!plain.system.contains("<session-summary>"));
 
     conn.execute(
@@ -131,7 +136,7 @@ fn summary_is_optional_and_delimited() {
     )
     .unwrap();
 
-    let with = project(&conn, &sid).unwrap();
+    let with = project(&conn, &sid, &dir()).unwrap();
     assert!(with.system.contains("<session-summary>"));
     assert!(with.system.contains("compact recap here"));
     assert!(with.system.contains("</session-summary>"));
@@ -141,7 +146,7 @@ fn summary_is_optional_and_delimited() {
 fn preferences_are_delimited_when_present() {
     let (conn, sid) = setup();
 
-    let plain = project(&conn, &sid).unwrap();
+    let plain = project(&conn, &sid, &dir()).unwrap();
     assert!(!plain.system.contains("<user-preferences>"));
 
     conn.execute(
@@ -150,7 +155,7 @@ fn preferences_are_delimited_when_present() {
     )
     .unwrap();
 
-    let with = project(&conn, &sid).unwrap();
+    let with = project(&conn, &sid, &dir()).unwrap();
     assert!(with.system.contains("<user-preferences>"));
     assert!(with.system.contains("Always answer in French"));
 }
@@ -158,7 +163,7 @@ fn preferences_are_delimited_when_present() {
 #[test]
 fn budget_sections_sum_to_total() {
     let (conn, sid) = setup();
-    let p = project(&conn, &sid).unwrap();
+    let p = project(&conn, &sid, &dir()).unwrap();
 
     let parts = budget(&p.system);
     assert!(!parts.is_empty());
@@ -177,7 +182,7 @@ fn full_budget_splits_named_sections_and_zeroes_unused_tiers() {
     use argus_lib::prompt::full_budget;
 
     let (conn, sid) = setup();
-    let p = project(&conn, &sid).unwrap();
+    let p = project(&conn, &sid, &dir()).unwrap();
     let b = full_budget(&p, true);
 
     assert!(b.stable > 0);
@@ -215,7 +220,7 @@ fn learned_preferences_enter_the_budget_when_present() {
     )
     .unwrap();
 
-    let p = project(&conn, &sid).unwrap();
+    let p = project(&conn, &sid, &dir()).unwrap();
     assert!(p.system.contains("<learned-preferences>"));
     assert!(p.system.contains("formality: casual_professional"));
 
@@ -238,7 +243,7 @@ fn learned_preferences_enter_the_budget_when_present() {
 #[test]
 fn runtime_architecture_stays_out_of_the_prompt() {
     let (conn, sid) = setup();
-    let p = project(&conn, &sid).unwrap();
+    let p = project(&conn, &sid, &dir()).unwrap();
     let tools = section(true);
 
     for needle in [

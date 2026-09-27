@@ -1,6 +1,8 @@
 pub mod compressor;
 pub mod config;
 
+use std::path::Path;
+
 use rusqlite::params;
 use rusqlite::Connection;
 use serde::Serialize;
@@ -9,6 +11,7 @@ use tauri::State;
 
 use crate::gateway::schema::{ChatReq, ToolCall, WireMsg};
 use crate::gateway::{store as gw_store, Gateway};
+use crate::library::schema::Attachment;
 
 pub const BASE: &str = "You are Argus, a personal AI agent operating on the user's computer.\n\
 Your job is to complete the user's requested task using the tools available to you.\n\
@@ -251,7 +254,11 @@ fn past_index(conn: &Connection, session_id: &str) -> Option<String> {
     ))
 }
 
-pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String> {
+pub fn project(
+    conn: &Connection,
+    session_id: &str,
+    library_dir: &Path,
+) -> Result<Projection, String> {
     let (model_id, compact_seq, ctx_tokens, web_search, parent_id, profile_id) = conn
         .query_row(
             "SELECT model_id, compact_seq, ctx_tokens, web_search, parent_id, profile_id
@@ -307,7 +314,7 @@ pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String
 
     let mut stmt = conn
         .prepare(
-            "SELECT role, content, tool_calls, tool_call_id FROM messages
+            "SELECT role, content, tool_calls, tool_call_id, attachments FROM messages
              WHERE session_id = ?1 AND active = 1 AND seq > ?2
              ORDER BY seq",
         )
@@ -320,6 +327,7 @@ pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String
                 r.get::<_, String>(1)?,
                 r.get::<_, Option<String>>(2)?,
                 r.get::<_, Option<String>>(3)?,
+                r.get::<_, Option<String>>(4)?,
             ))
         })
         .map_err(|err| err.to_string())?;
@@ -328,7 +336,7 @@ pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| err.to_string())?;
 
-    let msgs = to_wire(&rows);
+    let msgs = to_wire(&rows, &|id| library_path(conn, library_dir, id));
 
     let mut hasher = Sha256::new();
     hasher.update(system.as_bytes());
@@ -352,20 +360,36 @@ pub fn project(conn: &Connection, session_id: &str) -> Result<Projection, String
     })
 }
 
-fn to_wire(rows: &[(String, String, Option<String>, Option<String>)]) -> Vec<WireMsg> {
+fn to_wire(
+    rows: &[(
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    )],
+    resolve: &dyn Fn(&str) -> Option<String>,
+) -> Vec<WireMsg> {
     rows.iter()
-        .map(|(role, content, calls, call_id)| {
+        .map(|(role, content, calls, call_id, att)| {
             let calls = calls
                 .as_deref()
                 .and_then(|j| serde_json::from_str::<Vec<ToolCall>>(j).ok())
                 .unwrap_or_default();
+
+            let (images, note) = attachments(att.as_deref(), resolve);
+            let content = if note.is_empty() {
+                content.clone()
+            } else {
+                format!("{content}\n\n{note}")
+            };
 
             if role == "user" && content.starts_with("<tool-result") {
                 let has_id = call_id.as_deref().is_some_and(|s| !s.is_empty());
                 if has_id {
                     return WireMsg {
                         role: "tool".into(),
-                        content: unwrap_result(content),
+                        content: unwrap_result(&content),
                         images: vec![],
                         tool_calls: vec![],
                         tool_call_id: call_id.clone(),
@@ -374,8 +398,8 @@ fn to_wire(rows: &[(String, String, Option<String>, Option<String>)]) -> Vec<Wir
 
                 return WireMsg {
                     role: "user".into(),
-                    content: content.clone(),
-                    images: vec![],
+                    content,
+                    images,
                     tool_calls: vec![],
                     tool_call_id: None,
                 };
@@ -383,13 +407,69 @@ fn to_wire(rows: &[(String, String, Option<String>, Option<String>)]) -> Vec<Wir
 
             WireMsg {
                 role: role.clone(),
-                content: content.clone(),
-                images: vec![],
+                content,
+                images,
                 tool_calls: calls,
                 tool_call_id: None,
             }
         })
         .collect()
+}
+
+/// The file behind an attachment id, or nothing if the library lost it. A
+/// message outlives the file it named, and that is not a reason to fail.
+fn library_path(conn: &Connection, library_dir: &Path, id: &str) -> Option<String> {
+    crate::library::store::abs_of(conn, library_dir, id).map(|p| p.to_string_lossy().into_owned())
+}
+
+/// An image goes inline, because the model can already see one. Everything
+/// else is only named, with the id it needs to open it — a file the model
+/// cannot see and is not told about is a file it will never open.
+fn attachments(
+    raw: Option<&str>,
+    resolve: &dyn Fn(&str) -> Option<String>,
+) -> (Vec<String>, String) {
+    let Some(raw) = raw else {
+        return (vec![], String::new());
+    };
+
+    let items: Vec<Attachment> = serde_json::from_str(raw).unwrap_or_default();
+    if items.is_empty() {
+        return (vec![], String::new());
+    }
+
+    let mut images = vec![];
+    let mut listed = vec![];
+
+    for a in &items {
+        if a.kind == "image" {
+            if let Some(path) = resolve(&a.id) {
+                images.push(path);
+            }
+
+            continue;
+        }
+
+        listed.push(format!("- {} (id: {}, {}, {})", a.name, a.id, a.kind, a.sz));
+    }
+
+    if listed.is_empty() {
+        return (images, String::new());
+    }
+
+    let note = format!(
+        "<attachments>\n\
+         {} file{} came with this message and you cannot see {} contents. \
+         Call library.read with the id to open one, then answer from what it returns.\n\
+         {}\n\
+         </attachments>",
+        listed.len(),
+        if listed.len() == 1 { "" } else { "s" },
+        if listed.len() == 1 { "its" } else { "their" },
+        listed.join("\n")
+    );
+
+    (images, note)
 }
 
 fn unwrap_result(content: &str) -> String {
@@ -551,7 +631,7 @@ pub struct PromptPreview {
 #[tauri::command]
 pub fn prompt_preview(gw: State<'_, Gateway>, session_id: String) -> Result<PromptPreview, String> {
     let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-    let p = project(&conn, &session_id)?;
+    let p = project(&conn, &session_id, &gw.library_dir)?;
 
     Ok(PromptPreview {
         session_id: p.session_id,

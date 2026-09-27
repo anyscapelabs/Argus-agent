@@ -60,6 +60,16 @@ pub struct NewLibItem {
     pub session_id: Option<String>,
 }
 
+/// What a message records about a file it carried. The id is the library's,
+/// so nothing here names a path that could move.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Attachment {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub sz: i64,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct LibPreview {
     pub id: String,

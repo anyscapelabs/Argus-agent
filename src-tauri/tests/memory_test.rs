@@ -289,6 +289,11 @@ fn remember(conn: &rusqlite::Connection, content: &str) {
     .unwrap();
 }
 
+// No library in these tests, so this is never walked.
+fn dir() -> std::path::PathBuf {
+    std::path::PathBuf::new()
+}
+
 #[test]
 fn session_start_does_not_inject_memories() {
     let conn = project_db();
@@ -300,7 +305,7 @@ fn session_start_does_not_inject_memories() {
     let s = project_session(&conn, "t1");
     say(&conn, &s, "user", "how do I deploy the backend with docker");
 
-    let p = argus_lib::prompt::project(&conn, &s).unwrap();
+    let p = argus_lib::prompt::project(&conn, &s, &dir()).unwrap();
     assert!(!p.system.contains("docker compose"), "{}", p.system);
     assert!(!p.system.contains("pancake"), "{}", p.system);
     assert!(!p.system.contains("Relevant memories"), "{}", p.system);
@@ -322,7 +327,7 @@ fn session_start_skips_recall_after_first_exchange() {
     say(&conn, &s, "assistant", "run docker compose up");
     say(&conn, &s, "user", "and then what about docker volumes");
 
-    let p = argus_lib::prompt::project(&conn, &s).unwrap();
+    let p = argus_lib::prompt::project(&conn, &s, &dir()).unwrap();
     assert!(!p.system.contains("## Relevant memories"), "{}", p.system);
     assert!(
         !p.system.contains("docker compose up every Friday"),
@@ -337,6 +342,6 @@ fn session_start_with_no_memories_injects_nothing() {
     let s = project_session(&conn, "t3");
     say(&conn, &s, "user", "how do I deploy the backend with docker");
 
-    let p = argus_lib::prompt::project(&conn, &s).unwrap();
+    let p = argus_lib::prompt::project(&conn, &s, &dir()).unwrap();
     assert!(!p.system.contains("## Relevant memories"), "{}", p.system);
 }

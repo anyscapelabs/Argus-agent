@@ -220,6 +220,14 @@ pub fn get(conn: &Connection, dir: &Path, id: &str) -> Result<LibItem, String> {
     Ok(item)
 }
 
+/// The file behind an id, as the wire wants it. `None` once the library has
+/// lost it, which is also when `get` drops the row.
+pub fn abs_of(conn: &Connection, dir: &Path, id: &str) -> Option<PathBuf> {
+    get(conn, dir, id)
+        .ok()
+        .map(|item| abs_path(dir, &item.path))
+}
+
 pub fn delete(conn: &Connection, dir: &Path, id: &str) -> Result<(), String> {
     let row: Option<String> = conn
         .query_row("SELECT path FROM library WHERE id = ?1", params![id], |r| {

@@ -50,8 +50,15 @@ fn new_session(conn: &rusqlite::Connection, title: &str) -> String {
     .id
 }
 
+// No library in these tests, so this is never walked.
+fn dir() -> std::path::PathBuf {
+    std::path::PathBuf::new()
+}
+
 fn prompt_of(conn: &rusqlite::Connection, session_id: &str) -> String {
-    argus_lib::prompt::project(conn, session_id).unwrap().system
+    argus_lib::prompt::project(conn, session_id, &dir())
+        .unwrap()
+        .system
 }
 
 #[test]

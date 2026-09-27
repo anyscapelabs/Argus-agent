@@ -28,9 +28,15 @@ use argus_lib::sessions::schema::NewSession;
 use argus_lib::tools::{
     build_executions, has_orphaned_action_block, normalize_actions, ToolExecution, ToolStatus,
 };
+
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Mutex;
+
+// No library in these tests, so this is never walked.
+fn dir() -> std::path::PathBuf {
+    std::path::PathBuf::new()
+}
 
 const RESULT_CLIP: usize = 4000;
 
@@ -219,7 +225,7 @@ async fn chat_single_tool_one_exec_one_result_in_next_context() {
     // Next model iteration sees the result as a `tool` wire message.
     let proj = {
         let conn = gw.conn.lock().unwrap();
-        project(&conn, &sid).unwrap()
+        project(&conn, &sid, &dir()).unwrap()
     };
     let tool_wires: Vec<_> = proj.msgs.iter().filter(|m| m.role == "tool").collect();
     assert_eq!(tool_wires.len(), 1);
@@ -262,7 +268,7 @@ async fn chat_multi_tool_deterministic_order_all_results_before_next_request() {
 
     let proj = {
         let conn = gw.conn.lock().unwrap();
-        project(&conn, &sid).unwrap()
+        project(&conn, &sid, &dir()).unwrap()
     };
     // memory.search (native) -> role tool; skill.search (XML) -> role user
     // with <tool-result> text. Both present before the next request.
@@ -316,7 +322,7 @@ async fn chat_failed_tool_does_not_kill_loop_and_next_call_runs() {
     assert!(results[0].content.contains("missing name"));
     let proj = {
         let conn = gw.conn.lock().unwrap();
-        project(&conn, &sid).unwrap()
+        project(&conn, &sid, &dir()).unwrap()
     };
     assert_eq!(proj.msgs.iter().filter(|m| m.role == "tool").count(), 2);
     let _ = std::fs::remove_dir_all(&base);
@@ -375,7 +381,7 @@ async fn chat_denied_tool_single_cancelled_result_no_side_effect_no_reexec() {
     );
     let proj = {
         let conn = gw.conn.lock().unwrap();
-        project(&conn, &sid).unwrap()
+        project(&conn, &sid, &dir()).unwrap()
     };
     assert!(proj
         .msgs
@@ -471,7 +477,7 @@ async fn chat_truncated_output_with_pending_is_executed_not_discarded() {
     );
     let proj = {
         let conn = gw.conn.lock().unwrap();
-        project(&conn, &sid).unwrap()
+        project(&conn, &sid, &dir()).unwrap()
     };
     assert!(proj.msgs.iter().any(|m| m.content.contains("<tool-result")));
     let _ = std::fs::remove_dir_all(&base);
@@ -520,7 +526,7 @@ async fn chat_two_step_result_a_visible_for_b_final_after_b() {
     // Result A must already be in context before response 2 runs.
     let mid = {
         let conn = gw.conn.lock().unwrap();
-        project(&conn, &sid).unwrap()
+        project(&conn, &sid, &dir()).unwrap()
     };
     assert!(
         mid.msgs
@@ -574,7 +580,7 @@ async fn chat_two_step_result_a_visible_for_b_final_after_b() {
 
     let proj = {
         let conn = gw.conn.lock().unwrap();
-        project(&conn, &sid).unwrap()
+        project(&conn, &sid, &dir()).unwrap()
     };
     let ids: Vec<_> = proj
         .msgs

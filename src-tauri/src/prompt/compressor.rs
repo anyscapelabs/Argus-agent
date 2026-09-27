@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use rusqlite::{params, Connection};
 use serde::Serialize;
 use tauri::State;
@@ -21,7 +23,11 @@ pub struct ContextStatus {
     pub needs_compact: bool,
 }
 
-pub fn check(conn: &Connection, session_id: &str) -> Result<ContextStatus, String> {
+pub fn check(
+    conn: &Connection,
+    session_id: &str,
+    library_dir: &Path,
+) -> Result<ContextStatus, String> {
     let (model_id, ctx_tokens) = conn
         .query_row(
             "SELECT model_id, ctx_tokens FROM sessions WHERE id = ?1",
@@ -32,7 +38,7 @@ pub fn check(conn: &Connection, session_id: &str) -> Result<ContextStatus, Strin
 
     let cfg = CompressionCfg::load(conn);
     let context = context_window(conn, model_id.as_deref());
-    let p = project(conn, session_id)?;
+    let p = project(conn, session_id, library_dir)?;
 
     let mut est = est_tokens(&p.system);
     for m in &p.msgs {
@@ -262,7 +268,7 @@ this summary plus the most recent messages. Stay under {budget} tokens (about {w
 #[tauri::command]
 pub fn prompt_status(gw: State<'_, Gateway>, session_id: String) -> Result<ContextStatus, String> {
     let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-    check(&conn, &session_id)
+    check(&conn, &session_id, &gw.library_dir)
 }
 
 #[tauri::command]

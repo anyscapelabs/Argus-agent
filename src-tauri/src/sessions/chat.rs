@@ -515,7 +515,7 @@ async fn run_skill_reflection<R: tauri::Runtime>(app: &AppHandle<R>, session_id:
 
     let req: ChatReq = {
         let Ok(conn) = gw.conn.lock() else { return };
-        let Ok(mut p) = project(&conn, session_id) else {
+        let Ok(mut p) = project(&conn, session_id, &gw.library_dir) else {
             return;
         };
 
@@ -754,7 +754,7 @@ pub async fn send<R: tauri::Runtime>(
     for _step in 0..MAX_STEPS {
         let req = {
             let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-            let mut p = project(&conn, session_id)?;
+            let mut p = project(&conn, session_id, &gw.library_dir)?;
             if p.model_id.is_none() {
                 p.model_id = Some(auto_model(&conn)?);
             }
@@ -1308,7 +1308,7 @@ pub async fn send<R: tauri::Runtime>(
 
     let needs = {
         let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-        compressor::check(&conn, session_id)
+        compressor::check(&conn, session_id, &gw.library_dir)
             .map(|s| s.needs_compact)
             .unwrap_or(false)
     };

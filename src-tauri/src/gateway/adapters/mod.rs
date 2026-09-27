@@ -61,8 +61,6 @@ pub fn real_name(wire: &str, tools: &[ToolSpec]) -> String {
         .unwrap_or_else(|| wire.to_string())
 }
 
-const SHOT_GUARD: &str = "/screenshots/shot-";
-
 /// Extension to the media type a provider actually expects. Anything not
 /// listed is not sent, because a wrong type is a request the provider rejects
 /// rather than one it decodes.

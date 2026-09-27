@@ -287,15 +287,6 @@ pub fn sanitize(name: &str) -> String {
     }
 }
 
-fn profile_of(args: &Value) -> String {
-    args.get("profile")
-        .and_then(|v| v.as_str())
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .unwrap_or("main")
-        .to_string()
-}
-
 pub(crate) fn session_key_for(args: &Value) -> String {
     if let Some(p) = args
         .get("profile")

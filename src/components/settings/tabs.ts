@@ -17,8 +17,7 @@ export type SettingsTab =
 
 export type TabIcon = React.ComponentType<{ size?: number; className?: string }>;
 
-/// Weakest first, roughly by how much of the machine each one reaches. The
-/// order is the order the user reads it in, so it should not jump around.
+// Weakest first, by how much of the machine each one reaches.
 export const SETTINGS_TABS: {
   tab: SettingsTab;
   label: string;
@@ -42,8 +41,7 @@ export const SETTINGS_TITLE: Record<SettingsTab, string> = {
   theme: "Appearance",
 };
 
-/// One line under the title, said once by the page shell. Pages used to carry
-/// their own heading as well, so every one of them printed its name twice.
+// One line under the title, said once by the page shell.
 export const SETTINGS_DESC: Record<SettingsTab, string> = {
   models: "Which models you can reach and what each one is for.",
   providers: "Manage your model providers and configure API keys.",

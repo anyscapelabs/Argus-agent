@@ -18,15 +18,12 @@ import {
 
 const DEFAULT_ID = "default";
 
-/// What the picker shows for a profile with no name. The default exists before
-/// anyone names anything, and a blank row reads as a broken one.
+// A blank row reads as a broken one, so it is never blank.
 export function profileLabel(p: { name: string }): string {
   return p.name.trim() === "" ? "Default" : p.name.trim();
 }
 
-/// The reach ladder, weakest rung first. The key is what the database and the
-/// command call it; the label is what a person is agreeing to. Each rung hands
-/// over strictly more than the one above it, which is why they read top down.
+// Weakest rung first, and the label is what a person is agreeing to.
 export const CAPABILITIES: { key: Grant["capability"]; label: string; note: string }[] = [
   {
     key: "see_activity",
@@ -65,13 +62,11 @@ export const EMPTY_REACH: Reach = { reach_all: false, grants: [] };
 type State = {
   profiles: ProfileRow[];
   loading: boolean;
-  /// Which profile a chat with no row of its own belongs to. The toolbar
-  /// picker sets this before a chat exists, and a new chat starts on it.
+  // What a new chat starts on, set before the chat exists.
   activeId: string;
-  /// Which profile the open chat belongs to, once one is open. Null means the
-  /// chat has not asked yet.
+  // The open chat's profile. Null means it has not asked yet.
   sessionId: string | null;
-  /// The matrix of the profile whose detail page is open. Null until it asks.
+  // The matrix of the profile whose detail page is open. Null until it asks.
   reach: Reach;
   reachFor: string | null;
 };
@@ -108,8 +103,7 @@ class ProfileStore {
         profileList(),
         profileActive(),
       ]);
-      // The last pick survives a restart, unless the profile it named is
-      // gone — a stale id would scope every list and prompt to nothing.
+      // Gone, and a stale id would scope every list and prompt to nothing.
       const known = profiles.some((p) => p.id === saved);
 
       this.set({
@@ -147,15 +141,13 @@ class ProfileStore {
     await this.load();
   }
 
-  /// Picks the profile a new chat starts on. Separate from picking the one an
-  /// open chat belongs to, so the two never fight over the same field.
+  // Separate from the open chat's profile, so the two never fight.
   async setActive(id: string) {
     this.set({ activeId: id });
     await profileSetActive(id).catch(() => {});
   }
 
-  /// Reads what an open chat is actually on. A chat that has never been
-  /// touched follows whatever the picker last chose.
+  // A chat that has never been touched follows whatever the picker chose.
   async loadForSession(sessionId: string) {
     this.set({ sessionId });
 
@@ -170,7 +162,7 @@ class ProfileStore {
   async setForSession(sessionId: string, profileId: string) {
     await sessSetProfile(sessionId, profileId);
     this.set({ activeId: profileId });
-    // A chat you moved is a choice, and choices are what survive a restart.
+    // A move is a choice, and choices survive a restart.
     await profileSetActive(profileId).catch(() => {});
   }
 
@@ -187,7 +179,7 @@ class ProfileStore {
   async saveReach(id: string, reachAll: boolean, grants: Grant[]) {
     this.set({ reach: { reach_all: reachAll, grants } });
     await profileReachSet(id, reachAll, grants);
-    // reach_all rides along on the profile row the list draws from.
+    // rides along on the profile row the list draws from.
     await this.load();
   }
 }

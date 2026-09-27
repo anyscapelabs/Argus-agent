@@ -7,13 +7,10 @@ import ConnectedProviderList from "./ConnectedProviderList";
 import { Btn, Card, Note, Page, Section } from "./kit";
 import ProviderConnectModal from "./ProviderConnectModal";
 
-/// Enough rows that scrolling beats a control nobody would find. Below it the
-/// box is just furniture.
+// Past this many rows, scrolling beats a control nobody would find.
 const SEARCH_OVER = 12;
 
-/// The catalog ranks the providers most people reach first. That ranking used
-/// to decide what to hide; now it only decides what to label, so the tiers are
-/// something you can see rather than a cut you have to guess at.
+// The catalog's own ranking, used to label rather than to hide.
 function isPopular(p: Provider): boolean {
   return !p.connected && p.priority < 100;
 }

@@ -246,9 +246,7 @@ pub fn list_sessions(conn: &Connection, folder_id: Option<&str>) -> Result<Vec<S
         .map_err(|err| err.to_string())
 }
 
-/// The chats one profile owns. Children belong to their parent, so a sub-agent
-/// is not a chat of its own here. A null `profile_id` is the default profile,
-/// not a profile nobody owns.
+/// A null `profile_id` is the default profile, not one nobody owns.
 pub fn list_profile_sessions(
     conn: &Connection,
     profile_id: &str,
@@ -270,8 +268,7 @@ pub fn list_profile_sessions(
         .map_err(|err| err.to_string())
 }
 
-/// How much a chat holds, without reading it. Counts what `list_msgs` would
-/// return, so the number in a list and the transcript behind it agree.
+/// Counts what `list_msgs` would hand back, so the two agree.
 pub fn count_msgs(conn: &Connection, session_id: &str) -> Result<i64, String> {
     conn.query_row(
         "SELECT COUNT(*) FROM messages WHERE session_id = ?1 AND active = 1",

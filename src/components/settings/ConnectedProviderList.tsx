@@ -33,9 +33,7 @@ function ProviderLogo({ id, name }: { id: string; name: string }) {
   );
 }
 
-/// Rows only — the Card draws the box and the dividers. A row says connected
-/// or it does not: the button on the right is Disconnect, and a badge beside
-/// the name repeating that is noise.
+// Rows only, the Card draws the box. A badge repeating the button is noise.
 export default function ConnectedProviderList({
   providers,
   onDisconnect,

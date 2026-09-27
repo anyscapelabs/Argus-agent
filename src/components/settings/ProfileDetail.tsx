@@ -8,9 +8,8 @@ import ReachMatrix, { type GrantCell } from "./ReachMatrix";
 const DEFAULT_ID = "default";
 const NAME_MAX = 40;
 
-/// A matrix is a set of cells, so two of them are the same matrix however the
-/// user got there. Comparing the arrays directly would call a reorder a change
-/// and leave a Save button on screen with nothing behind it.
+// A matrix is a set of cells, so a reorder is not a change. Comparing the
+// arrays directly would leave a Save button with nothing behind it.
 function sameGrants(a: GrantCell[], b: GrantCell[]): boolean {
   return (
     a.length === b.length &&

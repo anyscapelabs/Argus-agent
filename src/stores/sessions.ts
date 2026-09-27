@@ -71,9 +71,8 @@ type State = {
   agentRuns: Record<string, AgentRun>;
 };
 
-/// A conversation is not finished while a sub-agent is still working under it.
-/// A parent's turn ending is not the end of the job — it promised to report
-/// when the children finish, and the children are what knows they have not.
+// A parent's turn ending is not the end of the job: it promised to report when
+// the children finish, and the children are what knows they have not.
 export function isWorking(state: State, id: string): boolean {
   if (state.turns[id] !== undefined) {
     return true;

@@ -9,9 +9,8 @@ import {
 } from "../../lib/theme";
 import { Page, Section } from "./kit";
 
-/// A miniature of the window, drawn in the palette it stands for. Three grey
-/// bars and a sidebar beat a sun-and-moon icon every time: you can see what you
-/// are picking, not just what it is called.
+// The window drawn in the palette it stands for. You see what you are
+// picking, not just what it is called.
 function Preview({ mode, sysDark }: { mode: ThemeMode; sysDark: boolean }) {
   const dark = mode === "system" ? sysDark : mode === "dark";
   const surface = dark ? "#2a2a2a" : "#f4f4f2";

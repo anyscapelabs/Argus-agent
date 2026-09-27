@@ -11,8 +11,7 @@ const ROW =
   "flex w-full items-center gap-4 px-4 py-3.5 text-left " +
   "transition-colors hover:bg-bg-hover-secondary";
 
-/// The one line that tells two profiles apart. Instructions live on the detail
-/// page; what you want here is how far this one reaches.
+// What tells two profiles apart at a glance.
 function reach(p: ProfileRow): string {
   if (p.reach_all) return "Reaches every profile";
 

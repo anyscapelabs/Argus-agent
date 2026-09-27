@@ -3,9 +3,7 @@ import { LuChevronDown } from "react-icons/lu";
 
 import { profileLabel } from "../../stores/profiles";
 
-// One settings surface, one set of shapes. Every page is built from these, so a
-// card here is the same size as a card there and a control here sits where a
-// control sits everywhere else.
+// One settings surface, one set of shapes.
 
 export function Page({ children }: { children: ReactNode }) {
   return <div className="flex flex-col gap-8">{children}</div>;
@@ -16,8 +14,8 @@ export function Card({
   flush = false,
 }: {
   children: ReactNode;
-  /// Rows divide themselves. Off for a card holding one block of text, where a
-  /// divider under a single child would just be a line to nothing.
+  // Off for a card holding one block of text, where the divider would be a
+  // line to nothing.
   flush?: boolean;
 }) {
   return (
@@ -65,8 +63,7 @@ export function Row({
   title: string;
   desc?: string;
   children?: ReactNode;
-  /// A row taller than one line of label — a textarea, a grid. The control goes
-  /// under the text instead of floating beside it.
+  // Taller than one line of label, so the control goes under the text.
   stacked?: boolean;
 }) {
   if (stacked) {

@@ -24,8 +24,7 @@ export default function SettingsPage({ tab, onTab, onClose }: Props) {
     setOpenId(null);
   }, [tab]);
 
-  // One profile deep is a page of its own, so Escape walks back out of it before
-  // it walks out of settings.
+  // One profile deep is its own page, so Escape backs out of it first.
   useEffect(() => {
     const onKey = (evt: KeyboardEvent) => {
       if (evt.key !== "Escape") {

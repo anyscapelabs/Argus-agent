@@ -129,10 +129,8 @@
   color-scheme: dark;
 }
 
-/* Gateway marks ship white on transparent. That is already the right colour on
-   a dark plate and invisible on a white one, so the flip belongs to the light
-   theme only — the plate itself must not be flipped with it, hence the target
-   is the mark inside the plate, not the plate. */
+/* Marks ship white on transparent: right on a dark plate, invisible on a light
+   one. The flip targets the mark, never the plate under it. */
 .logo-plate {
   background: var(--bg-secondary);
   box-shadow: inset 0 0 0 1px var(--border-primary);

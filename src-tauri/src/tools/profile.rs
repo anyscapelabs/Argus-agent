@@ -21,8 +21,7 @@ pub const META: &[ToolMeta] = &[
     },
 ];
 
-/// Reach is one way and sparse. Holding a capability on one target says nothing
-/// about any other, and holding it on none says nothing at all.
+/// One way. A capability on one target says nothing about any other.
 pub fn may(reach: &Reach, cap: &str, target: &str) -> bool {
     reach.reach_all
         || reach
@@ -31,10 +30,8 @@ pub fn may(reach: &Reach, cap: &str, target: &str) -> bool {
             .any(|g| g.capability == cap && g.target_id == target)
 }
 
-/// The profile asking. A tool call belongs to the chat it was made from and the
-/// chat belongs to a profile, so the answer is looked up rather than taken from
-/// the model's own mouth — a model that could name its own profile could name
-/// any profile.
+/// Looked up from the chat, never taken from the model. A model that could name
+/// its own profile could name any profile.
 fn caller(conn: &Connection) -> Result<String, String> {
     let sid = crate::tools::notepad::current_session()
         .ok_or("profile tools only work from inside a conversation")?;
@@ -42,8 +39,7 @@ fn caller(conn: &Connection) -> Result<String, String> {
     Ok(pstore::of_session(conn, &sid)?.unwrap_or_else(|| DEFAULT_ID.to_string()))
 }
 
-/// A refusal the model can act on. Naming the capability and where it is granted
-/// is the difference between "you may not look" and an error it will retry.
+/// Naming the capability is what makes this a refusal and not a retry.
 fn refusal(cap: &str, target: &str) -> String {
     format!(
         "no grant: this profile may not {cap} {target}. The user grants that in \

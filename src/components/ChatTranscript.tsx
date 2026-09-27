@@ -407,6 +407,8 @@ export default function ChatTranscript({
           const allText = assistants.map((a) => a.content).join("\n\n");
 
           const proseParts: string[] = [];
+          const cardParts: string[] = [];
+
           for (const m of prior) {
             let blocks;
             try {
@@ -414,6 +416,16 @@ export default function ChatTranscript({
             } catch {
               continue;
             }
+
+            // A sub-agent's card is not prose to be collapsed away. It is the
+            // only record of what was spawned and how it went, so a message
+            // carrying one is kept whole — reduced to paragraphs it vanished,
+            // taking the user's way back into the work with it.
+            if (blocks.some((b) => b.tag === "agent" || b.tag === "agent-done")) {
+              cardParts.push(m.content);
+              continue;
+            }
+
             for (const b of blocks) {
               if (b.kind !== "paragraph" && b.kind !== "heading") {
                 continue;
@@ -425,7 +437,9 @@ export default function ChatTranscript({
               proseParts.push(b.kind === "heading" ? `# ${t}` : t);
             }
           }
-          const priorProse = proseParts.join("\n\n");
+          const priorProse = [...cardParts, proseParts.join("\n\n")]
+            .filter((s) => s.length > 0)
+            .join("\n\n");
           const summaryText =
             priorProse.length > 0
               ? `${priorProse}\n\n${last?.content ?? ""}`

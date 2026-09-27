@@ -22,6 +22,7 @@ import {
   type AgentRun,
   type Attachment,
   type MsgRow,
+  type Usage,
   type SessionRow,
   type StreamEvent,
 } from "../lib/ipc";
@@ -43,6 +44,12 @@ export type Turn = {
 };
 
 export type TurnStatus = { providerId: string; attempt: number };
+
+// A slash command answered in the window rather than in the transcript: a line
+// of the app speaking, or a card it drew.
+export type Note =
+  | { kind: "text"; text: string }
+  | { kind: "usage"; report: Usage };
 
 const EMPTY_TXT = "";
 const DEF_TITLE = "New chat";
@@ -73,7 +80,7 @@ type State = {
   agentRuns: Record<string, AgentRun>;
   /// What a local slash command answered. Not a message: no model ran, so
   /// there is nothing to persist and nothing to reload.
-  notes: Record<string, string[]>;
+  notes: Record<string, Note[]>;
 };
 
 // A parent's turn ending is not the end of the job: it promised to report when
@@ -405,10 +412,10 @@ class SessionStore {
     this.set({ notes: { ...this.state.notes, [sessionId]: [] } });
   }
 
-  addNote(sessionId: string, text: string) {
+  addNote(sessionId: string, note: Note) {
     const existing = this.state.notes[sessionId] ?? [];
     this.set({
-      notes: { ...this.state.notes, [sessionId]: [...existing, text] },
+      notes: { ...this.state.notes, [sessionId]: [...existing, note] },
     });
   }
 

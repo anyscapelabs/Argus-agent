@@ -312,11 +312,43 @@ export function slashList(): Promise<SlashCmd[]> {
   return invoke<SlashCmd[]>("slash_list");
 }
 
-// Exactly one of `text` (a local answer, no model runs) and `model` (a
-// prompt macro, sent in place of what was typed) is ever set.
+// Exactly one of these is ever set: `text` is a line of the app speaking,
+// `usage` is a card the chat draws, and `model` is a prompt macro sent in
+// place of what was typed.
 export type SlashOut = {
   text: string | null;
   model: string | null;
+  usage: Usage | null;
+};
+
+export type UsageWindow = "today" | "week" | "month";
+
+export type ModelUsage = {
+  model: string;
+  provider: string;
+  requests: number;
+  tokens: number;
+  cost: number;
+};
+
+export type DayUsage = {
+  day: string;
+  requests: number;
+  tokens: number;
+  cost: number;
+};
+
+export type Usage = {
+  window: UsageWindow;
+  label: string;
+  requests: number;
+  failed: number;
+  tokIn: number;
+  tokOut: number;
+  cost: number;
+  workedMs: number;
+  models: ModelUsage[];
+  days: DayUsage[];
 };
 
 export function slashRun(

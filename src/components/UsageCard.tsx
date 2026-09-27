@@ -1,0 +1,262 @@
+import { useState } from "react";
+
+import { slashRun, type Usage, type UsageWindow } from "../lib/ipc";
+
+const WINDOWS: { key: UsageWindow; label: string }[] = [
+  { key: "today", label: "Today" },
+  { key: "week", label: "Week" },
+  { key: "month", label: "Month" },
+];
+
+type Props = { initial: Usage };
+
+export default function UsageCard({ initial }: Props) {
+  const [report, setReport] = useState(initial);
+  const [busy, setBusy] = useState(false);
+
+  // A local command, so switching the window costs a query and no tokens. The
+  // note keeps whatever window it ended on.
+  const pick = async (win: UsageWindow) => {
+    if (win === report.window || busy) {
+      return;
+    }
+
+    setBusy(true);
+
+    try {
+      const out = await slashRun("usage", null, win);
+      if (out.usage !== null) {
+        setReport(out.usage);
+      }
+    } catch {
+      // Leave the card on what it had. A window that will not load is not
+      // worth blanking the numbers the user is reading.
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rate = report.requests > 0 ? report.failed / report.requests : 0;
+  const empty = report.requests === 0 && report.days.length === 0;
+
+  return (
+    <div
+      className={
+        "w-full max-w-[700px] rounded-2xl border border-border-primary " +
+        "bg-bg-secondary px-5 py-4"
+      }
+    >
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="text-sm font-medium text-text-primary">Usage</div>
+
+        <div className="flex shrink-0 gap-1">
+          {WINDOWS.map((w) => {
+            const on = w.key === report.window;
+
+            return (
+              <button
+                key={w.key}
+                type="button"
+                onClick={() => void pick(w.key)}
+                className={
+                  "rounded-md px-2.5 py-1 text-xs transition-colors " +
+                  (on
+                    ? "bg-bg-hover-secondary text-text-primary"
+                    : "text-text-tertiary hover:text-text-secondary")
+                }
+              >
+                {w.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 divide-x divide-border-primary">
+        <Stat n={report.requests.toLocaleString()} label="Requests" />
+        <Stat n={tokens(report.tokIn + report.tokOut)} label="Tokens" />
+        <Stat n={money(report.cost)} label="Spend" />
+        <Stat n={duration(report.workedMs)} label="Worked for" />
+        <Stat
+          n={`${(rate * 100).toFixed(rate > 0 && rate < 0.01 ? 1 : 0)}%`}
+          label={report.failed > 0 ? `Failed · ${report.failed}` : "Failed"}
+        />
+      </div>
+
+      <div className="mt-5 mb-2 flex items-baseline justify-between">
+        <div className="text-sm text-text-primary">Activity</div>
+        <div className="text-xs text-text-tertiary">{report.label}</div>
+      </div>
+
+      <Calendar days={report.days} window={report.window} />
+
+      {empty ? (
+        <div className="mt-4 text-sm text-text-tertiary">
+          Nothing sent in this window yet.
+        </div>
+      ) : (
+        <Models models={report.models} />
+      )}
+    </div>
+  );
+}
+
+function Stat({ n, label }: { n: string; label: string }) {
+  return (
+    <div className="min-w-0 px-3 py-1 first:pl-0 last:pr-0">
+      <div className="truncate font-mono text-base text-text-primary">{n}</div>
+      <div className="mt-0.5 truncate text-xs text-text-tertiary">{label}</div>
+    </div>
+  );
+}
+
+function Calendar({
+  days,
+  window,
+}: {
+  days: Usage["days"];
+  window: UsageWindow;
+}) {
+  if (days.length === 0) {
+    return <div className="h-[52px]" />;
+  }
+
+  // Four levels, the way a contribution grid reads: none, low, mid, high. The
+  // scale is relative to this window's busiest day, because a fixed threshold
+  // makes every month look like the same quiet month.
+  const peak = Math.max(...days.map((d) => d.tokens), 1);
+  const cols = { gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` };
+
+  return (
+    <div className="overflow-x-auto">
+      <div className="grid gap-1" style={cols}>
+        {days.map((d) => (
+          <div
+            key={d.day}
+            title={`${d.day} · ${tokens(d.tokens)} tokens · ${money(d.cost)}`}
+            className={
+              "mx-auto h-3 w-full max-w-[36px] rounded-[3px] " +
+              level(d.tokens / peak)
+            }
+          />
+        ))}
+      </div>
+
+      <div className="mt-1.5 grid gap-1" style={cols}>
+        {days.map((d) => (
+          <span
+            key={d.day}
+            className="truncate text-center text-[10px] tabular-nums text-text-tertiary"
+          >
+            {tick(d.day, window)}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// A week reads as days of the week, a month as days of the month. Spelling out
+// "2026-09-20" seven times says less than the date it is on.
+const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function tick(day: string, window: UsageWindow): string {
+  if (window === "week") {
+    const at = Date.parse(`${day}T00:00:00`);
+    return Number.isNaN(at) ? day.slice(5) : WEEKDAY[new Date(at).getDay()];
+  }
+
+  return day.slice(8);
+}
+
+// A share of this window's busiest day. The bands are decades rather than
+// quarters: one heavy day is often twenty times a quiet one, and quarter cuts
+// would paint all six of the quiet days the same grey.
+function level(ratio: number): string {
+  if (ratio <= 0) {
+    return "bg-bg-hover-primary";
+  }
+
+  if (ratio > 0.5) return "bg-accent";
+  if (ratio > 0.1) return "bg-accent/70";
+  if (ratio > 0.03) return "bg-accent/40";
+  return "bg-accent/20";
+}
+
+function Models({ models }: { models: Usage["models"] }) {
+  if (models.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-5 border-t border-border-primary pt-3">
+      {models.map((m) => (
+        <div
+          key={`${m.model}-${m.provider}`}
+          className="flex items-baseline justify-between gap-4 py-1 text-sm"
+        >
+          <div className="min-w-0 truncate text-text-primary">
+            {m.model}
+            {m.provider !== "" && (
+              <span className="ml-2 text-xs text-text-tertiary">{m.provider}</span>
+            )}
+          </div>
+
+          <div className="shrink-0 text-xs text-text-tertiary">
+            {m.requests} req · {tokens(m.tokens)} · {money(m.cost)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function tokens(n: number): string {
+  if (n >= 1_000_000) {
+    return `${(n / 1_000_000).toFixed(1)}M`;
+  }
+
+  if (n >= 1_000) {
+    return `${Math.round(n / 1_000)}k`;
+  }
+
+  return n.toString();
+}
+
+// A cent under is not $0.00, and the whole point of the number is that it is
+// not zero.
+function money(cost: number): string {
+  if (cost > 0 && cost < 0.01) {
+    return "under a cent";
+  }
+
+  return `$${cost.toFixed(2)}`;
+}
+
+// The same shape the transcript's "Worked for" label uses, so a number in the
+// card and a label above a turn read as the same unit. Seconds stop counting
+// once they are the smaller half of the number, which is also when they would
+// wrap the strip.
+function duration(ms: number): string {
+  const sec = Math.max(0, Math.round(ms / 1000));
+
+  if (sec < 60) {
+    return `${sec} sec`;
+  }
+
+  const mins = Math.floor(sec / 60);
+  const rem = sec % 60;
+
+  if (mins < 60) {
+    if (rem === 0 || mins >= 10) {
+      return `${mins} min`;
+    }
+
+    return `${mins} min ${rem} sec`;
+  }
+
+  const hours = Math.floor(mins / 60);
+  const remH = mins % 60;
+
+  return remH === 0 ? `${hours} hr` : `${hours} hr ${remH} min`;
+}

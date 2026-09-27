@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import AgentBubble from "./AgentBubble";
+import UsageCard from "./UsageCard";
 import UserBubble from "./UserBubble";
 import { parseCached, type BlockNode } from "../lib/agentXml";
 import ToolActivity, {
@@ -523,17 +524,21 @@ export default function ChatTranscript({
             </div>
           );
         })}
-        {notes.map((note, ni) => (
-          <div
-            key={`note-${ni}`}
-            className={
-              "rounded-xl border border-border-primary bg-bg-secondary px-3 py-2 " +
-              "font-mono text-xs whitespace-pre-wrap text-text-primary"
-            }
-          >
-            {note}
-          </div>
-        ))}
+        {notes.map((note, ni) =>
+          note.kind === "usage" ? (
+            <UsageCard key={`note-${ni}`} initial={note.report} />
+          ) : (
+            <div
+              key={`note-${ni}`}
+              className={
+                "rounded-xl border border-border-primary bg-bg-secondary px-3 py-2 " +
+                "font-mono text-xs whitespace-pre-wrap text-text-primary"
+              }
+            >
+              {note.text}
+            </div>
+          ),
+        )}
         {waiting > 0 && (
           <div className="text-xs text-text-tertiary">
             {waiting === 1

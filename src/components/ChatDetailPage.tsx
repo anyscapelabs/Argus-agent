@@ -51,20 +51,27 @@ export default function ChatDetailPage({ sessionId, onOpenAgent }: Props) {
             void sessionStore.send(sessionId, txt);
           }}
           onSlash={(name, arg) => {
-            void slashRun(name, sessionId, arg).then((out) => {
-              if (out.text !== null) {
-                sessionStore.addNote(sessionId, out.text);
-                return;
-              }
+            void slashRun(name, sessionId, arg)
+              .then((out) => {
+                if (out.usage !== null) {
+                  sessionStore.addNote(sessionId, { kind: "usage", report: out.usage });
+                  return;
+                }
 
-              // A prompt macro reuses the send path rather than growing a
-              // second one: it is an ordinary turn with different words.
-              if (out.model !== null) {
-                void sessionStore.send(sessionId, out.model);
-              }
-            }).catch((err) => {
-              sessionStore.addNote(sessionId, String(err));
-            });
+                if (out.text !== null) {
+                  sessionStore.addNote(sessionId, { kind: "text", text: out.text });
+                  return;
+                }
+
+                // A prompt macro reuses the send path rather than growing a
+                // second one: it is an ordinary turn with different words.
+                if (out.model !== null) {
+                  void sessionStore.send(sessionId, out.model);
+                }
+              })
+              .catch((err) => {
+                sessionStore.addNote(sessionId, { kind: "text", text: String(err) });
+              });
           }}
         />
       </div>

@@ -1,8 +1,8 @@
 use argus_lib::library::schema::MIGRATE as LIB_MIGRATE;
 
-// The whole chain a file walks: dropped on the input, copied into the library,
-// recorded on the message, and finally split on the wire into an image the
-// model can see and a document it is told to open.
+// The whole chain a file walks: dropped on the input, recorded on the message
+// by the path it came from, and finally split on the wire into an image the
+// model can see and a document whose text it already has.
 
 fn db(dir: &std::path::Path) -> rusqlite::Connection {
     let _ = dir;
@@ -67,18 +67,11 @@ fn lib_dir() -> std::path::PathBuf {
     dir
 }
 
-// The library appends the extension itself, so the name is a stem -- the same
-// contract the picker goes through.
-fn add(
-    conn: &rusqlite::Connection,
-    dir: &std::path::Path,
-    stem: &str,
-    ext: &str,
-    bytes: &[u8],
-) -> String {
-    argus_lib::library::store::create_bytes(conn, dir, stem, ext, bytes, None)
-        .unwrap()
-        .id
+// A picked file stays where it is. The picker never copies it anywhere.
+fn write(dir: &std::path::Path, name: &str, bytes: &[u8]) -> String {
+    let p = dir.join(name);
+    std::fs::write(&p, bytes).unwrap();
+    p.to_string_lossy().into_owned()
 }
 
 #[test]
@@ -87,14 +80,8 @@ fn an_image_and_a_document_both_reach_the_model_in_one_turn() {
     let conn = db(&dir);
     let sid = session(&conn);
 
-    let img = add(&conn, &dir, "shot", "png", PNG);
-    let doc = add(
-        &conn,
-        &dir,
-        "Notes",
-        "md",
-        b"# the finding\n\neleven percent.",
-    );
+    let img = write(&dir, "shot.png", PNG);
+    let doc = write(&dir, "Notes.md", b"# the finding\n\neleven percent.");
 
     say(
         &conn,
@@ -102,8 +89,8 @@ fn an_image_and_a_document_both_reach_the_model_in_one_turn() {
         "what do you make of these",
         Some(
             &serde_json::json!([
-                { "id": img, "name": "shot.png", "kind": "image", "sz": PNG.len() },
-                { "id": doc, "name": "Notes.md", "kind": "doc", "sz": 33 }
+                { "path": img, "name": "shot.png", "kind": "image", "sz": PNG.len() },
+                { "path": doc, "name": "Notes.md", "kind": "doc", "sz": 33 }
             ])
             .to_string(),
         ),
@@ -133,7 +120,7 @@ fn an_image_and_a_document_both_reach_the_model_in_one_turn() {
 }
 
 #[test]
-fn a_document_with_no_readable_text_is_listed_rather_than_dropped() {
+fn a_document_with_no_readable_text_is_named_rather_than_dropped() {
     let dir = lib_dir();
     let conn = db(&dir);
     let sid = session(&conn);
@@ -141,7 +128,7 @@ fn a_document_with_no_readable_text_is_listed_rather_than_dropped() {
     // Mostly replacement characters: a file the extractor will not claim is
     // text. It still has to reach the model as something it can open.
     let junk = vec![0xffu8; 64 * 1024];
-    let doc = add(&conn, &dir, "Scan", "bin", &junk);
+    let doc = write(&dir, "Scan.bin", &junk);
 
     say(
         &conn,
@@ -149,7 +136,7 @@ fn a_document_with_no_readable_text_is_listed_rather_than_dropped() {
         "what is this",
         Some(
             &serde_json::json!([
-                { "id": doc, "name": "Scan.bin", "kind": "doc", "sz": junk.len() }
+                { "path": doc, "name": "Scan.bin", "kind": "doc", "sz": junk.len() }
             ])
             .to_string(),
         ),
@@ -159,7 +146,13 @@ fn a_document_with_no_readable_text_is_listed_rather_than_dropped() {
     let m = p.msgs.last().unwrap();
 
     assert!(m.content.contains("Scan.bin"), "{}", m.content);
-    assert!(m.content.contains("library.read"), "{}", m.content);
+    assert!(
+        m.content.contains(&doc),
+        "the path is what opens it: {}",
+        m.content
+    );
+    assert!(m.content.contains("fs.read"), "{}", m.content);
+    assert!(!m.content.contains("library.read"), "{}", m.content);
 }
 
 #[test]
@@ -174,7 +167,7 @@ fn a_file_the_library_has_lost_is_skipped_rather_than_failing_the_turn() {
         "read these",
         Some(
             &serde_json::json!([
-                { "id": "gone", "name": "missing.md", "kind": "doc", "sz": 10 }
+                { "path": "/nowhere/missing.md", "name": "missing.md", "kind": "doc", "sz": 10 }
             ])
             .to_string(),
         ),
@@ -183,8 +176,8 @@ fn a_file_the_library_has_lost_is_skipped_rather_than_failing_the_turn() {
     let p = argus_lib::prompt::project(&conn, &sid, &dir).unwrap();
     let m = p.msgs.last().unwrap();
 
-    // The id is still listed, so the model learns it could not be opened
-    // rather than being handed a turn that silently lost a file.
+    // It is still named, so the model learns the file could not be opened
+    // rather than being handed a turn that silently lost it.
     assert!(m.content.contains("missing.md"), "{}", m.content);
     assert!(m.images.is_empty());
 }
@@ -195,13 +188,13 @@ fn a_message_of_only_files_still_carries_the_note() {
     let conn = db(&dir);
     let sid = session(&conn);
 
-    let doc = add(&conn, &dir, "Notes", "md", b"body");
+    let doc = write(&dir, "Notes.md", b"body");
     say(
         &conn,
         &sid,
         "",
         Some(
-            &serde_json::json!([{ "id": doc, "name": "Notes.md", "kind": "doc", "sz": 4 }])
+            &serde_json::json!([{ "path": doc, "name": "Notes.md", "kind": "doc", "sz": 4 }])
                 .to_string(),
         ),
     );
@@ -230,4 +223,128 @@ fn a_message_written_before_attachments_existed_still_projects() {
 
     assert_eq!(m.content, "an old message");
     assert!(m.images.is_empty());
+}
+
+#[test]
+fn a_document_past_the_old_cut_arrives_whole() {
+    let dir = lib_dir();
+    let conn = db(&dir);
+    let sid = session(&conn);
+
+    // Well past where the inline copy used to stop at 20 000 characters, and
+    // past what a 12 000 character read returned.
+    let big = "the quick brown fox jumps over the lazy dog\n".repeat(1000);
+    assert!(big.len() > 40_000, "{} chars", big.len());
+
+    let doc = write(&dir, "Big.md", big.as_bytes());
+
+    say(
+        &conn,
+        &sid,
+        "review it",
+        Some(
+            &serde_json::json!([
+                { "path": doc, "name": "Big.md", "kind": "doc", "sz": big.len() }
+            ])
+            .to_string(),
+        ),
+    );
+
+    let p = argus_lib::prompt::project(&conn, &sid, &dir).unwrap();
+    let m = p.msgs.last().unwrap();
+
+    // Every line is here. A cut at 20 000 would have kept 573 of the 1000.
+    assert_eq!(
+        m.content.matches("lazy dog").count(),
+        1000,
+        "the file arrived whole: {}",
+        &m.content[..200.min(m.content.len())]
+    );
+    assert!(
+        !m.content.contains("cut at"),
+        "nothing was cut: {}",
+        m.content
+    );
+    assert!(
+        !m.content.contains("fs.read"),
+        "no read needed: {}",
+        m.content
+    );
+}
+
+#[test]
+fn a_file_too_big_for_one_message_is_named_not_halved() {
+    let dir = lib_dir();
+    let conn = db(&dir);
+    let sid = session(&conn);
+
+    // Over the 8 MB read cap, so it cannot be inlined at all.
+    let huge = vec![b'x'; 9_000_000];
+    let doc = write(&dir, "Huge.txt", &huge);
+
+    say(
+        &conn,
+        &sid,
+        "read it",
+        Some(
+            &serde_json::json!([
+                { "path": doc, "name": "Huge.txt", "kind": "doc", "sz": huge.len() }
+            ])
+            .to_string(),
+        ),
+    );
+
+    let p = argus_lib::prompt::project(&conn, &sid, &dir).unwrap();
+    let m = p.msgs.last().unwrap();
+
+    // Named, with the path that opens it, and carrying not one character of a
+    // file the model might mistake for a whole one.
+    assert!(m.content.contains("Huge.txt"), "{}", m.content);
+    assert!(m.content.contains(&doc), "{}", m.content);
+    assert!(m.content.contains("fs.read"), "{}", m.content);
+    assert!(
+        !m.content.contains("xxxx"),
+        "no partial text: {}",
+        &m.content[..200.min(m.content.len())]
+    );
+}
+
+#[test]
+fn a_row_written_before_paths_still_reads_through_the_library() {
+    let dir = lib_dir();
+    let conn = db(&dir);
+    let sid = session(&conn);
+
+    // The shape the picker used to write: a library id, no path.
+    let doc = argus_lib::library::store::create_bytes(
+        &conn,
+        &dir,
+        "Old",
+        "md",
+        b"written the old way",
+        None,
+    )
+    .unwrap()
+    .id;
+
+    say(
+        &conn,
+        &sid,
+        "look at this",
+        Some(
+            &serde_json::json!([
+                { "id": doc, "name": "Old.md", "kind": "doc", "sz": 19 }
+            ])
+            .to_string(),
+        ),
+    );
+
+    let p = argus_lib::prompt::project(&conn, &sid, &dir).unwrap();
+    let m = p.msgs.last().unwrap();
+
+    assert!(
+        m.content.contains("written the old way"),
+        "history is not broken by a schema change: {}",
+        m.content
+    );
 }

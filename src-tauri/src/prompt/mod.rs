@@ -336,7 +336,7 @@ pub fn project(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| err.to_string())?;
 
-    let msgs = to_wire(&rows, &|id| library_path(conn, library_dir, id));
+    let msgs = to_wire(&rows, &|a| attachment_path(conn, library_dir, a));
 
     let mut hasher = Sha256::new();
     hasher.update(system.as_bytes());
@@ -368,7 +368,7 @@ fn to_wire(
         Option<String>,
         Option<String>,
     )],
-    resolve: &dyn Fn(&str) -> Option<String>,
+    resolve: &dyn Fn(&Attachment) -> Option<String>,
 ) -> Vec<WireMsg> {
     rows.iter()
         .map(|(role, content, calls, call_id, att)| {
@@ -416,21 +416,27 @@ fn to_wire(
         .collect()
 }
 
-/// The file behind an attachment id, or nothing if the library lost it. A
-/// message outlives the file it named, and that is not a reason to fail.
-fn library_path(conn: &Connection, library_dir: &Path, id: &str) -> Option<String> {
+/// The file behind an attachment, or nothing if it is gone. A message outlives
+/// the file it named, and that is not a reason to fail.
+fn attachment_path(conn: &Connection, library_dir: &Path, a: &Attachment) -> Option<String> {
+    if let Some(p) = a.path.as_deref() {
+        return Some(p.to_string());
+    }
+
+    let id = a.id.as_deref()?;
+
     crate::library::store::abs_of(conn, library_dir, id).map(|p| p.to_string_lossy().into_owned())
 }
 
 /// An image goes inline, because the model can already see one. A document
-/// goes inline too, because a file the model has to go and open costs it a
-/// whole turn to learn what the user already said they were attaching. What
-/// comes inline is the text; what cannot fit is only named, with the id it
-/// needs to open it — a file the model cannot see and is not told about is a
-/// file it will never open.
+/// goes inline too, whole, because a file the model has to go and open costs
+/// it a turn to learn what the user already said they were attaching — and a
+/// partial copy is worse than none, because the model cannot tell it is
+/// partial. So a file that will not fit is not trimmed: it is named with its
+/// path and read whole, in pieces that move.
 fn attachments(
     raw: Option<&str>,
-    resolve: &dyn Fn(&str) -> Option<String>,
+    resolve: &dyn Fn(&Attachment) -> Option<String>,
 ) -> (Vec<String>, String) {
     let Some(raw) = raw else {
         return (vec![], String::new());
@@ -443,54 +449,50 @@ fn attachments(
 
     let mut images = vec![];
     let mut inlined: Vec<(String, String)> = vec![];
-    let mut listed = vec![];
+    let mut named = vec![];
     let mut room = INLINE_TOTAL_CHARS;
 
     for a in &items {
         if a.kind == "image" {
-            if let Some(path) = resolve(&a.id) {
+            if let Some(path) = resolve(a) {
                 images.push(path);
             }
 
             continue;
         }
 
-        let body = resolve(&a.id).and_then(|path| inline_body(&path, room));
+        let path = resolve(a);
+        let text = path.as_deref().and_then(|p| inline_body(p, room));
 
-        let Some((text, cut)) = body else {
-            listed.push(format!("- {} (id: {}, {}, {})", a.name, a.id, a.kind, a.sz));
+        let Some(text) = text else {
+            named.push(match path {
+                Some(p) => format!("- {} ({}, {} bytes) at {p}", a.name, a.kind, a.sz),
+                None => format!(
+                    "- {} ({}, {} bytes) — not on disk any more",
+                    a.name, a.kind, a.sz
+                ),
+            });
             continue;
         };
 
         room = room.saturating_sub(text.len());
-        inlined.push((
-            a.name.clone(),
-            if cut {
-                format!(
-                    "{text}\n[cut at {} characters — the rest is in the file, \
-                     read it with library.read id {} if you need it]",
-                    INLINE_FILE_CHARS, a.id
-                )
-            } else {
-                text
-            },
-        ));
+        inlined.push((a.name.clone(), text));
     }
 
-    if listed.is_empty() && inlined.is_empty() {
+    if named.is_empty() && inlined.is_empty() {
         return (images, String::new());
     }
 
     let mut note = String::from("<attachments>\n");
 
-    if !listed.is_empty() {
+    if !named.is_empty() {
         note.push_str(&format!(
-            "{} file{} came with this message and {} too large to include. \
-             Call library.read with the id to open one, then answer from what it returns.\n{}\n",
-            listed.len(),
-            if listed.len() == 1 { "" } else { "s" },
-            if listed.len() == 1 { "was" } else { "were" },
-            listed.join("\n")
+            "{} file{} came with this message and {} too big to include. \
+             Call fs.read with the path to read one, then answer from what it returns.\n{}\n",
+            named.len(),
+            if named.len() == 1 { "" } else { "s" },
+            if named.len() == 1 { "is" } else { "are" },
+            named.join("\n")
         ));
     }
 
@@ -505,12 +507,12 @@ fn attachments(
 
 /// Past this, the read costs more than the answer is worth.
 const INLINE_MAX_BYTES: u64 = 8_000_000;
-const INLINE_FILE_CHARS: usize = 20_000;
-const INLINE_TOTAL_CHARS: usize = 60_000;
+const INLINE_TOTAL_CHARS: usize = 400_000;
 
-/// The text of a file, cut to what is left of the budget. `None` means no
-/// text to give, which is different from text that was too much to give.
-fn inline_body(path: &str, room: usize) -> Option<(String, bool)> {
+/// The whole text of a file, or nothing at all. Never a piece of one: a
+/// partial file that looks whole is a wrong answer, and a right answer is
+/// what the user attached it for.
+fn inline_body(path: &str, room: usize) -> Option<String> {
     if room == 0 {
         return None;
     }
@@ -524,11 +526,12 @@ fn inline_body(path: &str, room: usize) -> Option<(String, bool)> {
     let bytes = std::fs::read(p).ok()?;
     let ext = p.extension()?.to_str()?.to_ascii_lowercase();
     let text = crate::library::extract::text(&bytes, &ext)?;
-    let cut = text.chars().count() > INLINE_FILE_CHARS.min(room);
 
-    let body: String = text.chars().take(INLINE_FILE_CHARS.min(room)).collect();
+    if text.len() > room {
+        return None;
+    }
 
-    Some((body.trim_end().to_string(), cut))
+    Some(text.trim_end().to_string())
 }
 
 fn unwrap_result(content: &str) -> String {

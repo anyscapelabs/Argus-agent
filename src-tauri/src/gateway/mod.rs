@@ -96,13 +96,6 @@ impl Gateway {
             .unwrap_or(false)
     }
 
-    pub fn turn_busy(&self, session_id: &str) -> bool {
-        self.turns
-            .lock()
-            .map(|s| s.contains(session_id))
-            .unwrap_or(false)
-    }
-
     pub fn watched(&self, session_id: &str) -> bool {
         self.events
             .lock()

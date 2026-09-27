@@ -170,3 +170,79 @@ async fn a_sub_agents_page_and_the_chat_that_started_it_are_both_tailed() {
     assert!(!gw.watching(&sid));
     assert!(!gw.watching(&other));
 }
+
+// A sub-agent's report comes back as a turn nobody asked for. It has no
+// forwarder of its own — it publishes onto the bus and hopes. If a claimed
+// turn tore the window's own tail down, every delta of the parent's answer
+// went nowhere: the chat sat on "waiting for sub-agents" with the finished
+// answer sitting in the database, visible only after a restart.
+#[tokio::test]
+async fn a_claimed_turn_does_not_cut_the_open_windows_tail() {
+    use argus_lib::gateway::Gateway;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use tauri::ipc::Channel;
+    use tauri::{Manager, State};
+
+    let (gw, _app, sid) = setup();
+    let app = Box::leak(Box::new(
+        tauri::test::mock_builder()
+            .manage(gw)
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap(),
+    ));
+    let state: State<'static, Gateway> = app.state::<Gateway>();
+
+    let got = Arc::new(AtomicUsize::new(0));
+    let seen = Arc::clone(&got);
+    let chan = Channel::new(move |_| {
+        seen.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    });
+
+    let sid2 = sid.clone();
+    tokio::spawn(
+        async move { argus_lib::sessions::chat::sess_watch_events(state, sid2, chan).await },
+    );
+
+    let gw = &app.state::<Gateway>();
+    let settle = std::time::Duration::from_millis(400);
+
+    for _ in 0..50 {
+        if gw.attached(&sid) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(gw.attached(&sid), "the window never subscribed");
+
+    // The wake turn takes its claim, long enough for the tail to notice.
+    assert!(gw.claim_turn(&sid));
+    tokio::time::sleep(settle).await;
+
+    for want in 1..=2usize {
+        gw.publish(
+            &sid,
+            argus_lib::gateway::schema::StreamEvent::Notice {
+                msg: format!("delta {want}"),
+            },
+        );
+
+        for _ in 0..50 {
+            if got.load(Ordering::SeqCst) >= want {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+
+        assert_eq!(
+            got.load(Ordering::SeqCst),
+            want,
+            "delta {want} never reached the window while a turn held the claim"
+        );
+        tokio::time::sleep(settle).await;
+    }
+
+    gw.release_turn(&sid);
+    gw.stop_watching(&sid);
+}

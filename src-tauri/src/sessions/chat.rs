@@ -436,6 +436,11 @@ pub fn announce<R: tauri::Runtime>(
                     session_id: sid.clone(),
                 };
 
+                // A turn nobody asked for still has a person reading it, or
+                // the open chat. Without this the wake refuses every step
+                // that needs approving, because it thinks it is alone.
+                gw.go_live(&sid);
+
                 let _ = crate::tools::shell::CANCEL
                     .scope(
                         std::sync::Arc::new(tokio::sync::Notify::new()),
@@ -446,6 +451,7 @@ pub fn announce<R: tauri::Runtime>(
                     )
                     .await;
 
+                gw.go_quiet(&sid);
                 gw.release_turn(&sid);
                 return;
             }
@@ -1445,10 +1451,6 @@ pub async fn sess_watch_events(
     gw.start_watching(&session_id);
 
     while gw.watching(&session_id) {
-        if gw.turn_busy(&session_id) {
-            break;
-        }
-
         let ev = match tokio::time::timeout(WATCH_IDLE, rx.recv()).await {
             Ok(Ok(ev)) => ev,
             Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => continue,

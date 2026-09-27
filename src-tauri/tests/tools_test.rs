@@ -454,3 +454,87 @@ fn the_degraded_prompt_is_marked_so_it_cannot_be_applied_twice() {
     assert!(s.contains(PROTOCOL_MARKER));
     assert!(!section(true).contains(PROTOCOL_MARKER));
 }
+
+const ZWSP: &str = "\u{200b}";
+
+// GLM writes its wrapper tag with a zero-width space in it, so a chat UI will
+// not execute what it finds. Every match in the salvage path was on a literal
+// `<tool_call`, so the whole call was neither run nor removed — it just landed
+// in the transcript. Both shapes below are what that model actually emits: the
+// wrapper hidden, and the whole call on one line.
+#[test]
+fn a_zero_width_wrapped_call_is_read_and_removed() {
+    let t = format!(
+        "Checking.\n<{ZWSP}tool_call>terminal<arg_key>command<arg_value>ls<arg_key>timeout<arg_value>30</{ZWSP}tool_call>"
+    );
+    let out = normalize_actions(&t);
+    let acts = parse_actions(&out);
+
+    assert_eq!(acts.len(), 1, "the call never ran: {out}");
+    assert_eq!(acts[0].tool, "terminal");
+
+    let v: Value = serde_json::from_str(&acts[0].args).unwrap();
+    assert_eq!(v["command"], "ls");
+    assert_eq!(v["timeout"], "30");
+
+    assert!(!out.contains("arg_key"), "{out}");
+    assert!(!out.contains("tool_call"), "{out}");
+    assert!(out.contains("Checking."), "{out}");
+}
+
+#[test]
+fn a_single_line_call_names_its_tool_before_the_first_arg() {
+    let t = "<tool_call>web.search<arg_key>query<arg_value>rust 1.98</arg_key><arg_value>x</arg_value></tool_call>";
+    let acts = parse_actions(&normalize_actions(t));
+
+    assert_eq!(
+        acts.len(),
+        1,
+        "the name and the args were read as one token"
+    );
+    assert_eq!(acts[0].tool, "web.search");
+}
+
+// The pairs do not always close. A stream cut mid-call leaves
+// `<arg_key>k<arg_value>v<arg_key>k2<arg_value>v2`, where the next key is the
+// only thing that ends a value.
+#[test]
+fn an_unclosed_arg_pair_is_still_a_pair() {
+    let t = "<tool_call>terminal<arg_key>command<arg_value>sed -n '55,130p' f.ts<arg_key>timeout<arg_value>30</tool_call>";
+    let acts = parse_actions(&normalize_actions(t));
+
+    assert_eq!(
+        acts.len(),
+        1,
+        "{}",
+        acts.iter()
+            .map(|a| a.tool.clone())
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    assert_eq!(acts[0].tool, "terminal");
+
+    let v: Value = serde_json::from_str(&acts[0].args).unwrap();
+    assert_eq!(v["command"], "sed -n '55,130p' f.ts");
+    assert_eq!(v["timeout"], "30");
+}
+
+// Salvage is not a filter. Whatever it could not read still must not be
+// something a person reads, so the pair goes with its value rather than
+// leaving `backgroundfalsecommandsed` welded into the prose.
+#[test]
+fn an_unclaimed_arg_soup_leaves_nothing_behind() {
+    let t = "Resuming the review.\n<arg_key>background<arg_value>false<arg_key>command<arg_value>sed -n '55,130p' f.ts<arg_key>timeout<arg_value>30";
+    let out = normalize_actions(t);
+
+    assert_eq!(out, "Resuming the review.\n", "{out}");
+}
+
+#[test]
+fn a_comparison_in_prose_is_not_a_tool_call() {
+    let t = "if a < b and c > d, the <arg_key> is untouched";
+    let out = normalize_actions(t);
+
+    assert!(out.contains("if a < b and c > d"), "{out}");
+    assert!(out.contains("the <arg_key> is untouched"), "{out}");
+}

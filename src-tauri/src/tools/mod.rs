@@ -703,9 +703,29 @@ fn coerce_args(tag: &str, body: &str) -> String {
 
 const TOOL_CALL_CLOSE: &str = "</tool_call>";
 
-pub fn normalize_actions(text: &str) -> String {
+/// GLM and the Hermes line hide the wrapper tag behind a zero-width space, so a
+/// chat UI will not auto-execute what it finds. Every match below is on a
+/// literal `<tool_call`, so that one invisible byte defeated the entire salvage
+/// path: the block was not recognised, not removed, and not run — it just
+/// landed in the transcript, wrapper and all.
+///
+/// Nothing a model writes legitimately contains a zero-width character, and
+/// leaving one in place only makes the transcript harder to read and search.
+fn strip_invisibles(text: &str) -> String {
+    text.chars()
+        .filter(|c| {
+            !matches!(
+                c,
+                '\u{200b}' | '\u{200c}' | '\u{200d}' | '\u{feff}' | '\u{00ad}'
+            )
+        })
+        .collect()
+}
+
+pub fn normalize_actions(raw: &str) -> String {
+    let text = strip_invisibles(raw);
     let mut out = String::new();
-    let mut rest = text;
+    let mut rest = text.as_str();
 
     while let Some(start) = rest.find("<tool_call") {
         out.push_str(&rest[..start]);
@@ -721,7 +741,7 @@ pub fn normalize_actions(text: &str) -> String {
                 None => {}
             }
 
-            return out;
+            return strip_protocol(&out);
         };
 
         if let Some((tool, args)) = salvage_call(&tail[..close]) {
@@ -732,7 +752,7 @@ pub fn normalize_actions(text: &str) -> String {
     }
 
     out.push_str(rest);
-    salvage_browser_blocks(&close_dangling_actions(&out))
+    strip_protocol(&salvage_browser_blocks(&close_dangling_actions(&out)))
 }
 
 fn salvage_browser_action(tag: &str) -> Option<(String, String)> {
@@ -823,40 +843,179 @@ fn salvage_call(inner: &str) -> Option<(String, String)> {
         return Some((tool, args.to_string()));
     }
 
-    let mut lines = body.lines().map(str::trim).filter(|l| !l.is_empty());
-    let tool = lines
-        .next()
+    // The name is whatever runs before the first arg tag, on its own line or
+    // not: a model that is not formatting puts the whole call on one line,
+    // and reading only the first line swallowed the name and the args
+    // together.
+    let head = body.split(ARG_KEY).next().unwrap_or_default();
+    let tool = head
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
         .filter(|t| {
             t.chars()
                 .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
         })?
         .to_string();
 
-    let keys = collect_spans(body, "<arg_key>", "</arg_key>");
-    let vals = collect_spans(body, "<arg_value>", "</arg_value>");
-    let args: serde_json::Map<String, Value> = keys
-        .into_iter()
-        .zip(vals)
-        .map(|(k, v)| (k, Value::String(v)))
-        .collect();
+    let args = arg_pairs(body);
 
     (!args.is_empty()).then(|| (tool, Value::Object(args).to_string()))
 }
 
-fn collect_spans(body: &str, open: &str, close: &str) -> Vec<String> {
-    let mut out = vec![];
+const ARG_KEY: &str = "<arg_key>";
+const ARG_KEY_CLOSE: &str = "</arg_key>";
+const ARG_VALUE: &str = "<arg_value>";
+const ARG_VALUE_CLOSE: &str = "</arg_value>";
+
+/// The pairs come in two shapes. Closed, they are
+/// `<arg_key>k</arg_key><arg_value>v</arg_value>`. Open — a stream cut
+/// mid-call, or a model that simply omits the closes — they run
+/// `<arg_key>k<arg_value>v<arg_key>k2<arg_value>v2`, where the next key is
+/// the only thing that ends a value. Reading only the closed shape is how a
+/// whole tool call reached the reader as raw text.
+fn arg_pairs(body: &str) -> serde_json::Map<String, Value> {
+    let mut out = serde_json::Map::new();
     let mut rest = body;
 
-    while let Some(i) = rest.find(open) {
-        let tail = &rest[i + open.len()..];
-        let Some(e) = tail.find(close) else {
+    while let Some(i) = rest.find(ARG_KEY) {
+        let tail = &rest[i + ARG_KEY.len()..];
+        let Some(v) = tail.find(ARG_VALUE) else {
             break;
         };
 
-        out.push(tail[..e].trim().to_string());
-        rest = &tail[e + close.len()..];
+        let key = match tail.find(ARG_KEY_CLOSE) {
+            Some(c) if c < v => tail[..c].trim(),
+            _ => tail[..v].trim(),
+        };
+
+        let after = &tail[v + ARG_VALUE.len()..];
+        let (value, next) = match first_of(after, &[ARG_VALUE_CLOSE, ARG_KEY]) {
+            Some((e, ARG_VALUE_CLOSE)) => (&after[..e], &after[e + ARG_VALUE_CLOSE.len()..]),
+            Some((e, _)) => (&after[..e], &after[e..]),
+            None => (after, ""),
+        };
+
+        if !key.is_empty() {
+            out.insert(key.to_string(), Value::String(value.trim().to_string()));
+        }
+
+        rest = next;
     }
 
+    out
+}
+
+fn first_of(hay: &str, needles: &[&'static str]) -> Option<(usize, &'static str)> {
+    needles
+        .iter()
+        .filter_map(|n| hay.find(n).map(|i| (i, *n)))
+        .min_by_key(|(i, _)| *i)
+}
+
+/// How far a value runs past its `<arg_key>`, so the pair can be taken whole.
+/// Closed, it is the `</arg_value>` and what it wraps. Open, it is the next
+/// key, the closing wrapper, or the end of the line.
+fn arg_value_len(after_key: &str) -> usize {
+    let Some(v) = after_key.find(ARG_VALUE) else {
+        return 0;
+    };
+
+    let after = &after_key[v + ARG_VALUE.len()..];
+
+    match first_of(after, &[ARG_VALUE_CLOSE, ARG_KEY, "<tool_call>"]) {
+        Some((e, ARG_VALUE_CLOSE)) => v + ARG_VALUE.len() + e + ARG_VALUE_CLOSE.len(),
+        Some((e, _)) => v + ARG_VALUE.len() + e,
+        None => after_key.len(),
+    }
+}
+
+/// Whatever the salvage above could not read is still not something a reader
+/// should be shown, so it goes. This is the floor under the whole class: a
+/// protocol tag reaches the transcript only by becoming an action, or not at
+/// all.
+fn strip_protocol(text: &str) -> String {
+    const TAGS: &[&str] = &[
+        "<tool_call>",
+        TOOL_CALL_CLOSE,
+        ARG_KEY,
+        ARG_KEY_CLOSE,
+        ARG_VALUE,
+        ARG_VALUE_CLOSE,
+        "<function_results>",
+        "</function_results>",
+    ];
+
+    let mut spans: Vec<(usize, usize)> = vec![];
+    let mut off = 0usize;
+    let mut rest = text;
+
+    'outer: while let Some(i) = rest.find('<') {
+        let tail = &rest[i..];
+        let hit = TAGS.iter().find(|t| tail.starts_with(**t));
+
+        if let Some(tag) = hit {
+            // Offsets here are tail-relative; `i` is added back when the span
+            // is recorded against `text`.
+            let end = match tail[1..].find('>') {
+                Some(gt) => gt + 2,
+                // A tag with no `>` is the whole rest of the line. Take that
+                // and no more: the words after it are prose, not payload.
+                None => match tail.find('\n') {
+                    Some(nl) => nl,
+                    None => tail.len(),
+                },
+            };
+
+            // A pair nobody claimed takes its value with it. Stripping the tag
+            // and leaving `backgroundfalsecommandsed -n` behind trades one
+            // unreadable thing for another. A key with no value after it is
+            // not a pair at all — it is a `<` in prose, and eating that is
+            // the mistake this whole function exists to stop making.
+            let end = if *tag == ARG_KEY {
+                let v = arg_value_len(&tail[end..]);
+
+                if v == 0 {
+                    // Literal. Step over the `<` and keep looking.
+                    off += i + 1;
+                    rest = &tail[1..];
+                    continue 'outer;
+                }
+
+                end + v
+            } else {
+                end
+            };
+
+            spans.push((off + i, off + i + end));
+            off += i + end;
+            rest = &tail[end..];
+            continue 'outer;
+        }
+
+        // Not one of ours. A `<` that opens nothing real is a literal, and so
+        // is everything after it that is not a tag we know.
+        let Some(gt) = tail[1..].find('>') else {
+            break;
+        };
+
+        off += 1 + gt + 1;
+        rest = &tail[1 + gt + 1..];
+    }
+
+    if spans.is_empty() {
+        return text.to_string();
+    }
+
+    let mut out = String::new();
+    let mut prev = 0usize;
+
+    for (start, end) in spans {
+        out.push_str(&text[prev..start]);
+        prev = end;
+    }
+
+    out.push_str(&text[prev..]);
     out
 }
 

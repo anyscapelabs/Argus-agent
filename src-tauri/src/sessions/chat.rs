@@ -385,6 +385,7 @@ pub fn post(gw: &Gateway, session_id: &str, role: &str, body: &str) {
                 tok_out: None,
                 tool_calls: None,
                 tool_call_id: None,
+                attachments: None,
             },
         );
     }
@@ -413,6 +414,7 @@ pub fn announce<R: tauri::Runtime>(
                     tok_out: None,
                     tool_calls: None,
                     tool_call_id: None,
+                    attachments: None,
                 },
             );
         }
@@ -467,6 +469,7 @@ pub fn announce<R: tauri::Runtime>(
                     tok_out: None,
                     tool_calls: None,
                     tool_call_id: None,
+                    attachments: None,
                 },
             );
         }
@@ -710,6 +713,7 @@ pub async fn send<R: tauri::Runtime>(
                     tok_out: None,
                     tool_calls: None,
                     tool_call_id: None,
+                    attachments: None,
                 },
             )?;
         }
@@ -810,6 +814,7 @@ pub async fn send<R: tauri::Runtime>(
                     tok_out: Some(stats.tok_out),
                     tool_calls: calls_json,
                     tool_call_id: None,
+                    attachments: None,
                 },
             )?
         };
@@ -1127,6 +1132,7 @@ pub async fn send<R: tauri::Runtime>(
                         tok_out: None,
                         tool_calls: None,
                         tool_call_id: exec.tool_call_id.clone(),
+                        attachments: None,
                     },
                 )?;
             }

@@ -201,6 +201,7 @@ fn a_chat_can_move_to_another_profile_at_any_time() {
             tok_out: None,
             tool_calls: None,
             tool_call_id: None,
+            attachments: None,
         },
     )
     .unwrap();
@@ -652,6 +653,7 @@ fn chat_of(conn: &rusqlite::Connection, title: &str, profile_id: &str, body: &st
             tok_out: None,
             tool_calls: None,
             tool_call_id: None,
+            attachments: None,
         },
     )
     .unwrap();

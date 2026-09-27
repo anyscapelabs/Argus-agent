@@ -270,6 +270,7 @@ fn say(conn: &rusqlite::Connection, session: &str, role: &str, content: &str) {
             tok_out: None,
             tool_calls: None,
             tool_call_id: None,
+            attachments: None,
         },
     )
     .unwrap();

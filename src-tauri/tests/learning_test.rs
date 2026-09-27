@@ -28,6 +28,7 @@ fn assistant_msg(conn: &rusqlite::Connection, sid: &str, content: &str) -> Strin
             tok_out: None,
             tool_calls: None,
             tool_call_id: None,
+            attachments: None,
         },
     )
     .unwrap()

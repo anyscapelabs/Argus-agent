@@ -138,6 +138,9 @@ pub struct Msg {
     #[serde(default)]
     pub kind: Option<String>,
     pub created_at: String,
+    /// JSON array of `{id, name, kind, sz}`. An id the library holds.
+    #[serde(default)]
+    pub attachments: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -153,4 +156,6 @@ pub struct NewMsg {
     pub tool_calls: Option<String>,
     #[serde(default)]
     pub tool_call_id: Option<String>,
+    #[serde(default)]
+    pub attachments: Option<String>,
 }

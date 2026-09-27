@@ -97,28 +97,39 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
             .map_err(|err| err.to_string())?;
     }
 
-    for (col, ddl) in [
+    // The table is named per entry, not assumed: a column check against the
+    // wrong table always passes and the ALTER then fails on boot.
+    for (table, col, ddl) in [
         (
+            "sessions",
             "parent_id",
             "ALTER TABLE sessions ADD COLUMN parent_id TEXT",
         ),
         (
+            "sessions",
             "agent_name",
             "ALTER TABLE sessions ADD COLUMN agent_name TEXT",
         ),
         (
+            "sessions",
             "agent_state",
             "ALTER TABLE sessions ADD COLUMN agent_state TEXT",
         ),
         (
+            "sessions",
             "profile_id",
             "ALTER TABLE sessions ADD COLUMN profile_id TEXT",
+        ),
+        (
+            "messages",
+            "attachments",
+            "ALTER TABLE messages ADD COLUMN attachments TEXT",
         ),
     ] {
         let has: bool = conn
             .query_row(
-                "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = ?1",
-                params![col],
+                "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2",
+                params![table, col],
                 |r| r.get::<_, i64>(0),
             )
             .map(|n| n > 0)
@@ -433,7 +444,7 @@ pub fn delete_session(conn: &Connection, id: &str) -> Result<(), String> {
 }
 
 const MSG_COLS: &str =
-    "id, session_id, seq, role, content, model_id, provider_id, tok_in, tok_out, active, vote, tool_calls, tool_call_id, kind, created_at";
+    "id, session_id, seq, role, content, model_id, provider_id, tok_in, tok_out, active, vote, tool_calls, tool_call_id, kind, created_at, attachments";
 
 fn row_msg(r: &rusqlite::Row) -> rusqlite::Result<Msg> {
     Ok(Msg {
@@ -452,6 +463,7 @@ fn row_msg(r: &rusqlite::Row) -> rusqlite::Result<Msg> {
         tool_call_id: r.get(12)?,
         kind: r.get(13)?,
         created_at: r.get(14)?,
+        attachments: r.get(15)?,
     })
 }
 
@@ -476,8 +488,8 @@ pub fn add_msg(conn: &Connection, m: &NewMsg) -> Result<Msg, String> {
         .map_err(|err| err.to_string())?;
 
     conn.execute(
-        "INSERT INTO messages (id, session_id, seq, role, content, model_id, provider_id, tok_in, tok_out, tool_calls, tool_call_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        "INSERT INTO messages (id, session_id, seq, role, content, model_id, provider_id, tok_in, tok_out, tool_calls, tool_call_id, attachments)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
             id,
             m.session_id,
@@ -489,7 +501,8 @@ pub fn add_msg(conn: &Connection, m: &NewMsg) -> Result<Msg, String> {
             m.tok_in,
             m.tok_out,
             m.tool_calls,
-            m.tool_call_id
+            m.tool_call_id,
+            m.attachments
         ],
     )
     .map_err(|err| err.to_string())?;

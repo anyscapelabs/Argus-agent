@@ -66,6 +66,7 @@ fn user_msg(conn: &rusqlite::Connection, session: &str, content: &str) {
             tok_out: None,
             tool_calls: None,
             tool_call_id: None,
+            attachments: None,
         },
     )
     .unwrap();
@@ -85,6 +86,7 @@ fn assistant_msg(conn: &rusqlite::Connection, session: &str, content: &str) {
             tok_out: None,
             tool_calls: None,
             tool_call_id: None,
+            attachments: None,
         },
     )
     .unwrap();
@@ -162,6 +164,7 @@ fn mark_final_flags_only_the_final_turn() {
             tok_out: None,
             tool_calls: None,
             tool_call_id: None,
+            attachments: None,
         },
     )
     .unwrap();
@@ -205,6 +208,7 @@ fn asst(conn: &rusqlite::Connection, session: &str, content: &str) -> String {
             tok_out: None,
             tool_calls: None,
             tool_call_id: None,
+            attachments: None,
         },
     )
     .unwrap()

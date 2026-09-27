@@ -7,7 +7,6 @@ type Props = {
   id: string;
   name: string;
   state?: string;
-  children?: React.ReactNode;
   onOpen: (id: string) => void;
 };
 
@@ -23,7 +22,6 @@ export default function AgentCard({
   id,
   name,
   state = "running",
-  children,
   onOpen,
 }: Props) {
   const { agentRuns } = useSessions();
@@ -53,7 +51,6 @@ export default function AgentCard({
         </span>
         <FiChevronRight size={12} className="shrink-0 text-text-tertiary" />
       </button>
-      {children}
       {live && (
         <div className="border-t border-border-primary px-3 py-1.5 text-right">
           <button

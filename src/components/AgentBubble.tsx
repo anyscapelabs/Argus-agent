@@ -472,9 +472,12 @@ function renderBlk(
           onOpen={(id) => onOpenAgent?.(id)}
         />
       );
-    case "agent-done": {
-      const report = blk.children.map((c) => c.value).join("").trim();
-
+    case "agent-done":
+      // Title only. The card is a way in, not a place to read the work —
+      // the report belongs in the sub-agent's own chat, which is what the
+      // click opens. Dumping the children here also dumped them as raw
+      // pre-wrapped text, so a report that landed inside the tag lost its
+      // markdown entirely.
       return (
         <AgentCard
           key={key}
@@ -482,15 +485,8 @@ function renderBlk(
           name={blk.attrs.name ?? "sub-agent"}
           state={blk.attrs.state ?? "done"}
           onOpen={(id) => onOpenAgent?.(id)}
-        >
-          {report !== "" && (
-            <div className="border-t border-border-primary px-3 py-2 text-sm whitespace-pre-wrap text-text-secondary">
-              {report}
-            </div>
-          )}
-        </AgentCard>
+        />
       );
-    }
     case "thinking":
       return <ThinkingBlock key={key} block={blk} />;
     case "plan":

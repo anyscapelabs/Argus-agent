@@ -860,7 +860,10 @@ pub async fn send<R: tauri::Runtime>(
                 }
             }
         } else if done {
-            let orphaned = tools::has_orphaned_action_block(&base_text);
+            // Asked of what the model actually wrote, not of the text the
+            // transcript shows: a fragment too broken to run is cut out of the
+            // answer, and the model still has to be told to say it again.
+            let orphaned = tools::has_orphaned_action_block(&stats.text);
 
             if !closed || fakes_output(&text) || has_faux_sandbox(&text) || orphaned {
                 if claim_nudges < MAX_CLAIM_NUDGES {

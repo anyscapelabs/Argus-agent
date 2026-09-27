@@ -487,21 +487,23 @@ async fn chat_truncated_output_with_pending_is_executed_not_discarded() {
 fn chat_orphaned_syntax_nudges_without_invalid_execution() {
     // Mirrors `send()`'s done-branch: pending empty + orphaned => NUDGE path,
     // never a silent finish and never an execution for invalid syntax.
-    let text = sanitize_tags(&normalize_actions(
-        r#"doing it <action tool="terminal">{"command":"#,
-    ));
+    let raw = r#"doing it <action tool="terminal">{"command":"#;
+    let text = sanitize_tags(&normalize_actions(raw));
     let pending = build_executions(&text, &[], 0);
     assert!(
         pending.is_empty(),
         "invalid syntax must not become an execution"
     );
+    // Cut out of the answer, so the model is asked again on the next turn
+    // rather than shown a fragment it cannot act on.
+    assert_eq!(text, "doing it", "{text}");
     assert!(
-        has_orphaned_action_block(&text),
+        has_orphaned_action_block(raw),
         "orphaned block must be detected so send() nudges instead of finishing"
     );
     // The done-branch condition in `send()`:
     let done = pending.is_empty();
-    let would_nudge = done && has_orphaned_action_block(&text);
+    let would_nudge = done && has_orphaned_action_block(raw);
     assert!(would_nudge);
 }
 

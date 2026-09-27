@@ -536,7 +536,7 @@ pub fn close_dangling_actions(text: &str) -> String {
         return format!("{text}</action>");
     }
 
-    text.into()
+    text[..start].trim_end().to_string()
 }
 
 fn coerce_val(v: &str) -> Value {
@@ -618,6 +618,8 @@ pub fn normalize_actions(text: &str) -> String {
         let tail = &rest[start..];
 
         let Some(close) = tail.find(TOOL_CALL_CLOSE) else {
+            out.push_str(tail);
+
             return out;
         };
 

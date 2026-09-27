@@ -42,7 +42,16 @@ fn salvages_json_tool_call() {
 #[test]
 fn drops_unsalvageable_tool_call() {
     assert_eq!(normalize_actions("<tool_call???' </tool_call>"), "");
-    assert_eq!(normalize_actions("a <tool_callweb.search b"), "a ");
+}
+
+// Nothing says where an unclosed block stops, so the tail is the answer and
+// only the answer. Dropping it lost whole replies.
+#[test]
+fn keeps_the_tail_of_an_unclosed_tool_call() {
+    assert_eq!(
+        normalize_actions("a <tool_callweb.search b"),
+        "a <tool_callweb.search b"
+    );
 }
 
 #[test]
@@ -266,15 +275,45 @@ fn closes_action_block_truncated_by_stream_end() {
 }
 
 #[test]
-fn leaves_completed_and_garbage_actions_alone() {
+fn leaves_completed_actions_and_plain_text_alone() {
     let done = r#"done <action tool="terminal">{"cmd":"ls"}</action>"#;
     assert_eq!(close_dangling_actions(done), done);
 
-    let garbage = r#"hmm <action tool="terminal">{"cmd":"#;
-    assert_eq!(close_dangling_actions(garbage), garbage);
-
     let no_action = "plain text";
     assert_eq!(close_dangling_actions(no_action), no_action);
+}
+
+// A tag that opens but never carries a body it can run is not a tool call. It
+// was reaching the transcript as raw syntax, and the tokenizer cannot guess
+// where a tag with no `>` ends, so it printed as prose.
+#[test]
+fn strips_an_action_tag_with_nothing_runnable_in_it() {
+    let garbage = r#"hmm <action tool="terminal">{"cmd":"#;
+
+    assert_eq!(close_dangling_actions(garbage), "hmm");
+}
+
+// A tag cut off before its own `>` has no tool name and no body to salvage.
+// It is still not a thing the user should read, and the tokenizer cannot guess
+// where it ends, so it was reaching the transcript as literal text.
+#[test]
+fn strips_an_action_tag_that_never_closed() {
+    let t = "All three reviewers are running.\n\n<action tool=\"agent_list";
+
+    let out = close_dangling_actions(t);
+
+    assert_eq!(out, "All three reviewers are running.");
+}
+
+// Nothing after an abandoned `<tool_call` is a tool call, and dropping it lost
+// the rest of the answer with it.
+#[test]
+fn keeps_text_after_an_unclosed_tool_call() {
+    let t = "<tool_call>\n{\"name\": \"agent.list\"\n\nHere is your summary anyway.";
+
+    let out = normalize_actions(t);
+
+    assert!(out.contains("Here is your summary anyway."), "got: {out}");
 }
 
 #[test]

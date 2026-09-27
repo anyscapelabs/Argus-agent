@@ -29,7 +29,9 @@ type Props = {
 type TurnGroup = { usr: MsgRow | null; agent: MsgRow[] };
 
 // Stored as a JSON string, because a TEXT column cannot hold a list. A row
-// written before attachments existed has nothing, which is not a failure.
+// written before attachments existed has nothing, which is not a failure. A
+// file is identified by its path now, and by its library id before that, so
+// either one makes it a real file.
 function parseFiles(row: MsgRow | null): Attachment[] {
   const raw = row?.attachments;
   if (raw === null || raw === undefined) {
@@ -46,8 +48,9 @@ function parseFiles(row: MsgRow | null): Attachment[] {
       (it): it is Attachment =>
         typeof it === "object" &&
         it !== null &&
-        typeof (it as Attachment).id === "string" &&
-        typeof (it as Attachment).name === "string",
+        typeof (it as Attachment).name === "string" &&
+        ((it as Attachment).path !== undefined ||
+          (it as Attachment).id !== undefined),
     );
   } catch {
     return [];
@@ -187,7 +190,7 @@ export default function ChatTranscript({
       return;
     }
 
-    sessionStore.retry(sessionId, row.seq, row.content);
+    sessionStore.retry(sessionId, row.seq, row.content, parseFiles(row));
   };
 
   const handleScrollKey = (event: React.KeyboardEvent<HTMLDivElement>) => {

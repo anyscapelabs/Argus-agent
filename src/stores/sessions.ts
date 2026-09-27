@@ -20,6 +20,7 @@ import {
   sessUnwatch,
   sessWatchEvents,
   type AgentRun,
+  type Attachment,
   type MsgRow,
   type SessionRow,
   type StreamEvent,
@@ -418,16 +419,18 @@ class SessionStore {
     void sessUnwatch(sessionId ?? undefined).catch(() => {});
   }
 
-  async send(sessionId: string, content: string) {
+  // `files` is for a resend of a message that already had them. A new message
+  // takes the ones waiting on the input and clears them.
+  async send(sessionId: string, content: string, files?: Attachment[]) {
     const prev = this.state.turns[sessionId];
     if (prev !== undefined && prev.err === null) return;
 
     // The chips come off the moment the send starts, not when the turn ends:
-    // the file was copied into the library the moment it was picked, and the
-    // message is the backend's to write. A send that never gets off the
-    // ground puts them back, so a failure loses nothing.
-    const attachments = attachStore.payload();
-    if (attachments.length > 0) attachStore.clear();
+    // the file is the user's and the message is the backend's to write. A
+    // send that never gets off the ground puts them back.
+    const resend = files !== undefined;
+    const attachments = resend ? files : attachStore.payload();
+    if (!resend && attachments.length > 0) attachStore.clear();
     this.clearNotes(sessionId);
 
     const pending: MsgRow = {
@@ -442,6 +445,11 @@ class SessionStore {
       tok_out: null,
       active: true,
       vote: null,
+      // The bubble shows the files the moment the message goes, not when the
+      // turn ends and the written row comes back. The chips came off the
+      // input for this message; the message owns them now.
+      attachments:
+        attachments.length > 0 ? JSON.stringify(attachments) : null,
       created_at: "",
     };
 
@@ -492,7 +500,7 @@ class SessionStore {
       // The turn may never have reached the backend, in which case the
       // message carrying these files was never written. Put them back rather
       // than leave the user to find them in the library.
-      if (attachments.length > 0) {
+      if (!resend && attachments.length > 0) {
         attachStore.restore(attachments);
       }
 
@@ -524,7 +532,12 @@ class SessionStore {
     } catch {}
   }
 
-  async retry(sessionId: string, usrSeq: number, content: string) {
+  async retry(
+    sessionId: string,
+    usrSeq: number,
+    content: string,
+    files?: Attachment[],
+  ) {
     const t = this.state.turns[sessionId];
     if (t !== undefined && t.err === null) return;
 
@@ -532,7 +545,9 @@ class SessionStore {
       await sessSupersedeFrom(sessionId, usrSeq);
     } catch {}
 
-    await this.send(sessionId, content);
+    // The files went with the message the first time. Asking again about a
+    // file the model no longer has would be a different question.
+    await this.send(sessionId, content, files ?? []);
   }
 
   async stop(sessionId: string) {

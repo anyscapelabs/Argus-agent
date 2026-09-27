@@ -802,7 +802,7 @@ pub async fn send<R: tauri::Runtime>(
         let mut pending = tools::build_executions(&base_text, &stats.tool_calls, act_base);
 
         let done = pending.is_empty();
-        let text = base_text.clone();
+        let text = tools::render_actions(&base_text, &pending);
 
         let calls_json = if stats.tool_calls.is_empty() {
             None

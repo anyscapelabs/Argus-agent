@@ -1,6 +1,8 @@
+use argus_lib::gateway::schema::ToolCall;
 use argus_lib::tools::browser;
 use argus_lib::tools::{
-    clip_ends, close_dangling_actions, normalize_actions, page_text, parse_actions, web,
+    build_executions, clip_ends, close_dangling_actions, normalize_actions, page_text,
+    parse_actions, render_actions, web,
 };
 use serde_json::Value;
 
@@ -342,4 +344,78 @@ fn leaves_plain_history_browser_action_blocks_alone() {
     let t = "done <browser-action id=\"a0\" url=\"https://x.com\" action=\"browser.open\">browser.open https://x.com</browser-action>";
     let acts = parse_actions(&normalize_actions(t));
     assert!(acts.is_empty());
+}
+
+// The transcript is a rendering of what ran. A tool tag that did not become an
+// execution — a native call with no tag, a text call the extractor took, an
+// unparseable fragment the model abandoned mid-stream — must not reach the
+// stored prose, because that prose is what the user reads.
+#[test]
+fn a_text_action_survives_only_as_a_canonical_tag() {
+    let raw =
+        "<step>read the file</step>\n<action tool=\"fs.read\">{\"path\":\"a.rs\"}</action>\ndone";
+    let execs = build_executions(raw, &[], 0);
+    let out = render_actions(raw, &execs);
+
+    assert_eq!(execs.len(), 1);
+    assert_eq!(
+        out,
+        "<step>read the file</step>\n<action tool=\"fs.read\">{\"path\":\"a.rs\"}</action>\ndone"
+    );
+}
+
+#[test]
+fn an_unparseable_action_tag_is_removed_from_the_prose() {
+    // Half-written, no closing tag, body is not json. Nothing to execute, so
+    // nothing the user should have to read.
+    let raw = "here goes\n<action tool=\"fs.read\">{\"path\": ";
+    let execs = build_executions(raw, &[], 0);
+    let out = render_actions(raw, &execs);
+
+    assert!(execs.is_empty());
+    assert_eq!(out, "here goes\n");
+}
+
+#[test]
+fn a_bare_action_tag_does_not_eat_the_answer_after_it() {
+    let raw = "<action\nthe answer is 42";
+    let out = render_actions(raw, &build_executions(raw, &[], 0));
+
+    assert_eq!(out, "\nthe answer is 42");
+}
+
+#[test]
+fn a_native_call_with_no_tag_is_written_into_the_prose() {
+    let calls = [ToolCall {
+        id: "c1".into(),
+        name: "fs.read".into(),
+        args: r#"{"path":"a.rs"}"#.into(),
+    }];
+    let execs = build_executions("reading it now", &calls, 0);
+    let out = render_actions("reading it now", &execs);
+
+    assert_eq!(execs.len(), 1);
+    assert_eq!(
+        out,
+        "reading it now<action tool=\"fs.read\">{\"path\":\"a.rs\"}</action>"
+    );
+}
+
+#[test]
+fn a_native_call_and_the_same_text_call_render_once() {
+    let calls = [ToolCall {
+        id: "c1".into(),
+        name: "fs.read".into(),
+        args: r#"{"path":"a.rs"}"#.into(),
+    }];
+    let raw = r#"<action tool="fs.read">{"path":"a.rs"}</action>"#;
+    let execs = build_executions(raw, &calls, 0);
+    let out = render_actions(raw, &execs);
+
+    assert_eq!(
+        execs.len(),
+        1,
+        "the text copy is a duplicate of the native call"
+    );
+    assert_eq!(out.matches("<action").count(), 1, "got: {out}");
 }

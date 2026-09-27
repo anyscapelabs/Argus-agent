@@ -408,6 +408,92 @@ pub fn has_orphaned_action_block(text: &str) -> bool {
     parse_actions(text).is_empty()
 }
 
+// Every span that reads as a tool tag, parseable or not. A span the extractor
+// rejects is still a span: leaving it behind is how a half-typed
+// `<action tool="x"` ends up in the transcript as text the user has to read.
+fn action_spans(text: &str) -> Vec<(usize, usize)> {
+    let mut out: Vec<(usize, usize)> = Vec::new();
+    let mut off = 0usize;
+    let mut rest = text;
+
+    while let Some(start) = rest.find("<action") {
+        let tail = &rest[start..];
+        let end = match tail.find("</action>") {
+            Some(i) => i + "</action>".len(),
+            // No closing tag. The tag is open, so whatever follows the `>` on
+            // this line is a payload the model never finished — abandoned json,
+            // not something to read.
+            None => match tag_end(tail) {
+                Some(i) => match tail[i + 1..].find('\n') {
+                    Some(nl) => i + 1 + nl,
+                    None => tail.len(),
+                },
+                // No `>` either, so there is no payload to account for. Take
+                // the tag name and leave the rest alone; swallowing it would
+                // eat the answer the tag interrupted.
+                None => "<action".len(),
+            },
+        };
+
+        out.push((off + start, off + start + end));
+        off += start + end;
+        rest = &tail[end..];
+    }
+
+    out
+}
+
+/// The transcript is a rendering of what ran, not a copy of what the model
+/// typed. A tool tag survives only if it became an execution: the tag is
+/// rewritten canonical in the place the model put it, a native call with no
+/// tag of its own is appended, and anything the extractor would not take is
+/// gone from the prose either way.
+///
+/// Extraction and display stop sharing a failure mode here. If a tag cannot be
+/// executed it is still not something the user should be shown.
+pub fn render_actions(text: &str, execs: &[ToolExecution]) -> String {
+    let spans = action_spans(text);
+
+    if spans.is_empty() && execs.is_empty() {
+        return text.to_string();
+    }
+
+    let found = parse_actions(text);
+    let mut used = vec![false; execs.len()];
+    let mut out = String::new();
+    let mut prev = 0usize;
+
+    for (start, end) in spans {
+        out.push_str(&text[prev..start]);
+        prev = end;
+
+        let Some(a) = found.iter().find(|a| a.start == start && a.end == end) else {
+            continue;
+        };
+
+        let Some(i) = (0..execs.len())
+            .find(|&i| !used[i] && execs[i].tool == a.tool && args_equal(&execs[i].args, &a.args))
+        else {
+            continue;
+        };
+
+        used[i] = true;
+        out.push_str(&format!("<action tool=\"{}\">{}</action>", a.tool, a.args));
+    }
+
+    out.push_str(&text[prev..]);
+
+    for (i, e) in execs.iter().enumerate() {
+        if used[i] || e.tool.trim().is_empty() {
+            continue;
+        }
+
+        out.push_str(&format!("<action tool=\"{}\">{}</action>", e.tool, e.args));
+    }
+
+    out
+}
+
 pub const FINAL_MARKER: &str = "<final/>";
 
 pub fn split_commit(text: &str) -> (bool, String) {

@@ -3,6 +3,7 @@ import { useState } from "react";
 import ChatInput from "./ChatInput";
 import ChatTranscript from "./ChatTranscript";
 import { useChatModels } from "../hooks/useChatModels";
+import { slashRun } from "../lib/ipc";
 import { attachStore } from "../stores/attachments";
 import { sessionStore, useSessions } from "../stores/sessions";
 
@@ -41,12 +42,29 @@ export default function ChatDetailPage({ sessionId, onOpenAgent }: Props) {
             const txt = draft.trim();
             // A message of only files is a message. The backend writes the
             // attachment note, so an empty body is not an empty turn.
-            if ((txt.length === 0 && attachStore.payload().length === 0) || running) {
+            const bare = txt.length === 0 && attachStore.payload().length === 0;
+            if (bare || running) {
               return;
             }
 
             setDraft("");
             void sessionStore.send(sessionId, txt);
+          }}
+          onSlash={(name, arg) => {
+            void slashRun(name, sessionId, arg).then((out) => {
+              if (out.text !== null) {
+                sessionStore.addNote(sessionId, out.text);
+                return;
+              }
+
+              // A prompt macro reuses the send path rather than growing a
+              // second one: it is an ordinary turn with different words.
+              if (out.model !== null) {
+                void sessionStore.send(sessionId, out.model);
+              }
+            }).catch((err) => {
+              sessionStore.addNote(sessionId, String(err));
+            });
           }}
         />
       </div>

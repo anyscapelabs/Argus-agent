@@ -70,6 +70,9 @@ type State = {
   turns: Record<string, Turn>;
   stopped: Record<string, boolean>;
   agentRuns: Record<string, AgentRun>;
+  /// What a local slash command answered. Not a message: no model ran, so
+  /// there is nothing to persist and nothing to reload.
+  notes: Record<string, string[]>;
 };
 
 // A parent's turn ending is not the end of the job: it promised to report when
@@ -93,6 +96,7 @@ class SessionStore {
     turns: {},
     stopped: {},
     agentRuns: {},
+    notes: {},
   };
 
   private listeners = new Set<() => void>();
@@ -395,6 +399,18 @@ class SessionStore {
     });
   }
 
+  clearNotes(sessionId: string) {
+    if ((this.state.notes[sessionId] ?? []).length === 0) return;
+    this.set({ notes: { ...this.state.notes, [sessionId]: [] } });
+  }
+
+  addNote(sessionId: string, text: string) {
+    const existing = this.state.notes[sessionId] ?? [];
+    this.set({
+      notes: { ...this.state.notes, [sessionId]: [...existing, text] },
+    });
+  }
+
   unwatch(sessionId: string | null) {
     if (sessionId !== null) this.watching.delete(sessionId);
     else this.watching.clear();
@@ -409,6 +425,7 @@ class SessionStore {
     // Read before the optimistic row, and cleared only once the send lands:
     // a failure the user retries must not silently drop their files.
     const attachments = attachStore.payload();
+    this.clearNotes(sessionId);
 
     const pending: MsgRow = {
       id: `${PENDING_PREFIX}${Date.now()}`,

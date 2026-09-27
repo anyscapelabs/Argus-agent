@@ -107,6 +107,7 @@ export default function ChatTranscript({
   userLabel,
 }: Props) {
   const st = useSessions();
+  const notes = st.notes[sessionId] ?? [];
   const { msgs, turns, stopped } = st;
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
@@ -519,6 +520,17 @@ export default function ChatTranscript({
             </div>
           );
         })}
+        {notes.map((note, ni) => (
+          <div
+            key={`note-${ni}`}
+            className={
+              "rounded-xl border border-border-primary bg-bg-secondary px-3 py-2 " +
+              "font-mono text-xs whitespace-pre-wrap text-text-primary"
+            }
+          >
+            {note}
+          </div>
+        ))}
         {waiting > 0 && (
           <div className="text-xs text-text-tertiary">
             {waiting === 1

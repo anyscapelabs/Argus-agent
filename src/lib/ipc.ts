@@ -301,6 +301,36 @@ export function sessExtStatus(): Promise<boolean> {
   return invoke<boolean>(CMD_SESS_EXT_ST);
 }
 
+export type SlashCmd = {
+  name: string;
+  desc: string;
+  kind: "local" | "prompt";
+  arg: string | null;
+};
+
+export function slashList(): Promise<SlashCmd[]> {
+  return invoke<SlashCmd[]>("slash_list");
+}
+
+// Exactly one of `text` (a local answer, no model runs) and `model` (a
+// prompt macro, sent in place of what was typed) is ever set.
+export type SlashOut = {
+  text: string | null;
+  model: string | null;
+};
+
+export function slashRun(
+  name: string,
+  sessionId: string | null,
+  arg?: string,
+): Promise<SlashOut> {
+  return invoke<SlashOut>("slash_run", {
+    name,
+    sessionId,
+    arg: arg ?? null,
+  });
+}
+
 export function sessChatStream(
   sessionId: string,
   content: string,

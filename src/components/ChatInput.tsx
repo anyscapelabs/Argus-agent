@@ -14,19 +14,26 @@ import {
 import { RiAttachment2 } from "react-icons/ri";
 
 import { useChatModels } from "../hooks/useChatModels";
-import type { ChatModel } from "../lib/ipc";
+import type { ChatModel, SlashCmd } from "../lib/ipc";
 import { attachStore, useAttachments } from "../stores/attachments";
 import AttachChips from "./AttachChips";
 import Dropdown, { type DropdownItem } from "./Dropdown";
 import LibraryPanel from "./LibraryPanel";
+import SlashMenu from "./SlashMenu";
 
 const COLLAPSED_HEIGHT = 40;
 const MAX_HEIGHT = 240;
+
+/// A whole line that is a command: the name, then anything after it.
+const SLASH_CALL = /^\/([a-z0-9]+)(?:\s+([\s\S]*))?$/i;
 
 type ChatInputProps = {
   value: string;
   onChange: (next: string) => void;
   onSubmit: () => void;
+  /// A line that is a command. Absent means commands are sent as text, which
+  /// is what a box with no registry behind it wants.
+  onSlash?: (name: string, arg: string) => void;
   placeholder?: string;
   model?: ChatModel | null;
   onModelChange?: (next: ChatModel | null) => void;
@@ -49,6 +56,7 @@ export default function ChatInput({
   value,
   onChange,
   onSubmit,
+  onSlash,
   placeholder = "Work with Argus",
   model,
   onModelChange,
@@ -64,6 +72,7 @@ export default function ChatInput({
   const { models, loading } = useChatModels();
   const [picked, setPicked] = useState<ChatModel | null>(null);
   const [browsing, setBrowsing] = useState(false);
+  const [slashOff, setSlashOff] = useState(false);
   const [dropping, setDropping] = useState(false);
   const selected = model ?? picked;
 
@@ -107,6 +116,14 @@ export default function ChatInput({
   // an empty box with chips on it is not an empty turn.
   const empty = value.trim().length === 0 && items.length === 0;
 
+  // A `/` only opens the menu at the start of the line and with no newline
+  // after it. That is what stops `src/lib` and a pasted path from being read
+  // as a command.
+  const asSlash = /^\/([a-z0-9]*)$/i.exec(value);
+  const asCall = SLASH_CALL.exec(value);
+  const showMenu = asSlash !== null && !running;
+  const query = asSlash?.[1] ?? "";
+
   const addItems: DropdownItem[] = [
     {
       label: "Add files or photos",
@@ -147,6 +164,27 @@ export default function ChatInput({
       onClick: () => onWebSearchChange?.(!webSearch),
     },
   ];
+
+  // Accepting a command fills the box with the name and its argument, and
+  // leaves the caret after them, so the argument is typed rather than guessed.
+  const accept = (cmd: SlashCmd) => {
+    onChange(cmd.arg === null ? `/${cmd.name} ` : `/${cmd.name} ${cmd.arg} `);
+    textareaRef.current?.focus();
+  };
+
+  // A line that is exactly `/name arg` is a command. Anything else — a path,
+  // a sentence with a slash in it — is a message.
+  const send = () => {
+    if (onSlash !== undefined && asCall !== null) {
+      onChange("");
+      onSlash(asCall[1].toLowerCase(), (asCall[2] ?? "").trim());
+      return;
+    }
+
+    if (!empty) {
+      onSubmit();
+    }
+  };
 
   const permissionItems: DropdownItem[] = [
     {
@@ -202,25 +240,38 @@ export default function ChatInput({
     >
       <AttachChips />
 
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter" || event.shiftKey) {
-            return;
-          }
+      <div className="relative">
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(event) => {
+            setSlashOff(false);
+            onChange(event.target.value);
+          }}
+          onKeyDown={(event) => {
+            // The menu takes Enter and Tab while it is open, and it stops
+            // them at the document, so this only sees a bare Enter.
+            if (event.key !== "Enter" || event.shiftKey || showMenu) {
+              return;
+            }
 
-          event.preventDefault();
-          if (!empty) {
-            onSubmit();
-          }
-        }}
-        placeholder={placeholder}
-        rows={1}
-        style={{ height: COLLAPSED_HEIGHT, lineHeight: "20px" }}
-        className="min-h-[44px] w-full resize-none bg-transparent px-2 text-sm font-medium text-text-primary placeholder:font-normal placeholder:text-text-secondary focus:outline-none"
-      />
+            event.preventDefault();
+            send();
+          }}
+          placeholder={placeholder}
+          rows={1}
+          style={{ height: COLLAPSED_HEIGHT, lineHeight: "20px" }}
+          className="min-h-[44px] w-full resize-none bg-transparent px-2 text-sm font-medium text-text-primary placeholder:font-normal placeholder:text-text-secondary focus:outline-none"
+        />
+
+        {showMenu && !slashOff && (
+          <SlashMenu
+            query={query}
+            onPick={accept}
+            onClose={() => setSlashOff(true)}
+          />
+        )}
+      </div>
 
       <div className="mt-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
@@ -319,11 +370,7 @@ export default function ChatInput({
                 return;
               }
 
-              if (empty) {
-                return;
-              }
-
-              onSubmit();
+              send();
             }}
             className={
               "flex h-8 w-8 shrink-0 items-center justify-center rounded-full " +

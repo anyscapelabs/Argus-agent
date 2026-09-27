@@ -422,9 +422,12 @@ class SessionStore {
     const prev = this.state.turns[sessionId];
     if (prev !== undefined && prev.err === null) return;
 
-    // Read before the optimistic row, and cleared only once the send lands:
-    // a failure the user retries must not silently drop their files.
+    // The chips come off the moment the send starts, not when the turn ends:
+    // the file was copied into the library the moment it was picked, and the
+    // message is the backend's to write. A send that never gets off the
+    // ground puts them back, so a failure loses nothing.
     const attachments = attachStore.payload();
+    if (attachments.length > 0) attachStore.clear();
     this.clearNotes(sessionId);
 
     const pending: MsgRow = {
@@ -477,7 +480,6 @@ class SessionStore {
 
     try {
       await sessChatStream(sessionId, content, chan, attachments);
-      attachStore.clear();
       const snippet = (this.state.turns[sessionId]?.text ?? "")
         .split("\n")[0]
         .trim()
@@ -487,6 +489,13 @@ class SessionStore {
       await this.loadSessions();
       this.onTurnDone?.(sessionId, true, snippet);
     } catch (err) {
+      // The turn may never have reached the backend, in which case the
+      // message carrying these files was never written. Put them back rather
+      // than leave the user to find them in the library.
+      if (attachments.length > 0) {
+        attachStore.restore(attachments);
+      }
+
       await this.loadMsgs(sessionId);
 
       if (String(err).includes("stopped")) {

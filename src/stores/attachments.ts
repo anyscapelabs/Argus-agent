@@ -71,6 +71,20 @@ class AttachStore {
     this.set({ items: [], err: null });
   }
 
+  // A send that never got off the ground. The ids are still the library's, so
+  // the chips come back exactly as they were.
+  restore(items: Attachment[]) {
+    if (items.length === 0) return;
+
+    this.set({
+      items: [
+        ...items.map((it) => ({ ...it, src: null })),
+        ...this.state.items,
+      ],
+      err: null,
+    });
+  }
+
   remove(id: string) {
     this.set({ items: this.state.items.filter((it) => it.id !== id) });
   }

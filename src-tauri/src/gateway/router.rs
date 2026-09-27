@@ -419,6 +419,9 @@ pub async fn stream_run(
                     let _ = store::log_req(&conn, &log);
                 }
 
+                // The provider turned down the tools payload. The in-band
+                // syntax is the only channel left, so teach it — but only if
+                // this prompt has not already been through here once.
                 if !err.retryable()
                     && matches!(err.status, Some(400) | Some(404) | Some(422))
                     && !req.tools.is_empty()
@@ -426,8 +429,7 @@ pub async fn stream_run(
                     req.tools.clear();
                     if let Some(sys) = req.msgs.first_mut() {
                         if sys.role == "system"
-                            && !sys.content.contains("## Tools")
-                            && !sys.content.contains("<action tool=")
+                            && !sys.content.contains(crate::tools::PROTOCOL_MARKER)
                         {
                             sys.content.push_str(&crate::tools::protocol_section());
                         }

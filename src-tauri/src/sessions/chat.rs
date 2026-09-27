@@ -34,11 +34,10 @@ Write a short session title for the user's message. Reply with only the title: \
 3 to 6 words, no quotes, no trailing punctuation.";
 
 const NUDGE: &str = "Your last reply neither ran a tool nor closed the turn. A reply ends \
-one of exactly two ways: with one or more <action> blocks, or with the final answer \
-followed by <final/> on its own last line. If you meant to act, emit the block now and \
-end the reply right after it: <action tool=\"...\">{\"arg\":\"...\"}</action>. If you \
-cannot act, say so plainly and end with <final/> — never describe an action without \
-running it.";
+one of exactly two ways: with a tool call, or with the final answer followed by \
+<final/> on its own last line. If you meant to act, make the call now and end the reply \
+right after it. If you cannot act, say so plainly and end with <final/> — never \
+describe an action without running it.";
 
 const SUMMARY_DEMAND: &str = "Your last replies kept ending without closing the turn. \
 Do not emit any more tool blocks. Reply now with a plain-text summary of what was \

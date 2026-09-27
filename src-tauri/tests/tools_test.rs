@@ -2,7 +2,7 @@ use argus_lib::gateway::schema::ToolCall;
 use argus_lib::tools::browser;
 use argus_lib::tools::{
     build_executions, clip_ends, close_dangling_actions, normalize_actions, page_text,
-    parse_actions, render_actions, web,
+    parse_actions, protocol_section, render_actions, section, web, PROTOCOL_MARKER,
 };
 use serde_json::Value;
 
@@ -418,4 +418,39 @@ fn a_native_call_and_the_same_text_call_render_once() {
         "the text copy is a duplicate of the native call"
     );
     assert_eq!(out.matches("<action").count(), 1, "got: {out}");
+}
+
+// Telling the model two ways to run a tool is why it used both, and an
+// in-band tag is one malformed string away from the reader's screen. The API
+// channel is the default; the in-band syntax survives only for a provider
+// that has turned the payload down.
+#[test]
+fn the_default_prompt_teaches_no_in_band_tool_syntax() {
+    let s = section(true);
+
+    assert!(
+        !s.contains(PROTOCOL_MARKER),
+        "the default prompt still teaches an in-band action tag"
+    );
+    assert!(
+        !s.contains("<tool_call>"),
+        "the default prompt still teaches the tool-call tag"
+    );
+    assert!(
+        !s.contains("Available tools:"),
+        "the schemas are on the request; listing them again in prose is dead weight"
+    );
+    // Nothing in the API expresses how a turn ends, so this one has to stay.
+    assert!(
+        s.contains("<final/>"),
+        "the turn terminator must still be taught"
+    );
+}
+
+#[test]
+fn the_degraded_prompt_is_marked_so_it_cannot_be_applied_twice() {
+    let s = protocol_section();
+
+    assert!(s.contains(PROTOCOL_MARKER));
+    assert!(!section(true).contains(PROTOCOL_MARKER));
 }

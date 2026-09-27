@@ -1496,6 +1496,10 @@ pub fn tool_specs(web: bool) -> Vec<crate::gateway::schema::ToolSpec> {
     out
 }
 
+/// Only `protocol_section` carries this. `section` deliberately does not, so a
+/// prompt that has been degraded once is recognisable and not degraded twice.
+pub const PROTOCOL_MARKER: &str = "<action tool=";
+
 pub fn protocol_section() -> String {
     let mut s = String::from(
         "\n\n## Tools\n\
@@ -1656,8 +1660,54 @@ retry once with different wording, or switch engine.\n",
     s
 }
 
+/// The default turn discipline.
+///
+/// How the model calls a tool is the provider's business, not prose's: it was
+/// handed the schemas on the request and it calls them through the API. The
+/// only thing that has to survive into the text is how a turn *ends`, which no
+/// API expresses — hence `<final/>`.
+///
+/// `protocol_section` is the older in-band syntax. It survives only for the
+/// degraded path in `router`, where a provider rejected the tools payload and
+/// the text channel is all that is left.
 pub fn section(web: bool) -> String {
-    let mut s = protocol_section();
+    let mut s = String::from(
+        "\n\n## Tools\n\
+Work in steps:\n\
+1. To run a tool, call it through the tool-calling API you were given. Never \
+write a tool call as text: not an action tag, not a tool-call tag, never args as \
+tag attributes, never a self-closed tag.\n\
+2. Each result arrives as the next message. Until it arrives you know nothing \
+about the outcome — never describe a result first.\n\
+3. Then continue: act again, or write the final answer.\n\
+Every reply ends one of exactly two ways: with a tool call, or with the final \
+answer followed by <final/> on its own last line. Nothing else closes a turn — \
+a reply that ends with neither is unfinished and will be sent back to you.\n\
+\n\
+A full round looks like this. You call the terminal tool to cat ~/notes.txt. \
+The next message is its result. So your reply is: The file says hello.\n\
+<final/>\n\
+\n\
+Rules:\n\
+- Batch every independent action into one reply: open once, then click, type, scroll \
+and read in the fewest replies possible, reusing the same tab. Never dribble one \
+action per reply when several are needed.\n\
+- Independent reads may share one reply; desktop actions run one per reply.\n\
+- A result with status err (including \"action denied by user\") ends that line of action.\n\
+- Attempt the full plan first; write one summary when every route is exhausted.\n\
+- Never narrate a screenshot you were not given, and never claim a tool ran \
+without its result message.\n\
+- Past runs render in history as <browser-action>, <terminal> and <document> blocks: \
+those are read-only records, never emit them yourself.\n\
+- While gathering information, reply with at most one short status line plus your \
+tool calls — no findings, no tables, no conclusions mid-task.\n\
+- Only in a turn with NO tool calls, write the complete final answer: every finding, \
+table and conclusion in that one reply. Never put the answer in a turn that also \
+starts more work. Close it with <final/>.\n\
+- Never announce an action you are about to take and then stop. If you mean to \
+act, the call is in the same reply; if you mean to answer, the reply ends with <final/>.\n",
+    );
+
     s.push_str(&guidance(web));
     s
 }

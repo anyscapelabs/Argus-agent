@@ -35,8 +35,7 @@ fn section_teaches_the_full_round() {
     let s = section(false);
 
     assert!(s.contains("A full round looks like this"), "{s}");
-    assert!(s.contains("<action tool=\"terminal\">"), "{s}");
-    assert!(s.contains("<tool-result tool=\"terminal\""), "{s}");
+    assert!(s.contains("You call the terminal tool"), "{s}");
     assert!(s.contains("action denied by user"), "{s}");
     assert!(s.contains("one per reply"), "{s}");
 }
@@ -53,14 +52,19 @@ fn section_teaches_work_then_answer_structure() {
     let s = section(false);
 
     assert!(s.contains("at most one short status line"), "{s}");
-    assert!(s.contains("Only in a turn with NO action blocks"), "{s}");
+    assert!(s.contains("Only in a turn with NO tool calls"), "{s}");
 }
 
 #[test]
 fn skill_read_is_listed_and_read_only() {
-    let s = section(false);
+    // The tool list is on the request now, not in the prompt.
+    let specs = tool_specs(false)
+        .iter()
+        .map(|t| format!("{} {}", t.name, t.description))
+        .collect::<Vec<_>>()
+        .join("\n");
 
-    assert!(s.contains("skill.read"), "{s}");
+    assert!(specs.contains("skill.read"), "{specs}");
     assert!(!is_mutating("skill.read"));
     assert!(is_mutating("terminal"));
     assert!(is_mutating("browser.click"));
@@ -168,7 +172,11 @@ fn the_job_tools_are_offered_and_read_only_where_they_should_be() {
 fn terminal_advertises_the_background_flag_and_stays_mutating() {
     assert!(is_mutating("terminal"));
 
-    let section = section(false);
-    assert!(section.contains("background true"), "{section}");
-    assert!(section.contains("job.read"), "{section}");
+    let specs = tool_specs(false)
+        .iter()
+        .map(|t| format!("{} {}", t.name, t.parameters))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(specs.contains("background"), "{specs}");
+    assert!(specs.contains("job.read"), "{specs}");
 }

@@ -21,5 +21,7 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
+  /* `bun:test` has no types without @types/bun; vite never builds these. */
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

@@ -306,8 +306,19 @@ export function tokenize(buf: string): Token[] {
       continue;
     }
 
+    // A `<` only opens a tag when one could actually be there. Prose is full
+    // of them — `if a < b and c > d`, a comparison, a half-typed tag arriving
+    // on a stream — and each of those used to be read as markup: the first
+    // rendered as `<bold>` with the words between it eaten, the second
+    // swallowed a whole line into a garbage tag. A tag has a name right after
+    // the `<`, and it lives on one line.
+    if (!/[A-Za-z/]/.test(buf[i + 1] ?? "")) {
+      i++;
+      continue;
+    }
+
     const end = findTagEnd(buf, i + 1);
-    if (end === -1) {
+    if (end === -1 || buf.slice(i + 1, end).includes("\n")) {
       i++;
       continue;
     }

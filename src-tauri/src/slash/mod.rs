@@ -72,21 +72,29 @@ pub const CMDS: &[Cmd] = &[
     },
 ];
 
-/// Exactly one of these is ever set: a local command renders `text` in the
-/// chat and no model runs, a prompt macro sends `model` instead of what the
-/// user typed.
+/// Exactly one of these is ever set. `text` renders as a line of the app
+/// speaking, `usage` renders as a card the chat draws, and `model` sends
+/// something to the model instead of what the user typed.
 #[derive(Serialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SlashOut {
     pub text: Option<String>,
     pub model: Option<String>,
+    pub usage: Option<usage::Usage>,
 }
 
 impl SlashOut {
     fn said(text: String) -> Self {
         Self {
             text: Some(text),
-            model: None,
+            ..Default::default()
+        }
+    }
+
+    fn usage(u: usage::Usage) -> Self {
+        Self {
+            usage: Some(u),
+            ..Default::default()
         }
     }
 }
@@ -133,13 +141,13 @@ pub async fn slash_run(
     match cmd.name {
         "usage" => {
             let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-            Ok(SlashOut::said(usage::report(&conn, &arg)?))
+            Ok(SlashOut::usage(usage::report(&conn, &arg)?))
         }
         "compact" => compact(&gw, session_id.as_deref()).await,
         "help" => Ok(SlashOut::said(help())),
         _ => Ok(SlashOut {
-            text: None,
             model: Some(cmd.tpl.unwrap_or("").replace("{{arg}}", &arg)),
+            ..Default::default()
         }),
     }
 }

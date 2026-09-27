@@ -65,8 +65,13 @@ fn an_empty_history_reports_zeroes_rather_than_an_error() {
     let (conn, _sid) = db();
     let out = usage::report(&conn, "week").unwrap();
 
-    assert!(out.contains("nothing yet"), "{out}");
-    assert!(!out.contains("NaN"), "{out}");
+    assert_eq!(out.requests, 0);
+    assert_eq!(out.failed, 0);
+    assert_eq!(out.cost, 0.0);
+    assert_eq!(out.worked_ms, 0.0);
+    assert!(out.models.is_empty());
+    assert!(out.days.is_empty());
+    assert!(out.cost.is_finite(), "a NaN here blanks the whole card");
 }
 
 #[test]
@@ -89,14 +94,55 @@ fn spend_and_failures_are_totalled_per_model() {
 
     let out = usage::report(&conn, "week").unwrap();
 
-    assert!(
-        out.contains("3 requests"),
-        "a failed attempt is a request: {out}"
+    assert_eq!(out.requests, 3, "a failed attempt is a request: {out:?}");
+    assert_eq!(out.failed, 1, "{out:?}");
+    assert_eq!(out.tok_in, 1210);
+    assert_eq!(out.tok_out, 600);
+    assert!((out.cost - 3.25).abs() < f64::EPSILON, "{out:?}");
+
+    // Most expensive first, so the number that matters is the one you read.
+    assert_eq!(out.models[0].model, "opus");
+    assert_eq!(out.models[0].requests, 2);
+    assert_eq!(out.models[0].provider, "p");
+    assert_eq!(out.models[1].model, "mini");
+    assert_eq!(out.models[1].requests, 1);
+}
+
+// The card draws a calendar, so the days have to come back in order and
+// grouped by the day they happened on rather than one row per request.
+#[test]
+fn days_come_back_grouped_and_in_order() {
+    let (conn, _sid) = db();
+    log(&conn, "opus", "ok", 100, 50, 1.0);
+    log(&conn, "opus", "ok", 200, 60, 2.0);
+    conn.execute(
+        "INSERT INTO request_log (ts, model_id, provider_id, status, tok_in, tok_out, cost)
+         VALUES (datetime('now', '-2 days'), 'opus', 'p', 'ok', 5, 5, 0.1)",
+        [],
+    )
+    .unwrap();
+
+    let out = usage::report(&conn, "week").unwrap();
+
+    assert_eq!(
+        out.days.len(),
+        2,
+        "one row per day, not per request: {out:?}"
     );
-    assert!(out.contains("1 failed"), "{out}");
-    assert!(out.contains("| opus | 2 |"), "{out}");
-    assert!(out.contains("| mini | 1 |"), "{out}");
-    assert!(out.contains("$3.25 total"), "{out}");
+
+    let oldest = &out.days[0];
+    let today = &out.days[1];
+
+    assert_eq!(oldest.requests, 1);
+    assert_eq!(oldest.tokens, 10);
+    assert_eq!(today.requests, 2);
+    assert_eq!(today.tokens, 410);
+    assert!(
+        oldest.day < today.day,
+        "in order: {} then {}",
+        oldest.day,
+        today.day
+    );
 }
 
 // The check that matters: the SQL and the transcript must be counting the
@@ -118,11 +164,13 @@ fn worked_time_is_the_span_the_transcript_labels_each_turn() {
     say(&conn, &sid, "user", "<tool-result>ok</tool-result>", 3);
     say(&conn, &sid, "user", "and this one", 2);
 
-    let worked = usage::report(&conn, "week").unwrap();
-    assert!(worked.contains("Worked for 4 min"), "{worked}");
+    // Four minutes, not four and two. The unanswered turn started at 2 minutes
+    // and never ended, and it is not time spent.
+    let worked = usage::report(&conn, "week").unwrap().worked_ms;
+
     assert!(
-        !worked.contains("4 min 2 sec"),
-        "an unanswered turn is not time spent: {worked}"
+        (worked - 240_000.0).abs() < 1_000.0,
+        "expected 4 min, got {worked} ms"
     );
 }
 
@@ -132,16 +180,20 @@ fn a_turn_with_no_assistant_reply_scores_zero_not_a_negative() {
     say(&conn, &sid, "user", "hello", 5);
 
     let out = usage::report(&conn, "week").unwrap();
-    assert!(out.contains("nothing yet"), "{out}");
+    assert_eq!(out.worked_ms, 0.0, "an open turn is not negative: {out:?}");
+    assert!(out.worked_ms.is_finite(), "{out:?}");
 }
 
+// The card decides how to say it. What it cannot do is decide it from a
+// number the backend already rounded away, so the cents survive the trip.
 #[test]
-fn spend_of_a_cent_under_reads_as_such_rather_than_as_zero() {
+fn spend_below_a_cent_arrives_unrounded() {
     let (conn, _sid) = db();
     log(&conn, "mini", "ok", 100, 50, 0.004);
 
     let out = usage::report(&conn, "week").unwrap();
-    assert!(out.contains("under a cent"), "{out}");
+    assert!((out.cost - 0.004).abs() < 1e-9, "{out:?}");
+    assert!((out.models[0].cost - 0.004).abs() < 1e-9, "{out:?}");
 }
 
 #[test]

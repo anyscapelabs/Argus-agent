@@ -119,8 +119,11 @@ impl ZipWriter {
         self.buf.extend_from_slice(&[0x50, 0x4B, 0x05, 0x06]);
         self.buf.extend_from_slice(&0u16.to_le_bytes());
         self.buf.extend_from_slice(&0u16.to_le_bytes());
-        self.buf.extend_from_slice(&count.to_le_bytes());
-        self.buf.extend_from_slice(&count.to_le_bytes());
+        // Both counts are u16 in the format. Writing the u32 made the record
+        // four bytes too long and no conformant reader could open the file.
+        let n = count as u16;
+        self.buf.extend_from_slice(&n.to_le_bytes());
+        self.buf.extend_from_slice(&n.to_le_bytes());
         self.buf.extend_from_slice(&dir_size.to_le_bytes());
         self.buf.extend_from_slice(&dir_off.to_le_bytes());
         self.buf.extend_from_slice(&0u16.to_le_bytes());
@@ -179,11 +182,12 @@ fn pdf_bytes(title: &str, body: &str) -> Vec<u8> {
     let npages = pages.len().max(1);
     let mut objects: Vec<Vec<u8>> = vec![];
     objects.push(b"<< /Type /Catalog /Pages 2 0 R >>".to_vec());
+    // Pages start at object 5: 1 catalog, 2 this tree, 3 and 4 the two fonts.
     objects.push(
         format!(
             "<< /Type /Pages /Kids [{}] /Count {} >>",
             (0..npages)
-                .map(|i| format!("{} 0 R", 4 + i * 2))
+                .map(|i| format!("{} 0 R", 5 + i * 2))
                 .collect::<Vec<_>>()
                 .join(" "),
             npages
@@ -199,7 +203,7 @@ fn pdf_bytes(title: &str, body: &str) -> Vec<u8> {
             .map(|(j, l)| format!("BT /F1 11 Tf 56 {} Td ({}) Tj ET", 760 - j * 16, esc_pdf(l)))
             .collect::<Vec<_>>()
             .join("\n");
-        let page_obj = (4 + i * 2) as u32;
+        let page_obj = (5 + i * 2) as u32;
         let stream_obj = page_obj + 1;
         objects.push(
             format!("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents {} 0 R >>", stream_obj).into_bytes(),
@@ -504,7 +508,7 @@ fn find_document_xml(bytes: &[u8]) -> Option<Vec<u8>> {
     None
 }
 
-fn xml_decode(s: &str) -> String {
+pub fn xml_decode(s: &str) -> String {
     s.replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
@@ -530,7 +534,7 @@ fn para_text(inner: &str) -> String {
     out
 }
 
-fn para_markdown(inner: &str) -> Option<String> {
+pub fn para_markdown(inner: &str) -> Option<String> {
     let txt = para_text(inner).trim().to_string();
     if txt.is_empty() {
         return None;

@@ -773,6 +773,7 @@ pub async fn exec<R: tauri::Runtime>(
         .chain(browser::META.iter())
         .chain(notepad::META.iter())
         .chain(profile::META.iter())
+        .chain(fs::read::META.iter())
         .chain(library::META.iter())
         .chain(connector::META.iter())
         .chain(conn_oauth::META.iter())
@@ -1070,6 +1071,12 @@ pub async fn exec<R: tauri::Runtime>(
         }
         "grep" => grep::run(&args).await,
         "fs.write" => fs::write(&args),
+        "fs.read" => {
+            let conn = gw.conn.lock().map_err(|e| e.to_string())?;
+            let out = fs::read::read(&conn, &gw.library_dir, &args);
+            drop(conn);
+            out
+        }
         "doc.create" => {
             let (item, pages) = crate::library::doc::create(gw, &args, None)?;
             Ok(format!(
@@ -1329,6 +1336,7 @@ pub fn is_mutating(name: &str) -> bool {
         .chain(browser::META.iter())
         .chain(notepad::META.iter())
         .chain(profile::META.iter())
+        .chain(fs::read::META.iter())
         .chain(library::META.iter())
         .chain(connector::META.iter())
         .chain(conn_oauth::META.iter())
@@ -1356,6 +1364,7 @@ pub fn tool_specs(web: bool) -> Vec<crate::gateway::schema::ToolSpec> {
         .chain(browser::META.iter())
         .chain(notepad::META.iter())
         .chain(profile::META.iter())
+        .chain(fs::read::META.iter())
         .chain(library::META.iter())
         .chain(connector::META.iter())
         .chain(conn_oauth::META.iter())

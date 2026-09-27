@@ -443,6 +443,14 @@ fn action_spans(text: &str) -> Vec<(usize, usize)> {
     out
 }
 
+/// The tool markup is a rendering of what ran, not something the model said.
+/// It goes back to the model on the `tool_calls` field and the tool result
+/// that follows it, so leaving a copy in the prose hands the model a turn that
+/// claims an action no call backs — and re-teaches the syntax it just retired.
+pub fn strip_actions(text: &str) -> String {
+    render_actions(text, &[])
+}
+
 /// The transcript is a rendering of what ran, not a copy of what the model
 /// typed. A tool tag survives only if it became an execution: the tag is
 /// rewritten canonical in the place the model put it, a native call with no

@@ -348,3 +348,44 @@ fn a_row_written_before_paths_still_reads_through_the_library() {
         m.content
     );
 }
+
+// The tool markup in a stored turn is a rendering of what ran, not something
+// the model said. Handing it back teaches the syntax we just retired, and
+// leaves the model claiming an action in prose that no `tool_calls` entry and
+// no tool result backs.
+#[test]
+fn history_sent_to_the_model_carries_no_tool_markup() {
+    use argus_lib::sessions::schema::NewMsg;
+
+    let dir = lib_dir();
+    let conn = db(&dir);
+    let sid = session(&conn);
+
+    let reply = "Reading it now.\n<action tool=\"terminal\">{\"command\":\"ls\"}</action>";
+
+    argus_lib::sessions::store::add_msg(
+        &conn,
+        &NewMsg {
+            session_id: sid.clone(),
+            role: "assistant".into(),
+            content: reply.into(),
+            model_id: None,
+            provider_id: None,
+            tok_in: None,
+            tok_out: None,
+            tool_calls: None,
+            tool_call_id: None,
+            attachments: None,
+        },
+    )
+    .unwrap();
+
+    let p = argus_lib::prompt::project(&conn, &sid, &dir).unwrap();
+    let all: String = p.msgs.iter().map(|m| format!("{}\n", m.content)).collect();
+
+    assert!(
+        !all.contains("<action"),
+        "the model was shown its own tool markup: {all}"
+    );
+    assert!(all.contains("Reading it now."), "{all}");
+}

@@ -410,7 +410,7 @@ fn to_wire(
 
             WireMsg {
                 role: role.clone(),
-                content,
+                content: crate::tools::strip_actions(&content),
                 images,
                 tool_calls: calls,
                 tool_call_id: None,

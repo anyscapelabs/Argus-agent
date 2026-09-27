@@ -2,12 +2,16 @@ import { useState } from "react";
 import { FiChevronDown } from "react-icons/fi";
 
 import type { BlockNode } from "../../lib/agentXml";
+import { renderInline } from "./InlineText";
 
 type Props = { block: BlockNode };
 
 export default function ThinkingBlock({ block }: Props) {
   const [open, setOpen] = useState(false);
-  const body = block.children.map((c) => c.value).join("").trim();
+  const body = block.children
+    .map((c) => c.value)
+    .join("")
+    .trim();
   const raw = block.attrs.duration ?? block.attrs.elapsed ?? block.attrs.time;
   const elapsed = raw
     ? raw
@@ -35,7 +39,7 @@ export default function ThinkingBlock({ block }: Props) {
       </button>
       {open && (
         <div className="mt-1 font-serif text-[16px] font-light leading-6 text-text-secondary">
-          {body || <span>thinking…</span>}
+          {body !== "" ? renderInline(block.children) : <span>thinking…</span>}
         </div>
       )}
     </div>

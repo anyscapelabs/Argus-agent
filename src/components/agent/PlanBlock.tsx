@@ -2,6 +2,7 @@ import { useState } from "react";
 import { FiChevronDown } from "react-icons/fi";
 
 import type { BlockNode } from "../../lib/agentXml";
+import { renderInline } from "./InlineText";
 
 type Props = { block?: BlockNode; steps?: BlockNode[] };
 
@@ -36,18 +37,14 @@ export default function PlanBlock({ steps: stepsProp }: Props) {
       {open && (
         <ul className="mt-1.5 ml-4 flex list-disc flex-col gap-1 marker:text-text-tertiary">
           {hasSteps ? (
-            steps.map((s, idx) => {
-              const txt = s.children.map((c) => c.value).join("").trim();
-
-              return (
-                <li
-                  key={s.attrs.id ?? `step-${idx}`}
-                  className="font-serif text-[16px] font-light leading-6 text-text-secondary"
-                >
-                  {txt || "…"}
-                </li>
-              );
-            })
+            steps.map((s, idx) => (
+              <li
+                key={s.attrs.id ?? `step-${idx}`}
+                className="font-serif text-[16px] font-light leading-6 text-text-secondary"
+              >
+                {s.children.length > 0 ? renderInline(s.children) : "…"}
+              </li>
+            ))
           ) : (
             <li className="font-serif text-[16px] italic text-text-secondary">
               planning…

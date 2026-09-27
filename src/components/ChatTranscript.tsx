@@ -398,6 +398,12 @@ export default function ChatTranscript({
             live && last ? new Set([last.id]) : new Set<string>(),
           );
           const showSummary = !live && workSteps.length > 0;
+          // The parent's turn ended when it handed the work out, so nothing in
+          // the store says the conversation is unfinished — the children still
+          // running are the only thing that knows. The last bubble holds the
+          // thinking animation instead of a vote row for an answer the model
+          // itself has not finished giving.
+          const holdOpen = !live && gi === groups.length - 1 && waiting > 0;
           const allText = assistants.map((a) => a.content).join("\n\n");
 
           const proseParts: string[] = [];
@@ -472,6 +478,8 @@ export default function ChatTranscript({
 
                       sessionStore.setVote(sessionId, last.id, v);
                     }}
+                    hideActions={holdOpen}
+                    waitingSubagents={holdOpen}
                     onEdit={async (edited) => {
                       if (last === undefined) return;
 
@@ -529,7 +537,9 @@ export default function ChatTranscript({
                         }
                       : undefined
                   }
-                  vote={live ? null : voteOf(last?.id ?? "")}
+                  vote={live ? null : holdOpen ? null : voteOf(last?.id ?? "")}
+                  hideActions={holdOpen}
+                  waitingSubagents={holdOpen}
                   onVote={(v) => {
                     if (last === undefined) {
                       return;
@@ -562,13 +572,6 @@ export default function ChatTranscript({
             {note.text}
           </div>
         ))}
-        {waiting > 0 && (
-          <div className="text-xs text-text-tertiary">
-            {waiting === 1
-              ? "Waiting on a sub-agent — Argus reports when it finishes."
-              : `Waiting on ${waiting} sub-agents — Argus reports when they finish.`}
-          </div>
-        )}
         {running && turn?.status != null && (
           <div className="text-xs text-text-tertiary">
             {turn.status.attempt > 1

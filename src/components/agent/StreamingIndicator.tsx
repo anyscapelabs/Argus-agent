@@ -12,16 +12,26 @@ const WORDS = [
 
 const WORD_MS = 2200;
 
-export default function StreamingIndicator() {
+type Props = {
+  /// A fixed label. The turn is not streaming anything — the words would be
+  /// claiming work that is not happening.
+  label?: string;
+};
+
+export default function StreamingIndicator({ label }: Props) {
   const [word, setWord] = useState(0);
 
   useEffect(() => {
+    if (label !== undefined) return;
+
     const t = setInterval(() => {
       setWord((w) => (w + 1) % WORDS.length);
     }, WORD_MS);
 
     return () => clearInterval(t);
-  }, []);
+  }, [label]);
+
+  const shown = label ?? `${WORDS[word]}…`;
 
   return (
     <motion.div
@@ -36,13 +46,13 @@ export default function StreamingIndicator() {
         transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
       />
       <motion.span
-        key={WORDS[word]}
+        key={shown}
         className="text-[14px] text-text-secondary"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3 }}
       >
-        {WORDS[word]}…
+        {shown}
       </motion.span>
     </motion.div>
   );

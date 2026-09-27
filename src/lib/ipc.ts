@@ -903,6 +903,14 @@ export function learningFeedback(
   return invoke<void>(CMD_LEARN_FB, { sessionId, messageId, feedback });
 }
 
+export type FileInfo = {
+  path: string;
+  name: string;
+  kind: string;
+  ext: string;
+  sz: number;
+};
+
 export type LibItem = {
   id: string;
   name: string;
@@ -918,16 +926,11 @@ export function libraryList(kind?: string): Promise<LibItem[]> {
   return invoke<LibItem[]>("library_list", { kind: kind ?? null });
 }
 
-// A file the user picked off their disk. Argus copies it into the library,
-// so the original can move or be deleted afterwards.
-export function libraryAdd(
-  sourcePath: string,
-  name: string,
-  sessionId?: string,
-): Promise<LibItem> {
-  return invoke<LibItem>("library_add", {
-    item: { sourcePath, name, sessionId: sessionId ?? null },
-  });
+// A file the user picked off their disk. Described where it stands, not
+// copied anywhere: the user already has it, and a second copy in the library
+// would be the library's whole reason for not existing.
+export function fileStat(path: string): Promise<FileInfo> {
+  return invoke<FileInfo>("file_stat", { path });
 }
 
 export function librarySearch(query: string): Promise<LibItem[]> {
@@ -967,7 +970,8 @@ export function libraryDownload(id: string): Promise<LibDownload> {
 // A file a message carries, as the backend wants it recorded: a library id
 // and enough to show a chip. No path, because a path can move.
 export type Attachment = {
-  id: string;
+  path?: string;
+  id?: string;
   name: string;
   kind: string;
   sz: number;

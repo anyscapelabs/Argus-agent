@@ -2,7 +2,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { useSyncExternalStore } from "react";
 
 import {
-  libraryAdd,
+  fileStat,
   libraryPath,
   type Attachment,
   type LibItem,
@@ -12,8 +12,8 @@ import {
 // row stops being a row.
 export const MAX_FILES = 8;
 
-// An image is sent to the model as base64 in the request body, so it costs
-// more than a document, which costs a tool call instead.
+// An image goes to the model as base64 in the request body, so it costs more
+// than a document, which is text.
 export const MAX_IMAGE_BYTES = 4_000_000;
 export const MAX_FILE_BYTES = 25_000_000;
 
@@ -41,13 +41,6 @@ function baseName(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
-// The library appends the extension itself, so a name carrying one would land
-// on disk as `photo.png.png`.
-function stemOf(name: string): string {
-  const at = name.lastIndexOf(".");
-  return at <= 0 ? name : name.slice(0, at);
-}
-
 class AttachStore {
   private state: State = { items: [], err: null, busy: false };
 
@@ -71,27 +64,33 @@ class AttachStore {
     this.set({ items: [], err: null });
   }
 
-  // A send that never got off the ground. The ids are still the library's, so
+  // A send that never got off the ground. The files never left the disk, so
   // the chips come back exactly as they were.
   restore(items: Attachment[]) {
     if (items.length === 0) return;
 
     this.set({
       items: [
-        ...items.map((it) => ({ ...it, src: null })),
+        ...items.map((it) => ({
+          ...it,
+          src: it.path !== undefined && isImage(extOf(it.name))
+            ? convertFileSrc(it.path)
+            : null,
+        })),
         ...this.state.items,
       ],
       err: null,
     });
   }
 
-  remove(id: string) {
-    this.set({ items: this.state.items.filter((it) => it.id !== id) });
+  remove(path: string) {
+    this.set({ items: this.state.items.filter((it) => it.path !== path) });
   }
 
-  // Off the user's disk, the dialog or a drop. Argus copies each one into the
-  // library, because the original is allowed to move.
-  async addPaths(paths: string[], sessionId?: string) {
+  // Off the user's disk, the dialog or a drop. Each one is described where it
+  // stands and never copied: it is already the user's file, and the message
+  // carries the path that opens it.
+  async addPaths(paths: string[]) {
     const room = MAX_FILES - this.state.items.length;
     if (room <= 0) {
       this.set({ err: `A message carries at most ${MAX_FILES} files.` });
@@ -108,17 +107,18 @@ class AttachStore {
       const cap = isImage(ext) ? MAX_IMAGE_BYTES : MAX_FILE_BYTES;
 
       try {
-        const item = await libraryAdd(path, stemOf(name), sessionId);
-        if (item.sz > cap) {
+        const info = await fileStat(path);
+        if (info.sz > cap) {
           refused.push(`${name} is over the ${cap} byte limit`);
           continue;
         }
-        // The chip and the note both want the name the user recognises, which
-        // is the one with the extension on it.
+
         added.push({
-          ...toAttachment(item),
+          path: info.path,
           name,
-          src: srcFor(item, path),
+          kind: info.kind,
+          sz: info.sz,
+          src: isImage(info.ext) ? convertFileSrc(info.path) : null,
         });
       } catch (e) {
         // The backend says why -- a name it refused, a file that moved, a
@@ -157,7 +157,13 @@ class AttachStore {
         // The file is gone from disk. The row goes with it, so drop it.
         continue;
       }
-      added.push({ ...toAttachment(item), src: srcFor(item, path) });
+      added.push({
+        path,
+        name: item.name,
+        kind: item.kind,
+        sz: item.sz,
+        src: srcFor(item, path),
+      });
     }
 
     this.set({
@@ -167,20 +173,16 @@ class AttachStore {
     });
   }
 
-  // What goes on the wire. The display path is dropped: the backend records an
-  // id, because a path can move.
+  // What goes on the wire: the path that opens the file, and enough to render
+  // the chip. The display url is dropped, it is only good in this window.
   payload(): Attachment[] {
-    return this.state.items.map(({ id, name, kind, sz }) => ({
-      id,
+    return this.state.items.map(({ path, name, kind, sz }) => ({
+      path,
       name,
       kind,
       sz,
     }));
   }
-}
-
-function toAttachment(item: LibItem): Attachment {
-  return { id: item.id, name: item.name, kind: item.kind, sz: item.sz };
 }
 
 function srcFor(item: LibItem, path: string): string | null {

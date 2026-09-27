@@ -8,7 +8,44 @@ use std::path::PathBuf;
 use tauri::State;
 
 use crate::gateway::Gateway;
-use schema::{LibDownload, LibItem, LibPreview, NewLibItem};
+use schema::{FileInfo, LibDownload, LibItem, LibPreview, NewLibItem};
+
+/// Describe a file the user picked. It is not copied: the picker hands over a
+/// path and the message carries that path, because a file the user already
+/// has does not need a second copy in a document library.
+#[tauri::command]
+pub fn file_stat(path: String) -> Result<FileInfo, String> {
+    let p = PathBuf::from(&path);
+
+    let meta = std::fs::metadata(&p).map_err(|err| format!("could not open {path}: {err}"))?;
+
+    if !meta.is_file() {
+        return Err(format!("{path} is not a file"));
+    }
+
+    let ext = p
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+
+    let name = p
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.clone());
+
+    let abs = std::fs::canonicalize(&p)
+        .map_err(|err| format!("could not resolve {path}: {err}"))?
+        .to_string_lossy()
+        .into_owned();
+
+    Ok(FileInfo {
+        path: abs,
+        name,
+        kind: store::kind_of(&ext).to_string(),
+        ext,
+        sz: meta.len() as i64,
+    })
+}
 
 #[tauri::command]
 pub fn library_add(gw: State<'_, Gateway>, item: NewLibItem) -> Result<LibItem, String> {

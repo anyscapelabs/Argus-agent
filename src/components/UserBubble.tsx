@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { FiCheck, FiCopy, FiFile, FiRefreshCcw } from "react-icons/fi";
 
-import { useLibSrc } from "../hooks/useLibSrc";
+import { useFileSrc } from "../hooks/useLibSrc";
 import { formatRelativeTime } from "../lib/relativeTime";
 import type { Attachment } from "../lib/ipc";
 
@@ -16,7 +16,7 @@ const COPY_RESET_MS = 1500;
 const EMPTY_TXT = "";
 
 function SentFile({ file }: { file: Attachment }) {
-  const src = useLibSrc(file.kind === "image" ? file.id : null);
+  const src = useFileSrc(file);
 
   return (
     <div

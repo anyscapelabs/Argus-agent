@@ -188,6 +188,7 @@ pub fn run() {
             skills::skill_sync,
             skills::skill_files,
             skills::skill_read_file,
+            library::file_stat,
             library::library_add,
             library::library_list,
             library::library_get,

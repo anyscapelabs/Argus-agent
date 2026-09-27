@@ -63,13 +63,29 @@ pub struct NewLibItem {
     pub session_id: Option<String>,
 }
 
-/// What a message records about a file it carried. The id is the library's,
-/// so nothing here names a path that could move.
+/// What a message records about a file it carried. A picked file is named by
+/// the path it came from, and that path is the only thing that can open it. A
+/// row written before the picker stopped copying into the library has an `id`
+/// and no `path`, and resolves through the library instead.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Attachment {
-    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
     pub name: String,
     pub kind: String,
+    pub sz: i64,
+}
+
+/// A file the user picked, described without being copied anywhere.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct FileInfo {
+    pub path: String,
+    pub name: String,
+    pub kind: String,
+    pub ext: String,
     pub sz: i64,
 }
 

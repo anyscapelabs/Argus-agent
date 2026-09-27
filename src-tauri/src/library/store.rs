@@ -30,7 +30,7 @@ fn abs_path(dir: &Path, rel: &str) -> PathBuf {
     dir.join(rel)
 }
 
-fn kind_of(ext: &str) -> &'static str {
+pub fn kind_of(ext: &str) -> &'static str {
     match ext {
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" | "ico" => "image",
         "mp4" | "webm" | "mov" | "avi" | "mkv" => "video",

@@ -101,7 +101,7 @@ export default function ChatInput({
 
       setDropping(false);
       if (event.payload.type === "drop") {
-        void attachStore.addPaths(event.payload.paths, sessionId ?? undefined);
+        void attachStore.addPaths(event.payload.paths);
       }
     });
 
@@ -135,7 +135,7 @@ export default function ChatInput({
         }
 
         const paths = Array.isArray(pickedPaths) ? pickedPaths : [pickedPaths];
-        await attachStore.addPaths(paths, sessionId ?? undefined);
+        await attachStore.addPaths(paths);
       },
     },
     {

@@ -45,7 +45,7 @@ function Chip({ item }: { item: Pending }) {
       <button
         type="button"
         aria-label={`Remove ${item.name}`}
-        onClick={() => attachStore.remove(item.id)}
+        onClick={() => attachStore.remove(item.path ?? "")}
         className="shrink-0 rounded p-0.5 text-text-tertiary opacity-0 transition-opacity hover:bg-bg-hover-secondary hover:text-text-primary focus:opacity-100 focus:outline-none group-hover:opacity-100"
       >
         <HiXMark size={12} />
@@ -66,7 +66,7 @@ export default function AttachChips() {
       {items.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {items.map((item) => (
-            <Chip key={item.id} item={item} />
+            <Chip key={item.path} item={item} />
           ))}
         </div>
       )}

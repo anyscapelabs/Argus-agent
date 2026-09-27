@@ -1,11 +1,12 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 
-import { libraryPath } from "../lib/ipc";
+import { libraryPath, type Attachment } from "../lib/ipc";
 
-// A message records a library id, never a path, because a path can move. So
-// the transcript asks for the path once per id and remembers it: reopening a
-// chat must not re-ask the backend for every image in it.
+// A file the user picked is named by its path, so its image needs no lookup. A
+// file out of the library has only an id, so the transcript asks for the path
+// once and remembers it: reopening a chat must not re-ask the backend for
+// every image in it.
 const CACHE = new Map<string, string>();
 
 export function libSrc(id: string): string | null {
@@ -40,4 +41,10 @@ export function useLibSrc(id: string | null): string | null {
   }, [id]);
 
   return id === null ? null : (src ?? libSrc(id));
+}
+
+export function useFileSrc(file: Attachment): string | null {
+  const viaId = useLibSrc(file.kind === "image" ? (file.id ?? null) : null);
+
+  return viaId ?? (file.path !== undefined ? convertFileSrc(file.path) : null);
 }

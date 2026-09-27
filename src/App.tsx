@@ -172,6 +172,34 @@ function App() {
     sessionStore.send(row.id, text);
   };
 
+  // The same shape, for a command the app answers itself. It is a turn like
+  // any other, so it needs a chat to live in — and the chat is named for what
+  // is in it, so the sidebar does not read "New chat" on an empty conversation.
+  const startLocal = async (
+    name: string,
+    arg: string,
+    model: ChatModel | null,
+    permission: string,
+    webSearch: boolean,
+  ) => {
+    const row = await sessionStore.create(
+      name,
+      model?.modelId ?? null,
+      permission,
+      webSearch,
+    );
+
+    if (profileStore.getState().activeId !== DEFAULT_PROFILE) {
+      await profileStore
+        .setForSession(row.id, profileStore.getState().activeId)
+        .catch(() => {});
+    }
+
+    await sessionStore.select(row.id);
+    setView("chat");
+    await sessionStore.runLocal(row.id, name, arg);
+  };
+
   const activeSession =
     activeId !== null ? sessions.find((s) => s.id === activeId) : undefined;
   const subagentRun = subagent !== null ? agentRuns[subagent.id] : undefined;
@@ -295,6 +323,7 @@ function App() {
             {view === "new-agent" && (
               <NewAgentPage
                 onSend={startNew}
+                onRunLocal={startLocal}
                 initialPrompt={pendingPrompt}
                 onPromptUsed={() => setPendingPrompt("")}
               />
@@ -315,6 +344,7 @@ function App() {
               ) : (
                 <NewAgentPage
                   onSend={startNew}
+                  onRunLocal={startLocal}
                   initialPrompt={pendingPrompt}
                   onPromptUsed={() => setPendingPrompt("")}
                 />

@@ -51,13 +51,23 @@ export default function ChatDetailPage({ sessionId, onOpenAgent }: Props) {
             void sessionStore.send(sessionId, txt);
           }}
           onSlash={(name, arg) => {
+            // `/usage` is a turn the app answers itself, so it goes in as one
+            // rather than as a note: it survives a reload and the model is
+            // never told about it.
+            if (name === "usage") {
+              void sessionStore
+                .runLocal(sessionId, name, arg)
+                .catch((err) => {
+                  sessionStore.addNote(sessionId, {
+                    kind: "text",
+                    text: String(err),
+                  });
+                });
+              return;
+            }
+
             void slashRun(name, sessionId, arg)
               .then((out) => {
-                if (out.usage !== null) {
-                  sessionStore.addNote(sessionId, { kind: "usage", report: out.usage });
-                  return;
-                }
-
                 if (out.text !== null) {
                   sessionStore.addNote(sessionId, { kind: "text", text: out.text });
                   return;

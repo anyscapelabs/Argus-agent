@@ -8,13 +8,21 @@ import {
   slashRun,
 } from "../lib/ipc";
 import { attachStore } from "../stores/attachments";
-import type { Note } from "../stores/sessions";
 import ChatInput from "./ChatInput";
-import UsageCard from "./UsageCard";
 
 type NewAgentPageProps = {
   onSend: (
     text: string,
+    model: ChatModel | null,
+    permission: string,
+    webSearch: boolean,
+  ) => void;
+  /// A command the app answers itself. It still needs a chat to live in, so
+  /// the page starts one and puts the turn in it rather than drawing a card
+  /// above a box that is not a conversation.
+  onRunLocal: (
+    name: string,
+    arg: string,
     model: ChatModel | null,
     permission: string,
     webSearch: boolean,
@@ -25,11 +33,12 @@ type NewAgentPageProps = {
 
 export default function NewAgentPage({
   onSend,
+  onRunLocal,
   initialPrompt = "",
   onPromptUsed,
 }: NewAgentPageProps) {
   const [draft, setDraft] = useState("");
-  const [note, setNote] = useState<Note | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const { models } = useChatModels();
   const [modelId, setModelId] = useState<string | null>(null);
   const [permission, setPermission] = useState("ask");
@@ -77,13 +86,9 @@ export default function NewAgentPage({
         What should we work on?
       </h1>
 
-      {note !== null && note.kind === "usage" && (
-        <UsageCard initial={note.report} />
-      )}
-
-      {note !== null && note.kind === "text" && (
+      {note !== null && (
         <pre className="max-h-[40vh] w-[700px] max-w-full overflow-auto whitespace-pre-wrap rounded-xl border border-border-primary bg-bg-secondary px-3 py-2 font-mono text-xs text-text-primary">
-          {note.text}
+          {note}
         </pre>
       )}
       <ChatInput
@@ -116,21 +121,23 @@ export default function NewAgentPage({
         onSlash={(name, arg) => {
           if (name === "clear") {
             attachStore.clear();
-            setNote({ kind: "text", text: "Cleared the attached files." });
+            setNote("Cleared the attached files.");
             return;
           }
 
-          // No session yet, so a local command answers here and a macro has
-          // to start one — the same path a typed prompt takes.
+          // A turn the app answers itself still needs a chat to live in, so
+          // the page starts one and puts the turn in it.
+          if (name === "usage") {
+            onRunLocal(name, arg, model, permission, webSearch);
+            return;
+          }
+
+          // No session yet, so a macro has to start one — the same path a
+          // typed prompt takes.
           void slashRun(name, null, arg)
             .then((out) => {
-              if (out.usage !== null) {
-                setNote({ kind: "usage", report: out.usage });
-                return;
-              }
-
               if (out.text !== null) {
-                setNote({ kind: "text", text: out.text });
+                setNote(out.text);
                 return;
               }
 
@@ -138,7 +145,7 @@ export default function NewAgentPage({
                 onSend(out.model, model, permission, webSearch);
               }
             })
-            .catch((err) => setNote({ kind: "text", text: String(err) }));
+            .catch((err) => setNote(String(err)));
         }}
       />
     </div>

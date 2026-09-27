@@ -67,6 +67,10 @@ type Props = {
   showThinking?: boolean;
   attachments?: BlockNode[];
   onOpenAgent?: (id: string) => void;
+  /// The turn is over but the work is not: a parent that fanned out has not
+  /// finished saying it. The bubble keeps the thinking animation and drops the
+  /// vote row, because these actions belong to an answer that is complete.
+  waitingSubagents?: boolean;
 };
 
 const HEADING_CLS: Record<string, string> = {
@@ -468,6 +472,25 @@ function renderBlk(
           onOpen={(id) => onOpenAgent?.(id)}
         />
       );
+    case "agent-done": {
+      const report = blk.children.map((c) => c.value).join("").trim();
+
+      return (
+        <AgentCard
+          key={key}
+          id={blk.attrs.id ?? ""}
+          name={blk.attrs.name ?? "sub-agent"}
+          state={blk.attrs.state ?? "done"}
+          onOpen={(id) => onOpenAgent?.(id)}
+        >
+          {report !== "" && (
+            <div className="border-t border-border-primary px-3 py-2 text-sm whitespace-pre-wrap text-text-secondary">
+              {report}
+            </div>
+          )}
+        </AgentCard>
+      );
+    }
     case "thinking":
       return <ThinkingBlock key={key} block={blk} />;
     case "plan":
@@ -735,6 +758,7 @@ export default function AgentBubble({
   showThinking,
   attachments,
   onOpenAgent,
+  waitingSubagents,
 }: Props) {
   const tree: XmlTree | null = useMemo(
     () => (text !== undefined ? parse(text) : null),
@@ -822,6 +846,10 @@ export default function AgentBubble({
       )}
 
       {caret && showThinking !== false && <StreamingIndicator />}
+
+      {!caret && waitingSubagents === true && (
+        <StreamingIndicator label="Waiting for sub-agents…" />
+      )}
 
       {attachments?.map((b, i) => (
         <Fragment key={`att-${i}`}>

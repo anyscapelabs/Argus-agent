@@ -403,6 +403,7 @@ async fn eval_real_browser_ground_task() {
                 &handle,
                 &session_id,
                 &user_task,
+                None,
                 &chan,
                 "user",
             )

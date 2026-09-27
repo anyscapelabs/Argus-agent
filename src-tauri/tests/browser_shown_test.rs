@@ -286,6 +286,7 @@ impl Harness {
             &self.handle,
             &self.session_id,
             user_text,
+            None,
             &self.chan,
             "user",
         )

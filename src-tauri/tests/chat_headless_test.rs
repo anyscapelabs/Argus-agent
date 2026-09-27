@@ -52,9 +52,16 @@ async fn headless_send_tags_system_role_without_frontend() {
     let (gw, handle, sid) = setup();
     let sink = NullSink;
 
-    let out =
-        argus_lib::sessions::chat::send(&gw, &handle, &sid, "scheduled tick", &sink, "system")
-            .await;
+    let out = argus_lib::sessions::chat::send(
+        &gw,
+        &handle,
+        &sid,
+        "scheduled tick",
+        None,
+        &sink,
+        "system",
+    )
+    .await;
 
     assert!(out.is_err(), "no model is configured, the turn must fail");
 

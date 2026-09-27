@@ -401,7 +401,8 @@ async fn eval_real_browser_stale_task() {
 
     let t0 = std::time::Instant::now();
     let status_run =
-        argus_lib::sessions::chat::send(&gw, &handle, &session_id, USER_TASK, &chan, "user").await;
+        argus_lib::sessions::chat::send(&gw, &handle, &session_id, USER_TASK, None, &chan, "user")
+            .await;
     let elapsed = t0.elapsed();
     let _ = watcher.await;
 

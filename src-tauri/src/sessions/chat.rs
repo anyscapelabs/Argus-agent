@@ -441,7 +441,7 @@ pub fn announce<R: tauri::Runtime>(
                         std::sync::Arc::new(tokio::sync::Notify::new()),
                         crate::tools::notepad::SESSION_ID.scope(
                             Some(sid.clone()),
-                            send(gw.inner(), &app2, &sid, &body2, &sink, "system"),
+                            send(gw.inner(), &app2, &sid, &body2, None, &sink, "system"),
                         ),
                     )
                     .await;
@@ -657,7 +657,10 @@ pub fn attach_shots(msgs: &mut [WireMsg]) {
             continue;
         }
 
-        m.images = paths;
+        // Extend, not replace: a message can carry an image the user attached
+        // and a screenshot the model took, and the second is not a reason to
+        // drop the first.
+        m.images.extend(paths);
         left -= 1;
     }
 }
@@ -694,6 +697,7 @@ pub async fn send<R: tauri::Runtime>(
     app: &AppHandle<R>,
     session_id: &str,
     content: &str,
+    attachments: Option<&str>,
     sink: &dyn ChatSink,
     role: &str,
 ) -> Result<(), String> {
@@ -713,7 +717,7 @@ pub async fn send<R: tauri::Runtime>(
                     tok_out: None,
                     tool_calls: None,
                     tool_call_id: None,
-                    attachments: None,
+                    attachments: attachments.map(str::to_string),
                 },
             )?;
         }
@@ -1369,6 +1373,7 @@ pub async fn sess_chat_stream(
     app: AppHandle,
     session_id: String,
     content: String,
+    attachments: Option<String>,
     on_event: Channel<StreamEvent>,
 ) -> Result<(), String> {
     let notify = std::sync::Arc::new(tokio::sync::Notify::new());
@@ -1411,7 +1416,7 @@ pub async fn sess_chat_stream(
 
     let out = tokio::select! {
         _ = notify.notified() => Err("stopped".into()),
-        out = crate::tools::shell::CANCEL.scope(notify.clone(), crate::tools::notepad::SESSION_ID.scope(Some(session_id.clone()), send(&gw, &app, &session_id, &content, &sink, "user"))) => out,
+        out = crate::tools::shell::CANCEL.scope(notify.clone(), crate::tools::notepad::SESSION_ID.scope(Some(session_id.clone()), send(&gw, &app, &session_id, &content, attachments.as_deref(), &sink, "user"))) => out,
     };
 
     let _ = fwd.await;

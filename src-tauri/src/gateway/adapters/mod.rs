@@ -63,12 +63,24 @@ pub fn real_name(wire: &str, tools: &[ToolSpec]) -> String {
 
 const SHOT_GUARD: &str = "/screenshots/shot-";
 
-fn shot_bytes(path: &str) -> Option<Vec<u8>> {
-    if !path.ends_with(".png") || !path.contains(SHOT_GUARD) {
-        return None;
-    }
+/// Extension to the media type a provider actually expects. Anything not
+/// listed is not sent, because a wrong type is a request the provider rejects
+/// rather than one it decodes.
+fn media_type(path: &str) -> Option<&'static str> {
+    let ext = path.rsplit('.').next()?.to_ascii_lowercase();
 
-    std::fs::read(path).ok()
+    Some(match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        _ => return None,
+    })
+}
+
+fn att_bytes(path: &str) -> Option<(Vec<u8>, &'static str)> {
+    let mime = media_type(path)?;
+    Some((std::fs::read(path).ok()?, mime))
 }
 
 fn b64(data: &[u8]) -> String {
@@ -110,10 +122,10 @@ pub fn openai_msgs(msgs: &[WireMsg]) -> Vec<serde_json::Value> {
             let mut parts = vec![serde_json::json!({ "type": "text", "text": m.content })];
 
             for p in &m.images {
-                if let Some(b) = shot_bytes(p) {
+                if let Some((b, mime)) = att_bytes(p) {
                     parts.push(serde_json::json!({
                         "type": "image_url",
-                        "image_url": { "url": format!("data:image/png;base64,{}", b64(&b)) }
+                        "image_url": { "url": format!("data:{mime};base64,{}", b64(&b)) }
                     }));
                 }
             }
@@ -131,10 +143,10 @@ pub fn anthropic_content(m: &WireMsg) -> serde_json::Value {
     let mut parts = vec![serde_json::json!({ "type": "text", "text": m.content })];
 
     for p in &m.images {
-        if let Some(b) = shot_bytes(p) {
+        if let Some((b, mime)) = att_bytes(p) {
             parts.push(serde_json::json!({
                 "type": "image",
-                "source": { "type": "base64", "media_type": "image/png", "data": b64(&b) }
+                "source": { "type": "base64", "media_type": mime, "data": b64(&b) }
             }));
         }
     }

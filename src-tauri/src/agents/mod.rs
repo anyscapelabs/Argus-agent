@@ -255,7 +255,7 @@ async fn supervise<R: tauri::Runtime>(
             cancel,
             crate::tools::notepad::SESSION_ID.scope(
                 Some(child_id.to_string()),
-                chat::send(gw.inner(), app, child_id, prompt, &sink, "user"),
+                chat::send(gw.inner(), app, child_id, prompt, None, &sink, "user"),
             ),
         )
         .await;

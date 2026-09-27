@@ -468,7 +468,8 @@ async fn eval_real_browser_snap_task() {
 
     // Single evaluation run; no task retry.
     let status_run =
-        argus_lib::sessions::chat::send(&gw, &handle, &session_id, &user_task, &chan, "user").await;
+        argus_lib::sessions::chat::send(&gw, &handle, &session_id, &user_task, None, &chan, "user")
+            .await;
     let elapsed = t0.elapsed();
 
     let msgs = {

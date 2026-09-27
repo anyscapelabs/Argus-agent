@@ -10,6 +10,7 @@ pub mod profiles;
 pub mod prompt;
 pub mod sessions;
 pub mod skills;
+pub mod slash;
 pub mod tools;
 
 use std::collections::{HashMap, HashSet};
@@ -214,6 +215,8 @@ pub fn run() {
             learning::learning_feedback,
             gateway::gw_logs,
             prompt::prompt_preview,
+            slash::slash_list,
+            slash::slash_run,
             prompt::compressor::prompt_status,
             prompt::compressor::prompt_compact,
             mcp::google::google_status,

@@ -538,3 +538,105 @@ fn a_comparison_in_prose_is_not_a_tool_call() {
     assert!(out.contains("if a < b and c > d"), "{out}");
     assert!(out.contains("the <arg_key> is untouched"), "{out}");
 }
+
+// GLM drops the opening `<arg_value>` under load (vLLM #49249). The call was
+// still a call: name, key, value. Reading only the complete shape threw the
+// whole thing away, so the model was told nothing, ran nothing, and tried the
+// same call again.
+#[test]
+fn a_missing_value_opener_keeps_the_call() {
+    let t = "<tool_call>run_terminal\n<arg_key>command</arg_key>cargo test\n<arg_key>timeout</arg_key>120\n</tool_call>";
+    let out = normalize_actions(t);
+
+    assert!(!out.contains("arg_key"), "{out}");
+    assert!(out.contains("<action tool=\"run_terminal\">"), "{out}");
+
+    let acts = parse_actions(&out);
+    assert_eq!(acts.len(), 1, "{out}");
+
+    let v: Value = serde_json::from_str(&acts[0].args).unwrap();
+    assert_eq!(v["command"], "cargo test", "{out}");
+    assert_eq!(v["timeout"], "120", "{out}");
+}
+
+// The same call with one pair intact and one value opener missing. The
+// broken pair is still an argument; it is not a reason to drop the call.
+#[test]
+fn a_missing_value_opener_does_not_cost_its_neighbour() {
+    let t =
+        "<tool_call>terminal<arg_key>command<arg_value>ls<arg_key>timeout</arg_key>30</tool_call>";
+    let out = normalize_actions(t);
+
+    let acts = parse_actions(&out);
+    assert_eq!(acts.len(), 1, "{out}");
+
+    let v: Value = serde_json::from_str(&acts[0].args).unwrap();
+    assert_eq!(v["command"], "ls", "{out}");
+    assert_eq!(v["timeout"], "30", "{out}");
+}
+
+// A wrapper that never arrived leaves the name behind, and that name is the
+// only thing left saying which tool to run. It used to reach the reader as
+// bare prose with the arguments stripped out from under it.
+#[test]
+fn a_call_with_no_wrapper_at_all_still_runs() {
+    let t = "run_terminal<arg_key>command</arg_key><arg_value>cargo test</arg_value>";
+    let out = normalize_actions(t);
+
+    assert!(!out.contains("arg_key"), "{out}");
+
+    let acts = parse_actions(&out);
+    assert_eq!(acts.len(), 1, "{out}");
+    assert_eq!(acts[0].tool, "run_terminal", "{out}");
+
+    let v: Value = serde_json::from_str(&acts[0].args).unwrap();
+    assert_eq!(v["command"], "cargo test", "{out}");
+}
+
+#[test]
+fn a_wrapperless_call_keeps_the_prose_around_it() {
+    let t = "Checking the suite.\nrun_terminal<arg_key>command<arg_value>cargo test</arg_value>\nThat is the fix.";
+    let out = normalize_actions(t);
+
+    assert!(out.contains("Checking the suite."), "{out}");
+    assert!(out.contains("That is the fix."), "{out}");
+    assert!(out.contains("<action tool=\"run_terminal\">"), "{out}");
+}
+
+// A name is a word of its own. One welded to the front of a longer word is
+// prose that happens to contain a tag, and guessing `run` at the start of
+// `runtime` would run the wrong tool on a word.
+#[test]
+fn a_name_glued_to_a_longer_word_is_not_a_call() {
+    let t = "the runtime<arg_key>command</arg_key><arg_value>cargo test</arg_value>";
+    let out = normalize_actions(t);
+
+    assert!(!out.contains("<action"), "{out}");
+    assert!(out.contains("runtime"), "{out}");
+}
+
+// Prose must not become a tool call just because a tag follows it. A name has
+// to be there, in its own right, for there to be anything to run.
+#[test]
+fn a_bare_arg_key_is_still_not_a_call() {
+    let t = "the <arg_key> in that output is misaligned";
+    let out = normalize_actions(t);
+
+    assert!(!out.contains("<action"), "{out}");
+}
+
+// The name on its own line, the way GLM actually writes it once the wrapper
+// is gone. The gap between the name and the tag is a newline, and a recovery
+// that only reads the name when it is glued to the tag misses this entirely.
+#[test]
+fn a_wrapperless_call_on_its_own_line_still_runs() {
+    let t = "Let me run the suite.\nrun_terminal\n<arg_key>command</arg_key><arg_value>cargo test</arg_value>\nThat is the fix.";
+    let out = normalize_actions(t);
+
+    assert!(out.contains("Let me run the suite."), "{out}");
+    assert!(out.contains("That is the fix."), "{out}");
+
+    let acts = parse_actions(&out);
+    assert_eq!(acts.len(), 1, "{out}");
+    assert_eq!(acts[0].tool, "run_terminal", "{out}");
+}

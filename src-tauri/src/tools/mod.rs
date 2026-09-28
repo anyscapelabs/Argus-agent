@@ -727,9 +727,33 @@ pub fn normalize_actions(raw: &str) -> String {
     let mut out = String::new();
     let mut rest = text.as_str();
 
-    while let Some(start) = rest.find("<tool_call") {
+    while let Some(start) = next_call_start(rest) {
         out.push_str(&rest[..start]);
         let tail = &rest[start..];
+
+        // A wrapper that never arrived. The name is the only thing marking
+        // where the call begins and the first arg is the only thing marking
+        // where it ends, so the call runs exactly as far as its arguments do.
+        if !tail.starts_with("<tool_call") {
+            let (args, used) = arg_pairs(tail);
+
+            if args.is_empty() {
+                out.push_str(tail);
+                break;
+            }
+
+            let span = &tail[..used];
+
+            if let Some(tool) = head_name(span) {
+                out.push_str(&format!(
+                    "<action tool=\"{tool}\">{}</action>",
+                    Value::Object(args)
+                ));
+            }
+
+            rest = &tail[used..];
+            continue;
+        }
 
         let Some(close) = tail.find(TOOL_CALL_CLOSE) else {
             // Cut the opening tag and keep what the model wrote inside it —
@@ -843,24 +867,75 @@ fn salvage_call(inner: &str) -> Option<(String, String)> {
         return Some((tool, args.to_string()));
     }
 
-    // The name is whatever runs before the first arg tag, on its own line or
-    // not: a model that is not formatting puts the whole call on one line,
-    // and reading only the first line swallowed the name and the args
-    // together.
-    let head = body.split(ARG_KEY).next().unwrap_or_default();
-    let tool = head
+    let tool = head_name(body)?;
+    let (args, _) = arg_pairs(body);
+
+    (!args.is_empty()).then(|| (tool, Value::Object(args).to_string()))
+}
+
+fn name_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')
+}
+
+/// The name is whatever runs before the first arg tag, on its own line or
+/// not: a model that is not formatting puts the whole call on one line, and
+/// reading only the first line swallowed the name and the args together.
+fn head_name(body: &str) -> Option<String> {
+    body.split(ARG_KEY)
+        .next()
+        .unwrap_or_default()
         .lines()
         .map(str::trim)
         .find(|l| !l.is_empty())
-        .filter(|t| {
-            t.chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-        })?
-        .to_string();
+        .filter(|t| t.chars().all(name_char))
+        .map(str::to_string)
+}
 
-    let args = arg_pairs(body);
+/// Where the next call starts, in either shape. The wrapper is the common
+/// one. The bare form is a model that wrote the name straight into the args
+/// with no wrapper around it at all, which cost the reader the name and left
+/// the arguments to be eaten as debris.
+fn next_call_start(text: &str) -> Option<usize> {
+    match (text.find("<tool_call"), bare_call_start(text)) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (found, None) => found,
+        (None, found) => found,
+    }
+}
 
-    (!args.is_empty()).then(|| (tool, Value::Object(args).to_string()))
+/// The start of a wrapperless call: a tool name at the head of a line,
+/// followed by the arguments. Anchoring on the name is what keeps ordinary
+/// prose out of it, the same way vLLM limits its own recovery to a requested
+/// tool name. A wrapper that never arrived leaves the name behind, and that
+/// name is the only thing left that says which tool to run.
+fn bare_call_start(text: &str) -> Option<usize> {
+    let at = text.find(ARG_KEY)?;
+
+    // The name is the run of name characters sitting against the tag, not
+    // whatever prose happens to precede it: a model puts the call on its own
+    // line, and the line before it is the user's sentence. The gap between
+    // the two is whitespace, and it can be a newline.
+    let head = text[..at].trim_end();
+    let start = head
+        .char_indices()
+        .rev()
+        .take_while(|(_, c)| name_char(*c))
+        .last()
+        .map(|(i, _)| i)?;
+
+    if start == head.len() {
+        return None;
+    }
+
+    // Shape alone cannot tell a wrapperless call from a sentence that happens
+    // to end in a tag — `runtime<arg_key>` is both. Position is what settles
+    // it: a dropped wrapper leaves the name at the start of its line, and
+    // guessing anywhere else runs a tool on the user's prose.
+    if start > 0 && !head[..start].ends_with('\n') {
+        return None;
+    }
+
+    Some(start)
 }
 
 const ARG_KEY: &str = "<arg_key>";
@@ -868,42 +943,62 @@ const ARG_KEY_CLOSE: &str = "</arg_key>";
 const ARG_VALUE: &str = "<arg_value>";
 const ARG_VALUE_CLOSE: &str = "</arg_value>";
 
-/// The pairs come in two shapes. Closed, they are
+/// The pairs come in three shapes. Closed, they are
 /// `<arg_key>k</arg_key><arg_value>v</arg_value>`. Open — a stream cut
 /// mid-call, or a model that simply omits the closes — they run
 /// `<arg_key>k<arg_value>v<arg_key>k2<arg_value>v2`, where the next key is
-/// the only thing that ends a value. Reading only the closed shape is how a
-/// whole tool call reached the reader as raw text.
-fn arg_pairs(body: &str) -> serde_json::Map<String, Value> {
+/// the only thing that ends a value. And with the value opener missing
+/// entirely, `<arg_key>k</arg_key>v`, which is what GLM emits under load.
+///
+/// Reading only the closed shape is how a whole tool call reached the reader
+/// as raw text. Reading only the first two is worse: a dropped opener
+/// discarded the arguments AND the call, so the model was told nothing, ran
+/// nothing, and tried the same thing again.
+fn arg_pairs(body: &str) -> (serde_json::Map<String, Value>, usize) {
     let mut out = serde_json::Map::new();
     let mut rest = body;
+    let mut used = 0usize;
 
     while let Some(i) = rest.find(ARG_KEY) {
         let tail = &rest[i + ARG_KEY.len()..];
-        let Some(v) = tail.find(ARG_VALUE) else {
-            break;
+        let v = tail.find(ARG_VALUE);
+        let key_end = tail.find(ARG_KEY_CLOSE);
+
+        // A key ends at its own closer, or at the value tag that follows it,
+        // whichever comes first. Only when the value tag never opened does the
+        // closer become the whole story: `command</arg_key>cargo test`.
+        let (key, after) = match v {
+            Some(v) => {
+                let key = match key_end {
+                    Some(c) if c < v => tail[..c].trim(),
+                    _ => tail[..v].trim(),
+                };
+
+                (key, &tail[v + ARG_VALUE.len()..])
+            }
+            None => match key_end {
+                Some(c) => (tail[..c].trim(), &tail[c + ARG_KEY_CLOSE.len()..]),
+                None => break,
+            },
         };
 
-        let key = match tail.find(ARG_KEY_CLOSE) {
-            Some(c) if c < v => tail[..c].trim(),
-            _ => tail[..v].trim(),
-        };
-
-        let after = &tail[v + ARG_VALUE.len()..];
-        let (value, next) = match first_of(after, &[ARG_VALUE_CLOSE, ARG_KEY]) {
+        let (value, next) = match first_of(after, &[ARG_VALUE_CLOSE, ARG_KEY, TOOL_CALL_CLOSE]) {
             Some((e, ARG_VALUE_CLOSE)) => (&after[..e], &after[e + ARG_VALUE_CLOSE.len()..]),
             Some((e, _)) => (&after[..e], &after[e..]),
             None => (after, ""),
         };
 
-        if !key.is_empty() {
-            out.insert(key.to_string(), Value::String(value.trim().to_string()));
+        if key.is_empty() {
+            break;
         }
 
+        out.insert(key.to_string(), Value::String(value.trim().to_string()));
+
+        used += rest.len() - next.len();
         rest = next;
     }
 
-    out
+    (out, used)
 }
 
 fn first_of(hay: &str, needles: &[&'static str]) -> Option<(usize, &'static str)> {

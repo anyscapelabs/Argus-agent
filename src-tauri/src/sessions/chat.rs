@@ -1,3 +1,4 @@
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -1036,13 +1037,23 @@ pub fn sanitize_tags(s: &str) -> String {
         .replace("<a>", "<link>")
         .replace("</a>", "</link>");
 
-    if let Ok(re) = regex::Regex::new(r"(?i)</?(p|div|span|command|output|think)[^>]*>") {
-        t = re.replace_all(&t, "").into_owned();
-    }
+    // Compiled once, not per message. The `regex` crate's own docs call
+    // compiling inside a function an anti-pattern: it costs microseconds to
+    // milliseconds each time, and this runs on every assistant message.
+    static DROP_TAGS: OnceLock<regex::Regex> = OnceLock::new();
+    static BR: OnceLock<regex::Regex> = OnceLock::new();
 
-    if let Ok(re) = regex::Regex::new(r"(?i)<br\s*/?>") {
-        t = re.replace_all(&t, "\n").into_owned();
-    }
+    // `expect` rather than a `None` fallback: a pattern that fails to compile
+    // is a bug in this source file, not bad input, and a silent skip would
+    // leave the tags in the transcript with no signal that anything went wrong.
+    let drop_tags = DROP_TAGS.get_or_init(|| {
+        regex::Regex::new(r"(?i)</?(p|div|span|command|output|think)[^>]*>")
+            .expect("drop-tag pattern")
+    });
+    t = drop_tags.replace_all(&t, "").into_owned();
+
+    let br = BR.get_or_init(|| regex::Regex::new(r"(?i)<br\s*/?>").expect("br pattern"));
+    t = br.replace_all(&t, "\n").into_owned();
 
     t
 }

@@ -1,5 +1,7 @@
 mod ext;
 pub mod extpipe;
+pub mod guard;
+pub use guard::*;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -65,17 +67,17 @@ pub(crate) fn next_snap() -> u64 {
 }
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct RefEntry {
-    pub(crate) path: String,
-    pub(crate) label: String,
-    pub(crate) kind: String,
+pub struct RefEntry {
+    pub path: String,
+    pub label: String,
+    pub kind: String,
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct RefTable {
-    pub(crate) gen: u64,
-    pub(crate) items: Vec<RefEntry>,
-    pub(crate) recovery_gen: Option<u64>,
+pub struct RefTable {
+    pub gen: u64,
+    pub items: Vec<RefEntry>,
+    pub recovery_gen: Option<u64>,
 }
 
 impl RefTable {
@@ -85,11 +87,7 @@ impl RefTable {
         self.gen
     }
 
-    pub(crate) fn stale_for_tokenless(
-        &mut self,
-        index: usize,
-        shown: Option<u64>,
-    ) -> Option<String> {
+    pub fn stale_for_tokenless(&mut self, index: usize, shown: Option<u64>) -> Option<String> {
         match shown {
             Some(g) if g != self.gen && self.items.get(index).is_some() => {
                 Some(self.stale_recovery(index, g))
@@ -98,7 +96,7 @@ impl RefTable {
         }
     }
 
-    pub(crate) fn resolve(&self, index: usize, presented: Option<u64>) -> Result<String, String> {
+    pub fn resolve(&self, index: usize, presented: Option<u64>) -> Result<String, String> {
         let entry = self.items.get(index).ok_or_else(|| {
             "unknown ref — run browser.open or browser.read for a fresh list".to_string()
         })?;
@@ -233,14 +231,14 @@ pub(crate) fn verify_note(outcome: &VerifyOutcome, url: &str) -> Option<String> 
     }
 }
 
-struct Pool {
+pub(super) struct Pool {
     root: PathBuf,
     sess: AsyncMutex<HashMap<String, Sess>>,
 }
 
 static ROOT: Mutex<Option<PathBuf>> = Mutex::new(None);
 
-fn pool() -> &'static Pool {
+pub(super) fn pool() -> &'static Pool {
     static P: OnceLock<Pool> = OnceLock::new();
 
     P.get_or_init(|| {
@@ -303,11 +301,11 @@ pub(crate) fn session_key_for(args: &Value) -> String {
     }
 }
 
-async fn route_profile(args: &Value) -> String {
+pub(super) async fn route_profile(args: &Value) -> String {
     session_key_for(args)
 }
 
-pub(crate) fn shown_gen_in(output: &str) -> Option<u64> {
+pub fn shown_gen_in(output: &str) -> Option<u64> {
     output
         .split("(snapshot ")
         .nth(1)?
@@ -540,7 +538,7 @@ pub async fn open(args: &Value) -> Result<String, String> {
     Ok(sensitive_note(&s.url, out))
 }
 
-fn ref_of(args: &Value) -> Result<usize, String> {
+pub(super) fn ref_of(args: &Value) -> Result<usize, String> {
     args.get("ref")
         .and_then(|v| v.as_u64())
         .map(|v| v as usize)
@@ -752,189 +750,5 @@ pub fn close_profile(name: &str) {
                 let _ = s._browser.close().await;
             });
         }
-    }
-}
-
-const URL_PAT: &str =
-    "login|signin|sign-in|sign_up|signup|/auth|checkout|cart|/pay|billing|order|password";
-const LABEL_PAT: &str = "sign in|sign-in|signin|log in|log-in|login|checkout|pay now|payment|place order|buy now|add to cart|password";
-
-const SECRET_PAT: &str = r"sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{12,}|xox[bap]-[A-Za-z0-9-]{10,}|Bearer\s+[A-Za-z0-9._-]{16,}|[a-f0-9]{32,}";
-
-fn secret_re() -> Option<regex::Regex> {
-    regex::Regex::new(SECRET_PAT).ok()
-}
-
-pub fn url_guard(url: &str) -> Result<(), String> {
-    let Some(re) = secret_re() else { return Ok(()) };
-    let decoded = percent_encoding::percent_decode_str(url).decode_utf8_lossy();
-
-    if re.is_match(url) || re.is_match(&decoded) {
-        return Err(
-            "url looks like it carries a credential — remove the token from the url".into(),
-        );
-    }
-
-    Ok(())
-}
-
-pub fn redact(s: &str) -> String {
-    match secret_re() {
-        Some(re) => re.replace_all(s, "[redacted]").into_owned(),
-        None => s.into(),
-    }
-}
-
-pub fn sensitive_note(url: &str, out: String) -> String {
-    match sensitive_pats() {
-        Some((url_re, _)) if url_re.is_match(url) => format!(
-            "{out}\nnote: this page looks like login/checkout — further actions here will need user approval"
-        ),
-        _ => out,
-    }
-}
-
-pub fn sensitive_pats() -> Option<(regex::Regex, regex::Regex)> {
-    Some((
-        regex::Regex::new(&format!("(?i)({URL_PAT})")).ok()?,
-        regex::Regex::new(&format!("(?i)({LABEL_PAT})")).ok()?,
-    ))
-}
-
-pub async fn sensitive(tool: &str, args: &Value) -> bool {
-    if !tool.starts_with("browser.") {
-        return false;
-    }
-
-    let (url_re, label_re) = match sensitive_pats() {
-        Some(p) => p,
-        None => return false,
-    };
-
-    let name = route_profile(args).await;
-
-    if self::ext::is_real(&name) && self::ext::sensitive(args).await {
-        return true;
-    }
-
-    if let Some(u) = args.get("url").and_then(|v| v.as_str()) {
-        if url_re.is_match(u) {
-            return true;
-        }
-    }
-
-    if let Some(t) = args.get("text").and_then(|v| v.as_str()) {
-        if label_re.is_match(t) {
-            return true;
-        }
-    }
-
-    if let Ok(r) = ref_of(args) {
-        if let Ok(g) = pool().sess.try_lock() {
-            if let Some(s) = g.get(&name) {
-                if url_re.is_match(&s.url) {
-                    return true;
-                }
-
-                if let Some(l) = s.elements.label(r) {
-                    if label_re.is_match(&l) {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-
-    false
-}
-
-#[cfg(test)]
-mod shown_tests {
-    use super::{shown_gen_in, RefEntry, RefTable};
-
-    fn table(gen: u64, rows: &[(&str, &str, &str)]) -> RefTable {
-        RefTable {
-            gen,
-            items: rows
-                .iter()
-                .map(|(kind, label, path)| RefEntry {
-                    kind: kind.to_string(),
-                    label: label.to_string(),
-                    path: path.to_string(),
-                })
-                .collect(),
-            recovery_gen: None,
-        }
-    }
-
-    #[test]
-    fn tokenless_steady_state_proceeds() {
-        let mut t = table(5, &[("button", "Go", "b1"), ("input", "Name", "i1")]);
-        assert!(t.stale_for_tokenless(0, Some(5)).is_none());
-        assert!(t.stale_for_tokenless(1, Some(5)).is_none());
-        assert!(t.recovery_gen.is_none());
-    }
-
-    #[test]
-    fn tokenless_drift_returns_bounded_recovery() {
-        let mut t = table(5, &[("button", "Overview", "ov"), ("button", "Go", "b2")]);
-        let first = t
-            .stale_for_tokenless(0, Some(4))
-            .expect("drifted token-less ref must be rejected");
-        assert!(first.contains("stale ref 0 from snapshot 4"));
-        assert!(first.contains("snapshot 5 is current"));
-        assert!(first.contains("Elements (snapshot 5)"));
-        assert!(first.contains("Choose the replacement ref"));
-        assert_eq!(t.recovery_gen, Some(5));
-
-        let second = t
-            .stale_for_tokenless(0, Some(4))
-            .expect("repeat must still be rejected");
-        assert!(second.contains("stale ref"));
-        assert!(
-            !second.contains("Elements (snapshot"),
-            "repeat must not smuggle another snapshot: {second}"
-        );
-        assert!(second.contains("run browser.read"));
-    }
-
-    #[test]
-    fn tokenless_without_presentation_proceeds() {
-        let mut t = table(5, &[("button", "Go", "b1")]);
-        assert!(t.stale_for_tokenless(0, None).is_none());
-        assert!(t.recovery_gen.is_none());
-    }
-
-    #[test]
-    fn tokenless_unknown_ref_under_drift_falls_through() {
-        let mut t = table(5, &[("button", "Go", "b1")]);
-        assert!(t.stale_for_tokenless(9, Some(4)).is_none());
-        assert!(t.recovery_gen.is_none());
-    }
-
-    #[test]
-    fn explicit_resolution_keeps_classic_shape() {
-        let t = table(5, &[("button", "Go", "b1")]);
-        let err = t
-            .resolve(0, Some(4))
-            .expect_err("old explicit snapshot must be stale");
-        assert!(err.contains("stale ref 0 from snapshot 4"));
-        assert!(!err.contains("Choose the replacement"));
-    }
-
-    #[test]
-    fn shown_gen_extraction() {
-        assert_eq!(
-            shown_gen_in(
-                "url u\ntitle t\n---\nbody\n---\nElements (snapshot 12):\n[0] button \"Go\"\n"
-            ),
-            Some(12)
-        );
-        assert_eq!(
-            shown_gen_in("\nElements (snapshot 7): (snapshot failed)\n"),
-            Some(7)
-        );
-        assert_eq!(shown_gen_in("browser closed"), None);
-        assert_eq!(shown_gen_in(""), None);
     }
 }

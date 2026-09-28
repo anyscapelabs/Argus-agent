@@ -1,5 +1,5 @@
 use argus_lib::prompt::{budget, project, tools_budget, BASE};
-use argus_lib::tools::{section, tool_specs};
+use argus_lib::tools::{section, tool_specs, ToolCallStyle};
 
 // No library in these tests, so this is never walked.
 fn dir() -> std::path::PathBuf {
@@ -103,8 +103,8 @@ fn projection_has_no_automatic_memories() {
 
 #[test]
 fn model_catalog_hides_bash_run_and_keeps_terminal() {
-    assert!(!section(false).contains("bash.run"));
-    assert!(!section(true).contains("bash.run"));
+    assert!(!section(false, ToolCallStyle::Native).contains("bash.run"));
+    assert!(!section(true, ToolCallStyle::Native).contains("bash.run"));
 
     for specs in [tool_specs(false), tool_specs(true)] {
         assert!(specs.iter().all(|t| t.name != "bash.run"));
@@ -118,7 +118,8 @@ fn admin_and_password_rules_survive() {
     let p = project(&conn, &sid, &dir()).unwrap();
 
     assert!(
-        p.system.contains("privilege \"admin\"") || section(false).contains("privilege \"admin\"")
+        p.system.contains("privilege \"admin\"")
+            || section(false, ToolCallStyle::Native).contains("privilege \"admin\"")
     );
     assert!(BASE.contains("Never request, collect, store, or expose the user's sudo password"));
 }
@@ -244,7 +245,7 @@ fn learned_preferences_enter_the_budget_when_present() {
 fn runtime_architecture_stays_out_of_the_prompt() {
     let (conn, sid) = setup();
     let p = project(&conn, &sid, &dir()).unwrap();
-    let tools = section(true);
+    let tools = section(true, ToolCallStyle::Native);
 
     for needle in [
         "StreamEvent",
@@ -272,4 +273,40 @@ fn terminal_contract_is_short_and_complete() {
     assert!(term.description.contains("Never ask for or handle"));
     assert!(!term.description.contains("120s"));
     assert!(!term.description.contains("600s"));
+}
+
+#[test]
+fn project_prompt_follows_the_session_model_style() {
+    let (conn, _) = setup();
+    conn.execute(
+        "INSERT INTO models (id, display_name, capabilities) VALUES \
+         ('baseten/zai-org/GLM-5.3-Fast', 'glm', '{\"tool_call_style\":\"glm-xml\"}')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO sessions (id, title, permission, web_search, model_id) VALUES \
+         ('sg', 't', 'ask', 1, 'baseten/zai-org/GLM-5.3-Fast')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO sessions (id, title, permission, web_search) VALUES ('sn', 't', 'ask', 1)",
+        [],
+    )
+    .unwrap();
+
+    let glm = project(&conn, "sg", &dir()).unwrap();
+    assert!(glm.system.contains("<tool_call>"), "{}", glm.system);
+    assert!(glm.system.contains("never an empty key"), "{}", glm.system);
+
+    let native = project(&conn, "sn", &dir()).unwrap();
+    assert!(
+        native
+            .system
+            .contains("discarded before it reaches you again"),
+        "{}",
+        native.system
+    );
+    assert!(!native.system.contains("<arg_key>"), "{}", native.system);
 }

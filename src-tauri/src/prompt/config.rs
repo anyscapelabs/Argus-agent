@@ -73,6 +73,52 @@ pub fn context_window(conn: &Connection, model_id: Option<&str>) -> i64 {
         .unwrap_or(DEFAULT_CONTEXT)
 }
 
+// First native+text duplicate promotes an unknown model to the template
+// style. One noisy turn classifies it for good; never demotes back, so one
+// clean turn cannot flap it. Failures are silent: a missed upgrade retries
+// next turn, a missed turn must never fail.
+pub fn upgrade_tool_style(conn: &Connection, model_id: &str) {
+    let caps: Option<String> = conn
+        .query_row(
+            "SELECT capabilities FROM models WHERE id = ?1",
+            params![model_id],
+            |r| r.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten();
+
+    let merged = crate::tools::ToolCallStyle::caps_with_style(
+        caps.as_deref(),
+        crate::tools::ToolCallStyle::GlmXml,
+    );
+
+    let _ = conn.execute(
+        "UPDATE models SET capabilities = ?1 WHERE id = ?2",
+        params![merged, model_id],
+    );
+}
+
+// Per-model tool dialect. Absent row, absent key, or bad JSON all mean Native:
+// an unknown model is handled by the duplication upgrade in chat, not here.
+pub fn tool_style(conn: &Connection, model_id: Option<&str>) -> crate::tools::ToolCallStyle {
+    let Some(m) = model_id else {
+        return crate::tools::ToolCallStyle::Native;
+    };
+
+    let caps: Option<String> = conn
+        .query_row(
+            "SELECT capabilities FROM models WHERE id = ?1",
+            params![m],
+            |r| r.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten();
+
+    crate::tools::ToolCallStyle::from_caps(caps.as_deref())
+}
+
 pub fn est_tokens(text: &str) -> i64 {
     text.len() as i64 / 4
 }

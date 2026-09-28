@@ -341,6 +341,10 @@ async fn sync_from_models_dev(gw: &Gateway) -> Result<SyncStats, String> {
                     "vision": m["attachment"].as_bool().unwrap_or(false),
                     "reasoning": m["reasoning"].as_bool().unwrap_or(false),
                     "context": m["limit"]["context"].as_u64().unwrap_or(0),
+                    "tool_call_style": crate::tools::ToolCallStyle::style_for_family(
+                        m["family"].as_str(),
+                    )
+                    .as_str(),
                 });
 
                 store::add_model(

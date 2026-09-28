@@ -2,7 +2,7 @@ use argus_lib::gateway::schema::ToolCall;
 use argus_lib::tools::browser;
 use argus_lib::tools::{
     build_executions, clip_ends, close_dangling_actions, normalize_actions, page_text,
-    parse_actions, protocol_section, render_actions, section, web, PROTOCOL_MARKER,
+    parse_actions, protocol_section, render_actions, section, web, ToolCallStyle, PROTOCOL_MARKER,
 };
 use serde_json::Value;
 
@@ -426,7 +426,7 @@ fn a_native_call_and_the_same_text_call_render_once() {
 // that has turned the payload down.
 #[test]
 fn the_default_prompt_teaches_no_in_band_tool_syntax() {
-    let s = section(true);
+    let s = section(true, ToolCallStyle::Native);
 
     assert!(
         !s.contains(PROTOCOL_MARKER),
@@ -452,7 +452,7 @@ fn the_degraded_prompt_is_marked_so_it_cannot_be_applied_twice() {
     let s = protocol_section();
 
     assert!(s.contains(PROTOCOL_MARKER));
-    assert!(!section(true).contains(PROTOCOL_MARKER));
+    assert!(!section(true, ToolCallStyle::Native).contains(PROTOCOL_MARKER));
 }
 
 const ZWSP: &str = "\u{200b}";

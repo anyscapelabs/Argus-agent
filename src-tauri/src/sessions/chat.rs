@@ -802,7 +802,29 @@ pub async fn send<R: tauri::Runtime>(
 
         let normalized = sanitize_tags(&tools::normalize_actions(&stats.text));
         let (closed, base_text) = tools::split_commit(&normalized);
-        let mut pending = tools::build_executions(&base_text, &stats.tool_calls, act_base);
+        // Degraded replies have no API channel, so the text must execute
+        // regardless of style. Otherwise the resolved style decides: native
+        // prose is never executed, template text is decoded.
+        let style = if stats.degraded {
+            tools::ToolCallStyle::GlmXml
+        } else {
+            match gw.conn.lock() {
+                Ok(conn) => crate::prompt::config::tool_style(&conn, Some(stats.model_id.as_str())),
+                Err(_) => tools::ToolCallStyle::Native,
+            }
+        };
+        let mut pending =
+            tools::build_executions_styled(&base_text, &stats.tool_calls, act_base, style);
+
+        // An unknown model showing the duplication signature gets classified
+        // once, here. Next turn it resolves to the template style directly.
+        if style == tools::ToolCallStyle::Native
+            && tools::has_native_text_duplicate(&base_text, &stats.tool_calls)
+        {
+            if let Ok(conn) = gw.conn.lock() {
+                crate::prompt::config::upgrade_tool_style(&conn, &stats.model_id);
+            }
+        }
 
         let done = pending.is_empty();
         let text = tools::render_actions(&base_text, &pending);

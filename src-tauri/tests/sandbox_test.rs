@@ -10,7 +10,8 @@ use argus_lib::tools::sandbox::policy::{
     self, EnvPolicy, FsAccess, FsPolicy, FsRule, NetPolicy, PolicyCtx, Profile,
 };
 use argus_lib::tools::sandbox::{
-    classify, origin_of_tool, parse_profile, record_block, trust_of, Origin, Trust,
+    classify, denial_hint, origin_of_tool, parse_profile, project_root_check, record_block,
+    trust_of, Origin, Trust,
 };
 
 use rusqlite::Connection;
@@ -606,4 +607,44 @@ fn the_command_line_joins_in_order() {
         windows::quote::command_line(&["cmd".into(), "/c".into(), "echo hello world".into()]);
 
     assert_eq!(line, r#"cmd /c "echo hello world""#);
+}
+
+// Project without cwd is refused up front with the fix attached, instead of
+// silently confining to the launch directory and burning turns on denials.
+#[test]
+fn project_without_cwd_is_refused_not_misconfined() {
+    let err = project_root_check(Profile::Project, None).expect("must refuse");
+
+    assert!(
+        matches!(err, SandboxError::MissingCwd(_)),
+        "wrong variant: {err}"
+    );
+    assert!(err.to_string().contains("cwd"), "{err}");
+    assert!(err.to_string().contains("profile=host"), "{err}");
+
+    assert!(project_root_check(Profile::Project, Some("  ")).is_some());
+    assert!(project_root_check(Profile::Project, Some("~/Desktop/Booking")).is_none());
+    assert!(project_root_check(Profile::Host, None).is_none());
+    assert!(project_root_check(Profile::Restricted, None).is_none());
+}
+
+// A bare denial from a confined command names the allowed root and is marked
+// as harness note, so the model rescopes instead of retrying.
+#[test]
+fn confined_denial_names_the_allowed_root() {
+    let hint = denial_hint(
+        true,
+        1,
+        "ls: cannot open directory: Permission denied",
+        "/home/dev/proj",
+    )
+    .expect("denial must hint");
+
+    assert!(hint.contains("/home/dev/proj"), "{hint}");
+    assert!(hint.contains("not command output"), "{hint}");
+    assert!(hint.contains("profile=host"), "{hint}");
+
+    assert!(denial_hint(true, 0, "Permission denied", "/r").is_none());
+    assert!(denial_hint(false, 1, "Permission denied", "/r").is_none());
+    assert!(denial_hint(true, 1, "all clear", "/r").is_none());
 }

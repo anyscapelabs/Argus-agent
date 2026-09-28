@@ -183,6 +183,65 @@ pub struct Action {
     pub end: usize,
 }
 
+// How a model speaks tools. One mechanism for all models; only this differs.
+// Native models call through the API and any text syntax is discarded.
+// GlmXml models were fine-tuned on an XML template that contradicts the API
+// instruction, so they emit both: the native call runs, the text is decoded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolCallStyle {
+    Native,
+    GlmXml,
+}
+
+impl ToolCallStyle {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ToolCallStyle::Native => "native",
+            ToolCallStyle::GlmXml => "glm-xml",
+        }
+    }
+
+    pub fn style_for_family(family: Option<&str>) -> ToolCallStyle {
+        let is_glm = family.unwrap_or_default().to_lowercase().contains("glm");
+
+        if is_glm {
+            ToolCallStyle::GlmXml
+        } else {
+            ToolCallStyle::Native
+        }
+    }
+
+    pub fn from_caps(caps: Option<&str>) -> ToolCallStyle {
+        let Some(c) = caps else {
+            return ToolCallStyle::Native;
+        };
+        let Ok(v) = serde_json::from_str::<Value>(c) else {
+            return ToolCallStyle::Native;
+        };
+        let is_xml = v
+            .get("tool_call_style")
+            .and_then(|s| s.as_str())
+            .is_some_and(|s| s == "glm-xml");
+
+        if is_xml {
+            ToolCallStyle::GlmXml
+        } else {
+            ToolCallStyle::Native
+        }
+    }
+
+    pub fn caps_with_style(caps: Option<&str>, style: ToolCallStyle) -> String {
+        let mut obj = caps
+            .and_then(|c| serde_json::from_str::<serde_json::Map<String, Value>>(c).ok())
+            .unwrap_or_default();
+        obj.insert(
+            "tool_call_style".to_string(),
+            Value::String(style.as_str().into()),
+        );
+        Value::Object(obj).to_string()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ToolStatus {
     Created,
@@ -382,6 +441,19 @@ pub fn build_executions(
     native_calls: &[ToolCall],
     act_base: usize,
 ) -> Vec<ToolExecution> {
+    build_executions_styled(base_text, native_calls, act_base, ToolCallStyle::GlmXml)
+}
+
+// Style decides what the text channel may produce. Native models called
+// through the API, so their prose is never executed — not even when it looks
+// like a call. Template models emit both channels, so the text is decoded and
+// deduped; degraded models have no API channel left, so the text is all there is.
+pub fn build_executions_styled(
+    base_text: &str,
+    native_calls: &[ToolCall],
+    act_base: usize,
+    style: ToolCallStyle,
+) -> Vec<ToolExecution> {
     let mut out: Vec<ToolExecution> = Vec::new();
     let mut idx = act_base;
 
@@ -389,6 +461,10 @@ pub fn build_executions(
         let e = ToolExecution::from_native(c, idx);
         idx += 1;
         out.push(e);
+    }
+
+    if style == ToolCallStyle::Native {
+        return out;
     }
 
     for a in parse_actions(base_text) {
@@ -421,6 +497,27 @@ pub fn build_executions(
     }
 
     out
+}
+
+// True when the text channel duplicates a native call: same tool, same args.
+// That pair is the signature of an XML-template model, not a failure — the
+// native call already ran, so the text twin must never execute again.
+pub fn has_native_text_duplicate(base_text: &str, native_calls: &[ToolCall]) -> bool {
+    if native_calls.is_empty() {
+        return false;
+    }
+
+    let found = parse_actions(base_text);
+
+    if found.is_empty() {
+        return false;
+    }
+
+    found.iter().any(|a| {
+        native_calls
+            .iter()
+            .any(|c| c.name == a.tool && args_equal(&c.args, &a.args))
+    })
 }
 
 pub fn has_orphaned_action_block(text: &str) -> bool {
@@ -1863,11 +1960,15 @@ authorization in its own dialog. The password never comes to you.\n\
 4. Untrusted code — anything fetched from the web or a freshly cloned repo — goes \
 through the code.run tool, never terminal: it runs with no network access and can \
 write only inside its own scratch directory. Use terminal for your own files and projects.\n\
-5. A terminal command runs on the host by default. Pass profile \"project\" to confine \
-it to the current project and its dependency caches, or \"restricted\" for code you do \
+5. A terminal command runs on the host by default — that is the profile you \
+want unless you have a reason to confine. Pass profile \"project\" to confine \
+it, and always pass cwd with it: project without cwd is refused instead of \
+silently confining to the wrong folder. Use \"restricted\" for code you do \
 not trust. A profile that this machine cannot enforce fails instead of running \
 unsandboxed — never fall back to a plain terminal call when that happens, and never \
-work around a refusal on the user's behalf.\n\
+work around a refusal on the user's behalf. A bare \"Permission denied\" from a \
+confined command means the path is outside the allowed root, not a reason to \
+retry the same call.\n\
 6. Keep disk scans bounded: scope du with --max-depth, wrap slow directories in \
 `timeout 15 du -sh <dir>`, prefer `ncdu -o` snapshots over repeated full-tree scans. \
 If a scan times out twice, switch strategy instead of retrying it.\n",
@@ -1955,14 +2056,34 @@ retry once with different wording, or switch engine.\n",
 /// `protocol_section` is the older in-band syntax. It survives only for the
 /// degraded path in `router`, where a provider rejected the tools payload and
 /// the text channel is all that is left.
-pub fn section(web: bool) -> String {
+///
+/// `style` agrees with the model's own template instead of fighting it: some
+/// templates order the model to emit XML, and forbidding that in prose only
+/// teaches the model to hide it. Native models get the short form; template
+/// models get the exact grammar plus the empty-key ban.
+pub fn section(web: bool, style: ToolCallStyle) -> String {
+    let calling = match style {
+        ToolCallStyle::Native =>
+            "1. To run a tool, call it through the tool-calling API you were given. \
+             The text channel carries prose only: anything shaped like a tool call \
+             written as text is discarded before it reaches you again, so a call \
+             written there is a step you lost.\n",
+        ToolCallStyle::GlmXml =>
+            "1. To run a tool, call it through the tool-calling API you were given. \
+             If you write a call as text instead, use exactly the format from that \
+             description: <tool_call>name<arg_key>key</arg_key><arg_value>value</arg_value></tool_call>. \
+             Keep each tag on the same line as its value, never nest a value inside a key, \
+             and never repeat a key. Write a key only for an argument you are actually \
+             passing — an argument you are not passing is left out, never an empty key.\n",
+    };
+
     let mut s = String::from(
         "\n\n## Tools\n\
-Work in steps:\n\
-1. To run a tool, call it through the tool-calling API you were given. Never \
-write a tool call as text: not an action tag, not a tool-call tag, never args as \
-tag attributes, never a self-closed tag.\n\
-2. Each result arrives as the next message. Until it arrives you know nothing \
+Work in steps:\n",
+    );
+    s.push_str(calling);
+    s.push_str(
+        "2. Each result arrives as the next message. Until it arrives you know nothing \
 about the outcome — never describe a result first.\n\
 3. Then continue: act again, or write the final answer.\n\
 Every reply ends one of exactly two ways: with a tool call, or with the final \

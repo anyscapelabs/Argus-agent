@@ -1,5 +1,5 @@
 use argus_lib::prompt::BASE;
-use argus_lib::tools::{is_mutating, section, tool_specs};
+use argus_lib::tools::{is_mutating, section, tool_specs, ToolCallStyle};
 
 #[test]
 fn base_is_the_canonical_brainstem() {
@@ -32,7 +32,7 @@ fn base_keeps_compact_response_format() {
 
 #[test]
 fn section_teaches_the_full_round() {
-    let s = section(false);
+    let s = section(false, ToolCallStyle::Native);
 
     assert!(s.contains("A full round looks like this"), "{s}");
     assert!(s.contains("You call the terminal tool"), "{s}");
@@ -42,14 +42,14 @@ fn section_teaches_the_full_round() {
 
 #[test]
 fn section_keeps_ref_namespaces_apart() {
-    let s = section(false);
+    let s = section(false, ToolCallStyle::Native);
 
     assert!(s.contains("only in browser.* tools"), "{s}");
 }
 
 #[test]
 fn section_teaches_work_then_answer_structure() {
-    let s = section(false);
+    let s = section(false, ToolCallStyle::Native);
 
     assert!(s.contains("at most one short status line"), "{s}");
     assert!(s.contains("Only in a turn with NO tool calls"), "{s}");
@@ -73,14 +73,14 @@ fn skill_read_is_listed_and_read_only() {
 
 #[test]
 fn terminal_detach_rule_survives() {
-    let s = section(false);
+    let s = section(false, ToolCallStyle::Native);
 
     assert!(s.contains(">/dev/null 2>&1 &"), "{s}");
 }
 
 #[test]
 fn terminal_rules_cover_admin_and_bounded_scans() {
-    let s = section(false);
+    let s = section(false, ToolCallStyle::Native);
 
     assert!(s.contains("privilege \"admin\""), "{s}");
     assert!(s.contains("never ask for a password"), "{s}");
@@ -90,7 +90,7 @@ fn terminal_rules_cover_admin_and_bounded_scans() {
 
 #[test]
 fn bash_run_is_hidden_from_the_model_but_still_runs() {
-    let s = section(false);
+    let s = section(false, ToolCallStyle::Native);
 
     assert!(!s.contains("bash.run"), "{s}");
 
@@ -179,4 +179,28 @@ fn terminal_advertises_the_background_flag_and_stays_mutating() {
         .join("\n");
     assert!(specs.contains("background"), "{specs}");
     assert!(specs.contains("job.read"), "{specs}");
+}
+
+// The native wording agrees with the API and stops forbidding what no native
+// model is tempted by: text-channel syntax is dead on arrival, not forbidden.
+#[test]
+fn native_style_kills_text_calls_by_description() {
+    let s = section(false, ToolCallStyle::Native);
+
+    assert!(s.contains("tool-calling API"), "{s}");
+    assert!(s.contains("discarded before it reaches you again"), "{s}");
+    assert!(!s.contains("Never write a tool call as text"), "{s}");
+}
+
+// The template wording agrees with the provider template instead of fighting
+// it: exact grammar, same line, no empty keys.
+#[test]
+fn template_style_teaches_the_exact_xml_grammar() {
+    let s = section(false, ToolCallStyle::GlmXml);
+
+    assert!(s.contains("tool-calling API"), "{s}");
+    assert!(s.contains("<tool_call>"), "{s}");
+    assert!(s.contains("<arg_key>"), "{s}");
+    assert!(s.contains("never an empty key"), "{s}");
+    assert!(!s.contains("Never write a tool call as text"), "{s}");
 }

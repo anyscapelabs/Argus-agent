@@ -210,7 +210,7 @@ fn meta_lists_four_non_mutating_tools() {
         assert!(!t.mutating, "{} must not require approval", t.name);
     }
 
-    let section = argus_lib::tools::section(false);
+    let section = argus_lib::tools::section(false, argus_lib::tools::ToolCallStyle::Native);
     assert!(section.contains("notepad.read"));
     assert!(section.contains("untrusted data"));
 }

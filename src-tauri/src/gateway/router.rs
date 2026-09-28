@@ -58,6 +58,10 @@ pub struct StreamStats {
     pub tok_out: i64,
     pub truncated: bool,
     pub tool_calls: Vec<ToolCall>,
+    // The provider refused the tools payload, so the reply came back through
+    // the degraded in-band path. Text actions must execute: stripping them
+    // here would silence the only channel left.
+    pub degraded: bool,
 }
 
 fn key_for(prov: &Provider) -> Result<Option<String>, String> {
@@ -305,6 +309,7 @@ pub async fn stream_run(
     let mut rate_body: Option<String> = None;
     let mut same_429 = 0u32;
     let mut rate_noticed = false;
+    let mut degraded = false;
 
     loop {
         attempt += 1;
@@ -394,6 +399,7 @@ pub async fn stream_run(
                     tok_out,
                     truncated: done.truncated,
                     tool_calls: done.tool_calls,
+                    degraded,
                 });
             }
 
@@ -427,6 +433,7 @@ pub async fn stream_run(
                     && !req.tools.is_empty()
                 {
                     req.tools.clear();
+                    degraded = true;
                     if let Some(sys) = req.msgs.first_mut() {
                         if sys.role == "system"
                             && !sys.content.contains(crate::tools::PROTOCOL_MARKER)

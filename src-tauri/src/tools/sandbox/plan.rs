@@ -77,6 +77,7 @@ pub enum SandboxError {
     Apply { backend: &'static str, why: String },
     Spawn(String),
     Profile(String),
+    MissingCwd(String),
     OutputLimit(usize),
     Timeout(u64),
     Cancelled,
@@ -113,6 +114,11 @@ impl std::fmt::Display for SandboxError {
                 write!(f, "sandbox failed to apply ({backend}): {why}")
             }
             SandboxError::Spawn(e) => write!(f, "could not start command: {e}"),
+            SandboxError::MissingCwd(root) => write!(
+                f,
+                "project profile needs cwd: without it the command would be confined \
+                 to the launch directory ({root}); pass cwd=<project dir> or use profile=host"
+            ),
             SandboxError::Profile(p) => write!(
                 f,
                 "unknown sandbox profile '{p}' — use restricted, project or host"

@@ -75,6 +75,42 @@ fn workdir(cwd: Option<&str>) -> PathBuf {
     }
 }
 
+// Project without cwd silently confines to the launch directory, and the
+// model burns turns on bare "Permission denied" before falling back to host.
+// Refuse up front with the fix attached instead.
+pub fn project_root_check(profile: Profile, cwd: Option<&str>) -> Option<SandboxError> {
+    let given = cwd.map(str::trim).is_some_and(|s| !s.is_empty());
+
+    if profile == Profile::Project && !given {
+        let root = workdir(None).to_string_lossy().into_owned();
+        return Some(SandboxError::MissingCwd(root));
+    }
+
+    None
+}
+
+// A bare denial burns turns: stat works but listing does not, and the model
+// retries instead of rescoping. Name the allowed root when the output shows
+// the confinement failing, and mark it as harness note, not command output.
+pub fn denial_hint(isolated: bool, exit: i64, combined: &str, root: &str) -> Option<String> {
+    if !isolated || exit == 0 {
+        return None;
+    }
+
+    let denied = combined.contains("Permission denied")
+        || combined.contains("Operation not permitted")
+        || combined.contains("EACCES");
+
+    if !denied {
+        return None;
+    }
+
+    Some(format!(
+        "Argus note, not command output: this profile confines the command to {root}. \
+         Rescope with cwd=<dir inside it>, or rerun with profile=host."
+    ))
+}
+
 fn allow_hosts(gw: &Gateway) -> Vec<String> {
     let Ok(conn) = gw.conn.lock() else {
         return Vec::new();
@@ -131,6 +167,10 @@ pub async fn run(
     req: Request<'_>,
     on_term: Option<(&Channel<StreamEvent>, u32)>,
 ) -> SandboxResult<Outcome> {
+    if let Some(err) = project_root_check(req.profile, req.cwd) {
+        return Err(err);
+    }
+
     let project = workdir(req.cwd);
     let tmp = tmp_dir();
 
@@ -273,7 +313,7 @@ async fn finish(
         return Err(SandboxError::Cancelled);
     }
 
-    let outcome = Outcome {
+    let mut outcome = Outcome {
         exit: ran.exit,
         stdout: ran.out,
         stderr: String::new(),
@@ -281,6 +321,15 @@ async fn finish(
         termination,
         truncated: ran.truncated,
     };
+
+    if let Some(hint) = denial_hint(
+        policy.profile.is_isolated(),
+        outcome.exit,
+        &outcome.combined(),
+        &policy.cwd.to_string_lossy(),
+    ) {
+        outcome.stderr = hint;
+    }
 
     audit(
         gw,
@@ -297,7 +346,7 @@ async fn finish(
             exit: outcome.exit,
             termination,
             out_bytes: outcome.stdout.len(),
-            err_bytes: 0,
+            err_bytes: outcome.stderr.len(),
             truncated: outcome.truncated,
         },
     );

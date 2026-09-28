@@ -107,6 +107,7 @@ fn stable_layer(
     web: bool,
     child: bool,
     profile_id: Option<&str>,
+    style: crate::tools::ToolCallStyle,
 ) -> Result<String, String> {
     let mut s = String::from(BASE);
 
@@ -117,7 +118,7 @@ fn stable_layer(
         s.push_str(crate::agents::PROMPT_SECTION);
     }
 
-    s.push_str(&crate::tools::section(web));
+    s.push_str(&crate::tools::section(web, style));
 
     // Added to, never substituted for. A profile carrying its own system
     // prompt would silently lose the sandbox boundary, the approval rules and
@@ -280,7 +281,8 @@ pub fn project(
         .map_err(|_| format!("session {session_id} not found"))?;
 
     let child = parent_id.is_some();
-    let stable = stable_layer(conn, web_search, child, profile_id.as_deref())?;
+    let style = config::tool_style(conn, model_id.as_deref());
+    let stable = stable_layer(conn, web_search, child, profile_id.as_deref(), style)?;
 
     let summary: Option<String> = conn
         .query_row(
@@ -599,7 +601,9 @@ pub fn budget(system: &str) -> Vec<(&'static str, i64)> {
 }
 
 pub fn tools_budget(web: bool) -> i64 {
-    let section = crate::tools::section(web);
+    // Budget baseline uses the Native wording; the template variant is the
+    // same order of magnitude and never worth a second code path here.
+    let section = crate::tools::section(web, crate::tools::ToolCallStyle::Native);
     let specs: i64 = crate::tools::tool_specs(web)
         .iter()
         .map(|t| config::est_tokens(&serde_json::to_string(&t.parameters).unwrap_or_default()))

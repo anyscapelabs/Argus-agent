@@ -3,7 +3,7 @@ use argus_lib::skills::schema::NewSkill;
 use argus_lib::skills::store::{
     create_skill, delete_skill, get_skill, migrate, search_skills, touch_skill,
 };
-use argus_lib::tools::section;
+use argus_lib::tools::{section, tool_specs, ToolCallStyle};
 use rusqlite::Connection;
 
 const BODY: &str = "## When to use\nWhenever x happens in the course of normal work and you recognize the shape of the problem from prior experience.\n\n## Steps\nDo x first, then y, then z, carefully and completely, verifying each stage before moving on to the next one.\n\n## Pitfalls\nWatch out for w, which bites when you least expect it, so double-check everything twice before calling the job done.\n";
@@ -72,11 +72,19 @@ fn agent_skill_validation_rejects_junk() {
 
 #[test]
 fn skill_tools_are_listed_for_the_agent() {
-    let s = section(false);
+    // The tool list rides on the request now, not in the prompt prose.
+    let specs = tool_specs(false);
+    let names: Vec<&str> = specs.iter().map(|t| t.name.as_str()).collect();
 
-    assert!(s.contains("skill.create"), "{s}");
-    assert!(s.contains("skill.search"), "{s}");
-    assert!(s.contains("skill.read"), "{s}");
+    assert!(names.contains(&"skill.create"), "{names:?}");
+    assert!(names.contains(&"skill.search"), "{names:?}");
+    assert!(names.contains(&"skill.read"), "{names:?}");
+
+    let s = section(false, ToolCallStyle::Native);
+    assert!(
+        !s.contains("skill.create"),
+        "prose must not duplicate the specs"
+    );
 }
 
 #[test]

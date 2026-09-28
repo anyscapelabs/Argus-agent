@@ -38,6 +38,18 @@ pub fn data_dir() -> PathBuf {
     base.join("com.anyscapelabs.argus")
 }
 
+/// A stable name for this machine, so lessons about what it can enforce attach
+/// to the machine rather than to whoever is logged in. The data directory is
+/// the right identity: it is per-installation, and it survives a user change
+/// on a shared box, which is exactly when "the host cannot do X" is true.
+pub fn host_id() -> String {
+    data_dir()
+        .to_string_lossy()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '.' || *c == '/')
+        .collect()
+}
+
 fn src_dir() -> PathBuf {
     let bundled = Path::new(env!("CARGO_MANIFEST_DIR")).join("../extension");
 

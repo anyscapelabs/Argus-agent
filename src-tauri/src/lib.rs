@@ -6,6 +6,7 @@ pub mod learning;
 pub mod library;
 pub mod mcp;
 pub mod memory;
+pub mod playbook;
 pub mod profiles;
 pub mod prompt;
 pub mod sessions;
@@ -51,6 +52,7 @@ pub fn run() {
             library::store::migrate(&conn)?;
             memory::store::migrate(&conn)?;
             learning::migrate(&conn)?;
+            playbook::migrate(&conn)?;
             connectors::store::migrate(&conn)?;
             tools::sandbox::schema::migrate(&conn)?;
             jobs::schema::migrate(&conn)?;

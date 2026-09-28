@@ -335,14 +335,14 @@ impl Child {
         tokio::pin!(cancel);
 
         match self {
-            Self::Async(c) => loop {
+            Self::Async(c) => {
                 tokio::select! {
                     res = c.wait() => {
                         return WaitOut::Done(res.map(|st| st.code().map_or(-1, |n| n as i64)).unwrap_or(-1));
                     }
                     _ = &mut cancel => return WaitOut::Cancelled,
                 }
-            },
+            }
             #[cfg(target_os = "windows")]
             Self::Raw(c) => {
                 tokio::select! {

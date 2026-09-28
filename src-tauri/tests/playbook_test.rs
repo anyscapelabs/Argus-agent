@@ -82,8 +82,10 @@ fn different_scopes_do_not_merge() {
 fn lessons_accumulate_under_one_key() {
     let conn = db();
 
-    let first = store::remember(&conn, Scope::Model, "prov/m", "empty_args", "send args").unwrap();
-    let second = store::remember(&conn, Scope::Model, "prov/m", "empty_args", "send args").unwrap();
+    let first =
+        store::remember(&conn, Scope::Model, "prov/m", "empty_args", "send args", 1).unwrap();
+    let second =
+        store::remember(&conn, Scope::Model, "prov/m", "empty_args", "send args", 2).unwrap();
 
     assert_eq!(first, 1);
     assert_eq!(second, 2);
@@ -121,8 +123,8 @@ fn an_empty_scope_is_refused() {
     let conn = db();
 
     assert!(store::record(&conn, Kind::EmptyArgs, "  ", None, "x").is_err());
-    assert!(store::remember(&conn, Scope::Model, "", "k", "t").is_err());
-    assert!(store::remember(&conn, Scope::Model, "s", "  ", "t").is_err());
+    assert!(store::remember(&conn, Scope::Model, "", "k", "t", 1).is_err());
+    assert!(store::remember(&conn, Scope::Model, "s", "  ", "t", 1).is_err());
     assert_eq!(count(&conn, "protocol_events"), 0);
     assert_eq!(count(&conn, "playbook_items"), 0);
 }
@@ -133,7 +135,7 @@ fn an_empty_scope_is_refused() {
 #[test]
 fn a_lesson_under_the_evidence_bar_is_not_taught() {
     let conn = db();
-    store::remember(&conn, Scope::Model, "prov/m", "k", "t").unwrap();
+    store::remember(&conn, Scope::Model, "prov/m", "k", "t", 1).unwrap();
 
     assert_eq!(count(&conn, "playbook_items"), 1, "stored for the record");
     assert_eq!(
@@ -142,7 +144,7 @@ fn a_lesson_under_the_evidence_bar_is_not_taught() {
         "but not taught"
     );
 
-    store::remember(&conn, Scope::Model, "prov/m", "k", "t").unwrap();
+    store::remember(&conn, Scope::Model, "prov/m", "k", "t", 2).unwrap();
     assert_eq!(
         store::lessons(&conn, Scope::Model, "prov/m").unwrap().len(),
         1,
@@ -150,14 +152,31 @@ fn a_lesson_under_the_evidence_bar_is_not_taught() {
     );
 }
 
+// The evidence count is set, never incremented. Signals keep their own `seen`
+// total, and a second increment would let one occurrence teach itself.
+#[test]
+fn evidence_never_inflates_on_recuration() {
+    let conn = db();
+
+    let once = store::remember(&conn, Scope::Model, "prov/m", "k", "t", 1).unwrap();
+    let again = store::remember(&conn, Scope::Model, "prov/m", "k", "t", 1).unwrap();
+
+    assert_eq!(once, 1);
+    assert_eq!(again, 1, "the same observed evidence stays the same count");
+    assert!(store::lessons(&conn, Scope::Model, "prov/m")
+        .unwrap()
+        .is_empty());
+
+    let twice = store::remember(&conn, Scope::Model, "prov/m", "k", "t", 2).unwrap();
+    assert_eq!(twice, 2, "real new evidence does raise it");
+}
+
 // Forgetting is a real delete, scoped, not a soft flag.
 #[test]
 fn forget_removes_only_the_named_scope() {
     let conn = db();
-    for _ in 0..2 {
-        store::remember(&conn, Scope::Model, "prov/a", "k", "t").unwrap();
-        store::remember(&conn, Scope::Model, "prov/b", "k", "t").unwrap();
-    }
+    store::remember(&conn, Scope::Model, "prov/a", "k", "t", 2).unwrap();
+    store::remember(&conn, Scope::Model, "prov/b", "k", "t", 2).unwrap();
 
     assert_eq!(store::forget(&conn, Scope::Model, "prov/a").unwrap(), 1);
     assert_eq!(

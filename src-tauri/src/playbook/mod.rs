@@ -88,7 +88,8 @@ pub fn curate(
         }
 
         let (key, text) = lesson_for(kind);
-        let count = store::remember(conn, kind.scope(), scope_id, key, text)?;
+        let count = store::remember(conn, kind.scope(), scope_id, key, text, evidence)?;
+
         if count == evidence {
             taught += 1;
         }

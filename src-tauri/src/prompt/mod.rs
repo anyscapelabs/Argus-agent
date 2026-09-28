@@ -322,6 +322,21 @@ pub fn project(
         }
     }
 
+    // Playbook first, so its lessons sit next to the learned preferences they
+    // sit beside: both are things observed about past work, and both are
+    // evidence-gated. A model with no history contributes nothing here, which
+    // is what keeps an evidence-free session's prompt unchanged.
+    // A sub-agent gets its own task brief and its own return value. A
+    // playbook is advice for whoever has been here before; a child has not,
+    // and handing it the parent's lessons spends its window on a history it
+    // was not present for.
+    if let Ok(playbook) = crate::playbook::prompt_context(&conn, model_id.as_deref()) {
+        if !child && !playbook.trim().is_empty() {
+            system.push_str("\n\n");
+            system.push_str(&playbook);
+        }
+    }
+
     if let Some(index) = past_index(conn, session_id) {
         system.push_str("\n\n");
         system.push_str(&index);
@@ -591,6 +606,9 @@ pub fn budget(system: &str) -> Vec<(&'static str, i64)> {
     for (mark, name) in [
         ("<user-preferences>", "user-preferences"),
         ("<learned-preferences>", "learned"),
+        ("<model-playbook>", "playbook"),
+        ("<environment-notes>", "environment"),
+        ("<resume>", "resume"),
         ("<session-summary>", "session-summary"),
         ("<working-notes>", "notepad"),
     ] {
@@ -628,6 +646,10 @@ pub struct PromptBudget {
     pub tools: i64,
     pub preferences: i64,
     pub learned: i64,
+    /// Model lessons and environment facts, reported as one tier: both are
+    /// observed, both capped, and neither is worth its own line in the budget
+    /// view when they are usually empty.
+    pub playbook: i64,
     pub summary: i64,
     pub notepad: i64,
     pub skill: i64,
@@ -642,6 +664,7 @@ pub fn full_budget(p: &Projection, web: bool) -> PromptBudget {
         tools: tools_budget(web),
         preferences: 0,
         learned: 0,
+        playbook: 0,
         summary: 0,
         notepad: 0,
         skill: 0,
@@ -655,6 +678,7 @@ pub fn full_budget(p: &Projection, web: bool) -> PromptBudget {
             "stable" => b.stable = est,
             "user-preferences" => b.preferences = est,
             "learned" => b.learned = est,
+            "playbook" | "environment" | "resume" => b.playbook += est,
             "session-summary" => b.summary = est,
             "notepad" => b.notepad = est,
             _ => {}
@@ -666,6 +690,7 @@ pub fn full_budget(p: &Projection, web: bool) -> PromptBudget {
         + b.tools
         + b.preferences
         + b.learned
+        + b.playbook
         + b.summary
         + b.notepad
         + b.skill

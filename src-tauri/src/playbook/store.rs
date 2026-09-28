@@ -257,22 +257,31 @@ pub fn signals_for(conn: &Connection, kind: Kind, scope_id: &str) -> Result<Vec<
 /// Upsert a lesson and report its evidence count, so the caller can see
 /// whether it cleared the teaching bar. Repeated signals accumulate on the
 /// same sentence instead of minting near-duplicates.
+/// Store a lesson with the evidence count observed so far, and report it.
+///
+/// The count is set, not incremented: signals already keep their own `seen`
+/// total, and incrementing here would race the two counters — a lesson would
+/// teach itself on the second curation of a single occurrence. One occurrence
+/// means one unit of evidence, every time.
 pub fn remember(
     conn: &Connection,
     scope: Scope,
     scope_id: &str,
     lesson_key: &str,
     text: &str,
+    evidence: i64,
 ) -> Result<i64, String> {
     if scope_id.trim().is_empty() || lesson_key.trim().is_empty() {
         return Err("empty scope or key".into());
     }
 
+    let evidence = evidence.max(1);
+
     conn.execute(
-        "INSERT INTO playbook_items (id, scope, scope_id, lesson_key, text)
-         VALUES (?1, ?2, ?3, ?4, ?5)
+        "INSERT INTO playbook_items (id, scope, scope_id, lesson_key, text, evidence)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
          ON CONFLICT(scope, scope_id, lesson_key) DO UPDATE
-         SET evidence = evidence + 1,
+         SET evidence = MAX(playbook_items.evidence, excluded.evidence),
              last_seen = datetime('now'),
              text = excluded.text",
         params![
@@ -281,6 +290,7 @@ pub fn remember(
             scope_id,
             lesson_key,
             text,
+            evidence,
         ],
     )
     .map_err(|err| err.to_string())?;

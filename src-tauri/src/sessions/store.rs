@@ -497,6 +497,24 @@ pub fn get_last_final(conn: &Connection, session_id: &str) -> Result<String, Str
     .map_err(|err| err.to_string())
 }
 
+/// The task as first asked. Later turns are the model's own attempts at it —
+/// nudges, `continue`, retries — and a resume built from those describes the
+/// attempt, not the job. Content, not a rendered line: the transcript strips
+/// tags, and this has to stay the user's own words.
+pub fn first_user_msg(conn: &Connection, session_id: &str) -> Option<String> {
+    conn.query_row(
+        "SELECT content FROM messages
+         WHERE session_id = ?1 AND role = 'user' AND local = 0 AND active = 1
+         ORDER BY seq LIMIT 1",
+        params![session_id],
+        |r| r.get(0),
+    )
+    .optional()
+    .ok()
+    .flatten()
+    .filter(|c: &String| !c.trim().is_empty())
+}
+
 pub fn add_msg(conn: &Connection, m: &NewMsg) -> Result<Msg, String> {
     insert(conn, m, false)
 }

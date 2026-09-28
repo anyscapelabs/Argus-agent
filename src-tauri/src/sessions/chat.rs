@@ -286,7 +286,12 @@ pub fn repeated(recent: &[(String, String)], key: &(String, String)) -> bool {
 
 // Args that vary without changing what the call does. Retries that differ
 // only here are the same attempt wearing a different timeout.
-const THRASH_VOLATILE: &[&str] = &["timeout", "label", "background", "wake", "privilege"];
+//
+// `background` and `privilege` are deliberately NOT here. They are the two
+// moves the tool description tells the agent to make when a foreground call
+// keeps failing: background a long job, escalate a denied one. Erasing them
+// makes the guard refuse the exact recovery it exists to encourage.
+const THRASH_VOLATILE: &[&str] = &["timeout", "label", "wake"];
 
 fn stable_args(args: &str) -> String {
     match serde_json::from_str::<serde_json::Value>(args) {
@@ -300,32 +305,47 @@ fn stable_args(args: &str) -> String {
     }
 }
 
+// Keys carry the identity of a call; values carry its bulk. `fs.write` and
+// `doc.create` pair a long body with a one-token path, so comparing values
+// alone says every file is the same file. Each value contributes under its
+// own key, so a shared body cannot outvote the path that tells them apart.
 fn arg_tokens(stable: &str) -> std::collections::HashSet<String> {
     let mut toks = std::collections::HashSet::new();
-    let mut push_vals = |v: &serde_json::Value| match v {
-        serde_json::Value::String(s) => {
-            toks.extend(s.split_whitespace().map(str::to_string));
-        }
-        serde_json::Value::Number(n) => {
-            toks.insert(n.to_string());
-        }
-        serde_json::Value::Array(a) => {
-            for x in a {
-                if let Some(s) = x.as_str() {
-                    toks.extend(s.split_whitespace().map(str::to_string));
+
+    fn walk(prefix: &str, v: &serde_json::Value, toks: &mut std::collections::HashSet<String>) {
+        match v {
+            serde_json::Value::String(s) => {
+                for t in s.split_whitespace() {
+                    toks.insert(format!("{prefix}={t}"));
                 }
             }
+            serde_json::Value::Number(n) => {
+                toks.insert(format!("{prefix}={n}"));
+            }
+            serde_json::Value::Bool(b) => {
+                toks.insert(format!("{prefix}={b}"));
+            }
+            serde_json::Value::Array(a) => {
+                for (i, x) in a.iter().enumerate() {
+                    walk(&format!("{prefix}[{i}]"), x, toks);
+                }
+            }
+            serde_json::Value::Object(m) => {
+                for (k, x) in m {
+                    walk(&format!("{prefix}.{k}"), x, toks);
+                }
+            }
+            serde_json::Value::Null => {}
         }
-        _ => {}
-    };
+    }
 
     match serde_json::from_str::<serde_json::Value>(stable) {
         Ok(serde_json::Value::Object(m)) => {
-            for v in m.values() {
-                push_vals(v);
+            for (k, v) in &m {
+                walk(k, v, &mut toks);
             }
         }
-        Ok(v) => push_vals(&v),
+        Ok(v) => walk("", &v, &mut toks),
         Err(_) => {
             toks.extend(stable.split_whitespace().map(str::to_string));
         }
@@ -333,17 +353,81 @@ fn arg_tokens(stable: &str) -> std::collections::HashSet<String> {
     toks
 }
 
+// No comparable tokens means no evidence, so two un-informative calls are
+// treated as different. Scoring emptiness as maximal similarity inverts the
+// safe direction: it blocked `{"background":true}` against `false`.
 fn jaccard(a: &std::collections::HashSet<String>, b: &std::collections::HashSet<String>) -> f64 {
-    if a.is_empty() && b.is_empty() {
-        return 1.0;
+    if a.is_empty() || b.is_empty() {
+        return 0.0;
     }
     let inter = a.intersection(b).count() as f64;
     let union = a.union(b).count() as f64;
     if union == 0.0 {
-        1.0
+        0.0
     } else {
         inter / union
     }
+}
+
+// The short argument that says *which* thing this call is about. A long body
+// cannot outvote these: `fs.write` on three different files with the same
+// content is three different files.
+const IDENTITY_KEYS: &[&str] = &["path", "id", "name", "url", "pattern", "query", "file"];
+
+fn identity(stable: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(stable).ok()?;
+    let m = v.as_object()?;
+
+    for k in IDENTITY_KEYS {
+        if let Some(s) = m.get(*k).and_then(|x| x.as_str()) {
+            let s = s.trim();
+
+            if !s.is_empty() {
+                return Some(s.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// One deliberate move that must never read as a retry of itself: the two
+/// things the tool description tells the agent to do when a call keeps
+/// failing. Structurally these only *add* a flag, so no similarity metric can
+/// tell them from churn — they are named instead.
+fn escalates(win: &[&str], proposed: &str) -> bool {
+    let asked_for = |a: &str| {
+        let v: serde_json::Value = match serde_json::from_str(a) {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+        v.get("background").and_then(|x| x.as_bool()) == Some(true)
+            || v.get("privilege")
+                .and_then(|x| x.as_str())
+                .is_some_and(|p| p != "user")
+    };
+
+    asked_for(proposed) && !win.iter().any(|a| asked_for(a))
+}
+
+/// Are these two attempts the same action? Growth counts: `ls` then `ls -la`
+/// is one call being refined, and refusing that is refusing the whole point of
+/// the guard. Divergence does not: four attempts that each barely resemble the
+/// last are four different ideas, and stopping the fourth protects the agent.
+fn same_action(a: &str, b: &str) -> bool {
+    if let (Some(ia), Some(ib)) = (identity(a), identity(b)) {
+        return ia == ib;
+    }
+
+    let ta = arg_tokens(a);
+    let tb = arg_tokens(b);
+
+    if ta.is_empty() || tb.is_empty() {
+        return false;
+    }
+    if ta.is_subset(&tb) || tb.is_subset(&ta) {
+        return true;
+    }
+    jaccard(&ta, &tb) >= 0.5
 }
 
 // The semantic twin of `repeated`: same tool, failing streak, arguments that
@@ -352,6 +436,11 @@ fn jaccard(a: &std::collections::HashSet<String>, b: &std::collections::HashSet<
 // it: sequential similar calls that work are real multi-step work, not churn.
 // `hist`/`failed` hold completed attempts only; `key` is the one proposed.
 pub fn thrashing(hist: &[(String, String)], failed: &[bool], key: &(String, String)) -> bool {
+    debug_assert_eq!(
+        hist.len(),
+        failed.len(),
+        "guard history and its outcomes must stay the same length"
+    );
     if hist.len() < 3 || failed.len() < 3 {
         return false;
     }
@@ -368,9 +457,14 @@ pub fn thrashing(hist: &[(String, String)], failed: &[bool], key: &(String, Stri
     if stable.iter().all(|s| s == &stable[0]) {
         return true;
     }
-    let toks: Vec<std::collections::HashSet<String>> =
-        stable.iter().map(|s| arg_tokens(s)).collect();
-    toks.windows(2).all(|w| jaccard(&w[0], &w[1]) >= 0.5)
+
+    let refs: Vec<&str> = stable.iter().map(String::as_str).collect();
+    if escalates(&refs[..3], refs[3]) {
+        return false;
+    }
+    // Every step alike, and the last still recognisably the first: drift
+    // compounds, so neighbours alone let four unrelated attempts through.
+    refs.windows(2).all(|w| same_action(w[0], w[1])) && same_action(refs[0], refs[refs.len() - 1])
 }
 
 // A turn spends a bounded number of context tokens, the way a training run
@@ -810,6 +904,52 @@ pub fn needs_text_blocks(style: tools::ToolCallStyle, degraded: bool, events_ok:
     style != tools::ToolCallStyle::Native || degraded || !events_ok
 }
 
+/// Record where the turn stopped, so the next one resumes instead of
+/// re-deriving. The goal is the task as first asked, not the word that
+/// resumed it: on a `continue` the current message says "continue", and a
+/// resume claiming that is worse than no resume.
+fn save_resume(gw: &Gateway, session_id: &str, actions: &[(String, bool)]) {
+    let Ok(conn) = gw.conn.lock() else {
+        return;
+    };
+    let goal = store::first_user_msg(&conn, session_id).unwrap_or_default();
+    super::resume::save(&conn, session_id, &goal, actions);
+}
+
+/// What the resume says ran. Read from `exec.args` at record time, not from
+/// the args the model proposed: a user-approved edit rewrites them, and a
+/// resume that misreports the approved command is worse than no command.
+fn exec_label(exec: &tools::ToolExecution, is_term: bool) -> String {
+    if is_term {
+        let v: serde_json::Value = serde_json::from_str(&exec.args).unwrap_or_default();
+        let cmd = v["command"].as_str().unwrap_or_default().trim();
+
+        if !cmd.is_empty() {
+            return format!("terminal: {cmd}");
+        }
+    }
+
+    let args: serde_json::Value = serde_json::from_str(&exec.args).unwrap_or_default();
+    hint_of_args(&args, &exec.tool)
+}
+
+/// A tool plus the one argument that identifies it. Two different `fs.write`
+/// calls must not read as the same action in a resume.
+fn hint_of_args(args: &serde_json::Value, tool: &str) -> String {
+    for k in ["command", "url", "query", "name", "path", "pattern", "id"] {
+        if let Some(s) = args[k].as_str() {
+            let s = s.trim();
+
+            if !s.is_empty() {
+                let head: String = s.chars().take(80).collect();
+                return format!("{tool} {head}");
+            }
+        }
+    }
+
+    tool.to_string()
+}
+
 pub fn sanitize_tags(s: &str) -> String {
     let mut t = s.to_string();
     t = t
@@ -866,9 +1006,11 @@ pub async fn send<R: tauri::Runtime>(
                 },
             )?;
         }
-        // A new turn replaces the last turn's resume, or the agent resumes work
-        // the user has already moved on from.
-        let _ = super::resume::clear(&conn, session_id);
+        // The previous turn's resume is deliberately left in place: it is the
+        // whole point of a resume, and the first `project()` below is the only
+        // reader. It is overwritten on every unfinished stop and cleared the
+        // moment a turn finishes, so it can never describe work the model has
+        // already moved past.
     }
 
     let null_chan = Channel::<StreamEvent>::new(|_| Ok(()));
@@ -948,11 +1090,9 @@ pub async fn send<R: tauri::Runtime>(
         // Checked before the call, not after: at Stop the turn is over and the
         // model never gets to spend what is left of the budget.
         if budget_state(tok_in_sum, turn_budget) == Budget::Stop {
-            // The one case where the loop knows it did not finish, written
-            // before the break so a new turn can pick the work up.
-            if let Ok(conn) = gw.conn.lock() {
-                super::resume::save(&conn, session_id, content, &turn_actions);
-            }
+            // One of three places that promise the user a 'continue' can pick
+            // the work up, so all three have to leave a resume behind.
+            save_resume(gw, session_id, &turn_actions);
             if let Ok(conn) = gw.conn.lock() {
                 if let Ok(last) = store::get_last_final(&conn, session_id) {
                     let _ = conn.execute(
@@ -976,12 +1116,19 @@ pub async fn send<R: tauri::Runtime>(
         }
 
         if !budget_warned && budget_state(tok_in_sum, turn_budget) == Budget::Warn {
-            budget_warned = true;
-            nudge = Some(format!(
-                "You have used about {pct}% of this turn's budget. Finish the task now, or \
-                 report what is done and what is left in one answer. Close it with <final/>.",
-                pct = (BUDGET_WARN_FRACTION * 100.0) as u32
-            ));
+            // A contract break already queued its own correction and is more
+            // urgent than a heads-up, so the budget warning waits one step
+            // rather than overwriting it. Latched only once actually queued,
+            // or it would be lost and never re-fires.
+            if nudge.is_none() {
+                budget_warned = true;
+                nudge = Some(format!(
+                    "You have used about {pct}% of this turn's budget. Finish the task now, \
+                     or report what is done and what is left in one answer. Close it with \
+                     <final/>.",
+                    pct = (BUDGET_WARN_FRACTION * 100.0) as u32
+                ));
+            }
         }
 
         let stats = router::stream_run(gw, req, model_chan).await?;
@@ -1124,13 +1271,16 @@ pub async fn send<R: tauri::Runtime>(
                         "UPDATE messages SET content = content || ?2 WHERE id = ?1",
                         params![
                             &asst.id,
-                            "\n<warning severity=\"medium\">the reply described actions \
-                             that never ran — nothing after the last tool-result was \
-                             executed; send 'continue' to let it retry</warning>"
+                            "\n<warning severity=\"medium\">this turn described actions that \
+                             never ran — the work above is saved; send 'continue' to let it \
+                             retry</warning>"
                         ],
                     );
                     let _ = store::mark_final(&conn, &asst.id);
                 }
+                // "Send continue to retry" is a promise, so the retry has to
+                // find out what was attempted.
+                save_resume(gw, session_id, &turn_actions);
 
                 finished = true;
                 break;
@@ -1244,10 +1394,10 @@ pub async fn send<R: tauri::Runtime>(
 
             if pre_failed {
                 code = -1;
-                // Pre-failed execs skip the gate below, but their outcome
-                // still counts: both histories stay aligned, failure-first.
+                // Recorded here because the gate below is skipped, but the
+                // outcome itself is pushed once for every exec further down,
+                // so both histories stay aligned and failure-first.
                 recent.push((exec.tool.clone(), exec.args.clone()));
-                recent_out.push(true);
             } else {
                 if exec.tool_call_id.is_some() {
                     sink.emit(StreamEvent::Delta {
@@ -1265,9 +1415,27 @@ pub async fn send<R: tauri::Runtime>(
                 let thrashed = thrashing(&recent, &recent_out, &key);
                 recent.push(key);
 
+                // A guard trip is not an approval question, so it never opens
+                // the Run/Deny card: showing it and then failing the call
+                // anyway asks the user to approve something already refused.
+                // The user is the escape hatch, and the guard is advisory.
                 let mut allow = !needs_ask && !looped && !thrashed;
+                let needs_ask = needs_ask && !looped && !thrashed;
 
-                if !allow {
+                if !allow && (looped || thrashed) {
+                    sink.emit(StreamEvent::Notice {
+                        msg: if thrashed {
+                            "skipped a step that retried the same failing approach — say what to \
+                             try instead, or run it yourself"
+                        } else {
+                            "skipped a step that repeats the same call — say what to try \
+                             instead, or run it yourself"
+                        }
+                        .into(),
+                    });
+                }
+
+                if needs_ask {
                     let what = if is_browser {
                         browser_what(&exec.tool, &args_v, false)
                     } else if exec.tool == "doc.create" {
@@ -1372,20 +1540,14 @@ pub async fn send<R: tauri::Runtime>(
             );
             let status = exec.result_status();
             let body = exec.result_body().to_string();
-            // Outcome for the semantic guard, recorded for every terminal
-            // exec on every path — including pre-failed ones that never ran.
-            recent_out.push(
-                exec.status == tools::ToolStatus::Failed
-                    || exec.status == tools::ToolStatus::Cancelled,
-            );
-            turn_actions.push((
-                if is_term && !cmd.is_empty() {
-                    format!("terminal: {cmd}")
-                } else {
-                    exec.tool.clone()
-                },
-                exec.status == tools::ToolStatus::Succeeded,
-            ));
+            // Outcome for the semantic guard. One push per exec, on every path
+            // including pre-failed ones that never ran: the caller pushes to
+            // `recent` unconditionally too, and the two must stay the same
+            // length for the window slices to mean anything.
+            let exec_failed = exec.status == tools::ToolStatus::Failed
+                || exec.status == tools::ToolStatus::Cancelled;
+            recent_out.push(exec_failed);
+            turn_actions.push((exec_label(exec, is_term), !exec_failed));
             if is_browser {
                 shown_candidates.push((exec.args.clone(), status, body.clone()));
             }
@@ -1576,6 +1738,7 @@ pub async fn send<R: tauri::Runtime>(
                       partial work above is saved; send 'continue' to resume"
                     .into(),
             });
+            save_resume(gw, session_id, &turn_actions);
             finished = true;
             break;
         }
@@ -1588,6 +1751,7 @@ pub async fn send<R: tauri::Runtime>(
                  send 'continue' to resume"
             ),
         });
+        save_resume(gw, session_id, &turn_actions);
     }
 
     {

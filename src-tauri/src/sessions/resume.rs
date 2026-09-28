@@ -75,7 +75,7 @@ fn clip(s: &str, n: usize) -> String {
 
 pub fn save(conn: &rusqlite::Connection, session_id: &str, goal: &str, actions: &[(String, bool)]) {
     let row = ResumeRow {
-        goal: clip(goal, GOAL_CHARS),
+        goal: goal_of(goal),
         done: clip(&done_of(actions), 1024),
         next: clip(&next_of(actions), NEXT_CHARS),
     };

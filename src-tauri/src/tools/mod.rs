@@ -369,6 +369,14 @@ fn args_equal(a: &str, b: &str) -> bool {
     }
 }
 
+fn args_is_empty_object(args: &str) -> bool {
+    let Ok(v) = serde_json::from_str::<Value>(args.trim()) else {
+        return false;
+    };
+
+    v.as_object().is_some_and(|m| m.is_empty())
+}
+
 pub fn build_executions(
     base_text: &str,
     native_calls: &[ToolCall],
@@ -385,6 +393,20 @@ pub fn build_executions(
 
     for a in parse_actions(base_text) {
         if a.tool.trim().is_empty() {
+            continue;
+        }
+        // An empty object from the text channel is breakage, not a call: no
+        // provider validated it, and running it only mints `arguments: "{}"`
+        // history the model then imitates. Fail loudly so the model re-sends
+        // with arguments instead of executing nothing.
+        if args_is_empty_object(&a.args) {
+            let mut e = ToolExecution::from_action(&a, idx);
+            idx += 1;
+            e.fail(format!(
+                "call for `{}` arrived with empty arguments — nothing ran; send it again with its arguments",
+                a.tool
+            ));
+            out.push(e);
             continue;
         }
         let dup = out

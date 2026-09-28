@@ -562,10 +562,14 @@ async fn run_skill_reflection<R: tauri::Runtime>(app: &AppHandle<R>, session_id:
     }
 }
 
-fn esc_attr(s: &str) -> String {
+pub fn esc_attr(s: &str) -> String {
+    // A value can legally contain all of these; the tag cannot survive them raw.
     s.replace('&', "&amp;")
         .replace('"', "&quot;")
         .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('\n', "&#10;")
+        .replace('\r', "&#13;")
 }
 
 fn terminal_block(idx: usize, cmd: &str, code: i64, out: &str, ms: u128) -> String {

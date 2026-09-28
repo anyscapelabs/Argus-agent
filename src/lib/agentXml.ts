@@ -178,7 +178,12 @@ const ENTITY_MAP: Record<string, string> = {
 };
 
 function decodeEntities(str: string): string {
-  return str.replace(/&([a-z]+);/g, (m, n: string) => ENTITY_MAP[n] ?? m);
+  return str
+    .replace(/&([a-z]+);/g, (m, n: string) => ENTITY_MAP[n] ?? m)
+    .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, n: string) =>
+      String.fromCodePoint(parseInt(n, 16)),
+    );
 }
 
 const ATTR_NAME = /[a-zA-Z0-9_:.-]/;
@@ -801,7 +806,6 @@ function normalizeMd(src: string): string {
   };
 
   let k = 0;
-  let inTag = false;
   let openTags: string[] = [];
 
   while (k < lines.length) {
@@ -842,24 +846,12 @@ function normalizeMd(src: string): string {
       continue;
     }
 
-    // Markdown does not belong inside a tag. A multi-line terminal command
-    // carries `#` comments and backticks, and rewriting those turns a shell
-    // script into headings before anyone has parsed a single attribute.
-    if (inTag) {
-      out.push(lines[k]);
-      if (findTagEnd(lines[k], 0) !== -1) {
-        inTag = false;
-      }
-
-      k++;
-      continue;
-    }
-
+    // A line with no tag end is raw for that line only. Latching a flag
+    // here suppressed markdown for the rest of the message after one stray `<`.
     const line = lines[k];
     const lt = line.indexOf("<");
 
     if (lt !== -1 && findTagEnd(line, lt + 1) === -1) {
-      inTag = true;
       out.push(line);
       k++;
       continue;
@@ -888,8 +880,23 @@ function normalizeMd(src: string): string {
   return out.join("\n");
 }
 
+const INVISIBLE_RE =
+  /[\u200b\u200c\u200d\ufeff\u00ad\u200e\u200f\u202a-\u202e\u2060-\u206f]/g;
+const PARSE_CAP = 1_000_000;
+
 export function parse(buf: string): XmlTree {
-  return buildTree(tokenize(normalizeMd(buf)));
+  // Belt and braces: Rust strips these before storage, but streamed text
+  // reaches here first. Nothing a model writes legitimately needs them.
+  const clean = buf.replace(INVISIBLE_RE, "");
+  const src = clean.length > PARSE_CAP ? clean.slice(0, PARSE_CAP) : clean;
+
+  try {
+    return buildTree(tokenize(normalizeMd(src)));
+  } catch {
+    return [
+      { kind: "paragraph", tag: "p", attrs: {}, children: [{ kind: "text", value: src }] },
+    ];
+  }
 }
 
 const PARSE_CACHE = new Map<string, XmlTree>();

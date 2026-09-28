@@ -1,4 +1,5 @@
 import type { BlockNode } from "../../lib/agentXml";
+import { renderInline } from "./InlineText";
 
 type Props = { block: BlockNode };
 
@@ -6,11 +7,11 @@ export default function AlertBanner({ block }: Props) {
   const body = block.children.map((c) => c.value).join("").trim();
   if (!body) return null;
 
+  // Bullets are lines. Splitting sentences multiplied bullets and hid markup.
   const items = body
     .split("\n")
     .map((s) => s.trim())
-    .filter(Boolean)
-    .flatMap((s) => s.split(/(?<=[.!?])\s+/).filter(Boolean));
+    .filter(Boolean);
   const bullets = items.length ? items : [body];
 
   return (
@@ -24,7 +25,7 @@ export default function AlertBanner({ block }: Props) {
             key={i}
             className="font-serif text-[16px] font-light leading-6 text-text-secondary"
           >
-            {it}
+            {renderInline([{ kind: "text", value: it }])}
           </li>
         ))}
       </ul>

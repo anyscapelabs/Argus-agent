@@ -140,12 +140,15 @@ class SessionStore {
   async loadAgents(sessionId: string) {
     try {
       const runs = await agentList(sessionId);
-
-      if (runs.length === 0) {
-        return;
-      }
-
       const agentRuns = { ...this.state.agentRuns };
+
+      // Prune runs this parent no longer reports, or a finished list keeps
+      // masquerading as working after a missed turn_end.
+      for (const [id, r] of Object.entries(agentRuns)) {
+        if (r.parentId === sessionId && !runs.some((n) => n.id === id)) {
+          delete agentRuns[id];
+        }
+      }
 
       for (const r of runs) {
         agentRuns[r.id] = r;
@@ -371,10 +374,23 @@ class SessionStore {
 
     if (ev.type === "refresh") {
       void this.loadMsgs(sessionId);
-      void this.loadAgents(sessionId);
-      // A sub-agent just landed. The count of the ones still working is what
-      // keeps this conversation reading as unfinished, so it has to be re-read.
-      void this.loadSessions();
+      // turn_end lives on a sub-agent bus with no replay; a missed one left
+      // the header ticking while the DB said finished. Reconcile from state.
+      void Promise.all([
+        this.loadAgents(sessionId),
+        this.loadSessions(),
+      ]).then(() => {
+        const st = this.state;
+        const runs = Object.values(st.agentRuns).filter(
+          (r) => r.parentId === sessionId,
+        );
+        const row = st.sessions.find((s) => s.id === sessionId);
+        const agentsIdle =
+          runs.length === 0 || runs.every((r) => r.state !== "running");
+        if (agentsIdle && (row === undefined || row.running_agents === 0)) {
+          this.clearTurn(sessionId);
+        }
+      });
       return;
     }
 

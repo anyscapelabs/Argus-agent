@@ -916,6 +916,76 @@ fn save_resume(gw: &Gateway, session_id: &str, actions: &[(String, bool)]) {
     super::resume::save(&conn, session_id, &goal, actions);
 }
 
+/// What one finished execution tells the playbook. One place, so a new failure
+/// mode is recorded by adding a line here rather than by remembering seven
+/// scattered call sites.
+///
+/// Each check matches a string Argus itself wrote about its own behaviour —
+/// an error message from this crate, a note the sandbox layer attached. A
+/// model cannot talk its way into a lesson, because model prose never reaches
+/// these comparisons.
+pub fn observe_exec(
+    conn: &rusqlite::Connection,
+    model_id: &str,
+    exec: &tools::ToolExecution,
+    thrashed: bool,
+) {
+    observe_signals(conn, model_id, exec, thrashed)
+}
+
+fn observe_signals(
+    conn: &rusqlite::Connection,
+    model_id: &str,
+    exec: &tools::ToolExecution,
+    thrashed: bool,
+) {
+    use crate::playbook::store::{record, Kind};
+
+    let err = exec.error.as_deref().unwrap_or_default();
+
+    if err.contains(EMPTY_ARGS_ERR) {
+        let _ = record(conn, Kind::EmptyArgs, model_id, None, &exec.tool);
+    }
+
+    if thrashed {
+        let _ = record(conn, Kind::Thrashing, model_id, None, &exec.tool);
+    }
+
+    let host = crate::sessions::ext_install::host_id();
+
+    if err.contains(MISSING_CWD_ERR) {
+        let _ = record(conn, Kind::SandboxNoCwd, &host, None, &exec.tool);
+    }
+
+    if err.contains(crate::tools::sandbox::DENIAL_NOTE) || denial_in_output(exec) {
+        let _ = record(conn, Kind::SandboxDenied, &host, None, &exec.tool);
+    }
+}
+
+/// A sandbox refusal is appended after the command's own output, so it is the
+/// tail of the body. Checking the tail rather than the whole body means a
+/// file the agent read containing these words is not mistaken for a refusal.
+///
+/// The residual is honest: a command could print the exact trailing string. It
+/// would cost one host lesson about a sandbox, and closing it properly needs a
+/// per-run nonce shared between the sandbox and the chat loop, which is not
+/// worth the coupling for a note that is already in the model's context.
+fn denial_in_output(exec: &tools::ToolExecution) -> bool {
+    const TAIL_MAX: usize = 200;
+
+    let body = exec.result_body();
+    let Some(at) = body.rfind(crate::tools::sandbox::DENIAL_NOTE) else {
+        return false;
+    };
+
+    body.len() - at <= TAIL_MAX
+}
+
+/// Phrases this crate writes about its own behaviour. Matching on them is what
+/// makes a signal unforgeable: the model cannot emit them into a place we read.
+const EMPTY_ARGS_ERR: &str = "arrived with empty arguments";
+const MISSING_CWD_ERR: &str = "project profile needs cwd";
+
 /// What the resume says ran. Read from `exec.args` at record time, not from
 /// the args the model proposed: a user-approved edit rewrites them, and a
 /// resume that misreports the approved command is worse than no command.
@@ -1093,6 +1163,16 @@ pub async fn send<R: tauri::Runtime>(
             // One of three places that promise the user a 'continue' can pick
             // the work up, so all three have to leave a resume behind.
             save_resume(gw, session_id, &turn_actions);
+
+            if let Ok(conn) = gw.conn.lock() {
+                let _ = crate::playbook::store::record(
+                    &conn,
+                    crate::playbook::Kind::BudgetStop,
+                    &crate::sessions::ext_install::host_id(),
+                    Some(session_id),
+                    &format!("{tok_in_sum} of {turn_budget} tokens"),
+                );
+            }
             if let Ok(conn) = gw.conn.lock() {
                 if let Ok(last) = store::get_last_final(&conn, session_id) {
                     let _ = conn.execute(
@@ -1186,6 +1266,36 @@ pub async fn send<R: tauri::Runtime>(
             serde_json::to_string(&stats.tool_calls).ok()
         };
 
+        // The turn told us it speaks the XML dialect by writing it. That is a
+        // fact about the model, recorded where the classification happens, so
+        // a lesson exists for the same turn that caused it.
+        if style == tools::ToolCallStyle::GlmXml && !stats.degraded {
+            if let Ok(conn) = gw.conn.lock() {
+                let _ = crate::playbook::store::record(
+                    &conn,
+                    crate::playbook::Kind::StyleXml,
+                    &stats.model_id,
+                    Some(session_id),
+                    "wrote a tool call as XML text",
+                );
+            }
+        }
+
+        // The provider refused the tool schemas. The turn still worked, via
+        // the in-band format, so this is infrastructure, not a model failure.
+        if stats.degraded {
+            if let Ok(conn) = gw.conn.lock() {
+                let _ = crate::playbook::store::record(
+                    &conn,
+                    crate::playbook::Kind::Degraded,
+                    &crate::sessions::ext_install::host_id(),
+                    Some(session_id),
+                    &stats.provider_id,
+                );
+            }
+        }
+
+        let model_id = stats.model_id.clone();
         let (asst, said_again) = {
             let conn = gw.conn.lock().map_err(|err| err.to_string())?;
             store::add_msg_dedup(
@@ -1194,7 +1304,7 @@ pub async fn send<R: tauri::Runtime>(
                     session_id: session_id.into(),
                     role: "assistant".into(),
                     content: text.clone(),
-                    model_id: Some(stats.model_id),
+                    model_id: Some(model_id.clone()),
                     provider_id: Some(stats.provider_id),
                     tok_in: Some(stats.tok_in),
                     tok_out: Some(stats.tok_out),
@@ -1344,9 +1454,25 @@ pub async fn send<R: tauri::Runtime>(
 
             {
                 let app3 = app.clone();
+                let sid = session_id.to_string();
+                let mid = model_id.clone();
                 tauri::async_runtime::spawn(async move {
-                    let gw = app3.state::<Gateway>();
+                    let app4 = app3.clone();
+                    let gw = app4.state::<Gateway>();
                     crate::learning::learn_pending(&gw).await;
+
+                    // Curating is a lookup and an upsert per kind, with the
+                    // sentences fixed in code — no model call, so it cannot
+                    // stall a turn or cost anything.
+                    let conn = gw.conn.lock().ok();
+                    if let Some(conn) = conn {
+                        let _ = crate::playbook::curate(&conn, &mid, Some(&sid));
+                        let _ = crate::playbook::curate(
+                            &conn,
+                            &crate::sessions::ext_install::host_id(),
+                            Some(&sid),
+                        );
+                    }
                 });
             }
 
@@ -1390,6 +1516,10 @@ pub async fn send<R: tauri::Runtime>(
 
             let pre_failed = exec.status.is_terminal();
             let mut denied = false;
+            // Set on the gate path below, read by the single observation site
+            // after it. A pre-failed exec never trips the guard, so it starts
+            // false rather than reading a stale value from the last exec.
+            let mut thrashed = false;
             let code: i64;
 
             if pre_failed {
@@ -1412,7 +1542,7 @@ pub async fn send<R: tauri::Runtime>(
 
                 let key = (exec.tool.clone(), exec.args.clone());
                 let looped = repeated(&recent, &key);
-                let thrashed = thrashing(&recent, &recent_out, &key);
+                thrashed = thrashing(&recent, &recent_out, &key);
                 recent.push(key);
 
                 // A guard trip is not an approval question, so it never opens
@@ -1548,6 +1678,17 @@ pub async fn send<R: tauri::Runtime>(
                 || exec.status == tools::ToolStatus::Cancelled;
             recent_out.push(exec_failed);
             turn_actions.push((exec_label(exec, is_term), !exec_failed));
+
+            // A failure is the one moment worth learning from, so it is
+            // observed here rather than at each site that could fail. A
+            // dropped signal costs a lesson; a spurious one costs prompt
+            // budget, and neither is worth a turn's outcome.
+            if exec_failed {
+                if let Ok(conn) = gw.conn.lock() {
+                    observe_exec(&conn, &stats.model_id, exec, thrashed);
+                }
+            }
+
             if is_browser {
                 shown_candidates.push((exec.args.clone(), status, body.clone()));
             }

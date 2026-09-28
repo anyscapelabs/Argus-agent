@@ -92,6 +92,11 @@ pub fn project_root_check(profile: Profile, cwd: Option<&str>) -> Option<Sandbox
 // A bare denial burns turns: stat works but listing does not, and the model
 // retries instead of rescoping. Name the allowed root when the output shows
 // the confinement failing, and mark it as harness note, not command output.
+/// Prefixed to a denial so it is distinguishable from a command that happened
+/// to print the same words. The chat loop matches on this to record that the
+/// environment refused, not the model.
+pub const DENIAL_NOTE: &str = "Argus note, not command output";
+
 pub fn denial_hint(isolated: bool, exit: i64, combined: &str, root: &str) -> Option<String> {
     if !isolated || exit == 0 {
         return None;
@@ -106,7 +111,7 @@ pub fn denial_hint(isolated: bool, exit: i64, combined: &str, root: &str) -> Opt
     }
 
     Some(format!(
-        "Argus note, not command output: this profile confines the command to {root}. \
+        "{DENIAL_NOTE}: this profile confines the command to {root}. \
          Rescope with cwd=<dir inside it>, or rerun with profile=host."
     ))
 }

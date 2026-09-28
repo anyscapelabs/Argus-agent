@@ -72,6 +72,19 @@ CREATE TABLE IF NOT EXISTS tool_events (
 CREATE INDEX IF NOT EXISTS idx_events_message ON tool_events(message_id);
 CREATE INDEX IF NOT EXISTS idx_events_session ON tool_events(session_id);
 
+-- Where the last turn stopped, in the harness's own words, so a fresh context
+-- (after a budget stop, a step pause, or a restart) resumes instead of
+-- re-deriving the same facts from a transcript it can no longer fit. Written
+-- by the loop, not the model: a self-written resume is a claim, and a
+-- resumed claim is a loop the guard cannot see.
+CREATE TABLE IF NOT EXISTS turn_resume (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  goal       TEXT NOT NULL DEFAULT '',
+  done       TEXT NOT NULL DEFAULT '',
+  next       TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS summaries (
   id         TEXT PRIMARY KEY,
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -175,6 +188,13 @@ pub struct Msg {
     /// history, because the model was never asked.
     #[serde(default)]
     pub local: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ResumeRow {
+    pub goal: String,
+    pub done: String,
+    pub next: String,
 }
 
 #[derive(Deserialize, Debug, Default)]

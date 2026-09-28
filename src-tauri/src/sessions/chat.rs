@@ -284,6 +284,134 @@ pub fn repeated(recent: &[(String, String)], key: &(String, String)) -> bool {
     recent.iter().rev().take_while(same_site).count() >= 2
 }
 
+// Args that vary without changing what the call does. Retries that differ
+// only here are the same attempt wearing a different timeout.
+const THRASH_VOLATILE: &[&str] = &["timeout", "label", "background", "wake", "privilege"];
+
+fn stable_args(args: &str) -> String {
+    match serde_json::from_str::<serde_json::Value>(args) {
+        Ok(serde_json::Value::Object(mut m)) => {
+            for k in THRASH_VOLATILE {
+                m.remove(*k);
+            }
+            serde_json::Value::Object(m).to_string()
+        }
+        _ => args.trim().to_string(),
+    }
+}
+
+fn arg_tokens(stable: &str) -> std::collections::HashSet<String> {
+    let mut toks = std::collections::HashSet::new();
+    let mut push_vals = |v: &serde_json::Value| match v {
+        serde_json::Value::String(s) => {
+            toks.extend(s.split_whitespace().map(str::to_string));
+        }
+        serde_json::Value::Number(n) => {
+            toks.insert(n.to_string());
+        }
+        serde_json::Value::Array(a) => {
+            for x in a {
+                if let Some(s) = x.as_str() {
+                    toks.extend(s.split_whitespace().map(str::to_string));
+                }
+            }
+        }
+        _ => {}
+    };
+
+    match serde_json::from_str::<serde_json::Value>(stable) {
+        Ok(serde_json::Value::Object(m)) => {
+            for v in m.values() {
+                push_vals(v);
+            }
+        }
+        Ok(v) => push_vals(&v),
+        Err(_) => {
+            toks.extend(stable.split_whitespace().map(str::to_string));
+        }
+    }
+    toks
+}
+
+fn jaccard(a: &std::collections::HashSet<String>, b: &std::collections::HashSet<String>) -> f64 {
+    if a.is_empty() && b.is_empty() {
+        return 1.0;
+    }
+    let inter = a.intersection(b).count() as f64;
+    let union = a.union(b).count() as f64;
+    if union == 0.0 {
+        1.0
+    } else {
+        inter / union
+    }
+}
+
+// The semantic twin of `repeated`: same tool, failing streak, arguments that
+// are equal modulo volatile keys or a chain of near-identical variants —
+// `ls`, `ls -la`, `ls -la /tmp` dying the same death. Successes never trip
+// it: sequential similar calls that work are real multi-step work, not churn.
+// `hist`/`failed` hold completed attempts only; `key` is the one proposed.
+pub fn thrashing(hist: &[(String, String)], failed: &[bool], key: &(String, String)) -> bool {
+    if hist.len() < 3 || failed.len() < 3 {
+        return false;
+    }
+    let win = &hist[hist.len() - 3..];
+    let fout = &failed[failed.len() - 3..];
+    if !fout.iter().all(|f| *f) {
+        return false;
+    }
+    if win.iter().any(|(t, _)| t != &key.0) {
+        return false;
+    }
+    let mut stable: Vec<String> = win.iter().map(|(_, a)| stable_args(a)).collect();
+    stable.push(stable_args(&key.1));
+    if stable.iter().all(|s| s == &stable[0]) {
+        return true;
+    }
+    let toks: Vec<std::collections::HashSet<String>> =
+        stable.iter().map(|s| arg_tokens(s)).collect();
+    toks.windows(2).all(|w| jaccard(&w[0], &w[1]) >= 0.5)
+}
+
+// A turn spends a bounded number of context tokens, the way a training run
+// spends a fixed wall clock: comparable runs, and a spiral becomes a verdict
+// instead of a cost. Sized off the model's own window so a 1M model is not
+// throttled like a 32k one.
+const BUDGET_WINDOW_FRACTION: f64 = 0.25;
+const BUDGET_WARN_FRACTION: f64 = 0.7;
+const BUDGET_MIN: i64 = 32_000;
+const BUDGET_MAX: i64 = 200_000;
+
+pub fn turn_budget(ctx_tokens: i64) -> i64 {
+    let base = if ctx_tokens > 0 {
+        ctx_tokens
+    } else {
+        crate::prompt::config::DEFAULT_CONTEXT
+    };
+    let scaled = (base as f64 * BUDGET_WINDOW_FRACTION) as i64;
+    scaled.clamp(BUDGET_MIN, BUDGET_MAX)
+}
+
+// Nudge at 70% (the model can still wind up), stop at 100% (nothing left to
+// spend). Enforced, never asked for politely: a warning a model ignores is
+// not a budget.
+pub fn budget_state(spent: i64, budget: i64) -> Budget {
+    if budget <= 0 || spent < (BUDGET_WARN_FRACTION * budget as f64) as i64 {
+        return Budget::Ok;
+    }
+    if spent < budget {
+        return Budget::Warn;
+    }
+    Budget::Stop
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Budget {
+    Ok,
+    Warn,
+    Stop,
+}
+
 pub trait ChatSink: Send + Sync {
     fn emit(&self, ev: StreamEvent);
 
@@ -738,6 +866,9 @@ pub async fn send<R: tauri::Runtime>(
                 },
             )?;
         }
+        // A new turn replaces the last turn's resume, or the agent resumes work
+        // the user has already moved on from.
+        let _ = super::resume::clear(&conn, session_id);
     }
 
     let null_chan = Channel::<StreamEvent>::new(|_| Ok(()));
@@ -764,6 +895,9 @@ pub async fn send<R: tauri::Runtime>(
     let mut finished = false;
     let mut acts_run = 0usize;
     let mut recent: Vec<(String, String)> = vec![];
+    // Outcomes of completed attempts, aligned with `recent`: a semantic retry
+    // streak only means churn when every attempt in it failed.
+    let mut recent_out: Vec<bool> = vec![];
     let mut turn_origin: Option<crate::tools::sandbox::Origin> = None;
     let allow_hosts: Vec<String> = {
         let conn = gw.conn.lock().map_err(|err| err.to_string())?;
@@ -771,6 +905,22 @@ pub async fn send<R: tauri::Runtime>(
             .and_then(|v| serde_json::from_str(&v).ok())
             .unwrap_or_default()
     };
+    let turn_budget = {
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+        let row: (Option<String>, i64) = conn
+            .query_row(
+                "SELECT model_id, ctx_tokens FROM sessions WHERE id = ?1",
+                params![session_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap_or((None, 0));
+        let window = crate::prompt::config::context_window(&conn, row.0.as_deref());
+        turn_budget(if row.1 > 0 { row.1 } else { window })
+    };
+    let mut budget_warned = false;
+    // (label, succeeded) per exec this turn, in order. The resume record is
+    // built from it: the loop's own account, not the model's.
+    let mut turn_actions: Vec<(String, bool)> = vec![];
 
     for _step in 0..MAX_STEPS {
         let req = {
@@ -794,6 +944,45 @@ pub async fn send<R: tauri::Runtime>(
             r.prefix_hash = Some(p.prefix_hash);
             r
         };
+
+        // Checked before the call, not after: at Stop the turn is over and the
+        // model never gets to spend what is left of the budget.
+        if budget_state(tok_in_sum, turn_budget) == Budget::Stop {
+            // The one case where the loop knows it did not finish, written
+            // before the break so a new turn can pick the work up.
+            if let Ok(conn) = gw.conn.lock() {
+                super::resume::save(&conn, session_id, content, &turn_actions);
+            }
+            if let Ok(conn) = gw.conn.lock() {
+                if let Ok(last) = store::get_last_final(&conn, session_id) {
+                    let _ = conn.execute(
+                        "UPDATE messages SET content = content || ?2 WHERE id = ?1",
+                        params![
+                            &last,
+                            "\n<warning severity=\"medium\">this turn hit its budget — the work \
+                             above is saved; send 'continue' to pick it up in a new turn</warning>"
+                        ],
+                    );
+                    let _ = store::mark_final(&conn, &last);
+                }
+            }
+            sink.emit(StreamEvent::Notice {
+                msg: "this turn hit its budget — the work above is saved; send 'continue' to \
+                      pick it up in a new turn"
+                    .into(),
+            });
+            finished = true;
+            break;
+        }
+
+        if !budget_warned && budget_state(tok_in_sum, turn_budget) == Budget::Warn {
+            budget_warned = true;
+            nudge = Some(format!(
+                "You have used about {pct}% of this turn's budget. Finish the task now, or \
+                 report what is done and what is left in one answer. Close it with <final/>.",
+                pct = (BUDGET_WARN_FRACTION * 100.0) as u32
+            ));
+        }
 
         let stats = router::stream_run(gw, req, model_chan).await?;
         tok_in_sum += stats.tok_in;
@@ -955,6 +1144,12 @@ pub async fn send<R: tauri::Runtime>(
                 });
             }
 
+            // A finished turn closes its own resume: leaving one behind would
+            // tell the next turn there is unfinished work that is not.
+            if let Ok(conn) = gw.conn.lock() {
+                super::resume::clear(&conn, session_id);
+            }
+
             let reflect_on: bool = gw
                 .conn
                 .lock()
@@ -1049,6 +1244,10 @@ pub async fn send<R: tauri::Runtime>(
 
             if pre_failed {
                 code = -1;
+                // Pre-failed execs skip the gate below, but their outcome
+                // still counts: both histories stay aligned, failure-first.
+                recent.push((exec.tool.clone(), exec.args.clone()));
+                recent_out.push(true);
             } else {
                 if exec.tool_call_id.is_some() {
                     sink.emit(StreamEvent::Delta {
@@ -1063,9 +1262,10 @@ pub async fn send<R: tauri::Runtime>(
 
                 let key = (exec.tool.clone(), exec.args.clone());
                 let looped = repeated(&recent, &key);
+                let thrashed = thrashing(&recent, &recent_out, &key);
                 recent.push(key);
 
-                let mut allow = !needs_ask && !looped;
+                let mut allow = !needs_ask && !looped && !thrashed;
 
                 if !allow {
                     let what = if is_browser {
@@ -1113,10 +1313,14 @@ pub async fn send<R: tauri::Runtime>(
                     }
                 }
 
-                if looped {
+                if looped || thrashed {
                     exec.fail(
-                        "same action 3 times without visible progress — change approach or ask the user"
-                            .to_string(),
+                        if thrashed {
+                            "retried the same approach without progress — change approach or ask the user"
+                        } else {
+                            "same action 3 times without visible progress — change approach or ask the user"
+                        }
+                        .to_string(),
                     );
                     code = -1;
                 } else if denied {
@@ -1168,6 +1372,20 @@ pub async fn send<R: tauri::Runtime>(
             );
             let status = exec.result_status();
             let body = exec.result_body().to_string();
+            // Outcome for the semantic guard, recorded for every terminal
+            // exec on every path — including pre-failed ones that never ran.
+            recent_out.push(
+                exec.status == tools::ToolStatus::Failed
+                    || exec.status == tools::ToolStatus::Cancelled,
+            );
+            turn_actions.push((
+                if is_term && !cmd.is_empty() {
+                    format!("terminal: {cmd}")
+                } else {
+                    exec.tool.clone()
+                },
+                exec.status == tools::ToolStatus::Succeeded,
+            ));
             if is_browser {
                 shown_candidates.push((exec.args.clone(), status, body.clone()));
             }

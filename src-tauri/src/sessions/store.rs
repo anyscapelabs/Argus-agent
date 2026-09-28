@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
-use super::schema::{Folder, Msg, NewEvent, NewMsg, NewSession, Session, ToolEvent};
+use super::schema::{Folder, Msg, NewEvent, NewMsg, NewSession, ResumeRow, Session, ToolEvent};
 
 pub fn migrate(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(super::schema::MIGRATE)
@@ -483,6 +483,20 @@ pub fn mark_final(conn: &Connection, id: &str) -> Result<(), String> {
     Ok(())
 }
 
+// The newest assistant turn, whether or not it was already closed. A budget
+// stop writes its notice onto whatever the user last saw, so the warning
+// cannot land on a message the transcript no longer renders.
+pub fn get_last_final(conn: &Connection, session_id: &str) -> Result<String, String> {
+    conn.query_row(
+        "SELECT id FROM messages
+         WHERE session_id = ?1 AND role = 'assistant' AND active = 1
+         ORDER BY seq DESC LIMIT 1",
+        params![session_id],
+        |r| r.get(0),
+    )
+    .map_err(|err| err.to_string())
+}
+
 pub fn add_msg(conn: &Connection, m: &NewMsg) -> Result<Msg, String> {
     insert(conn, m, false)
 }
@@ -668,6 +682,45 @@ pub fn list_events(conn: &Connection, session_id: &str) -> Result<Vec<ToolEvent>
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|err| err.to_string())
+}
+
+pub fn save_resume(conn: &Connection, session_id: &str, row: &ResumeRow) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO turn_resume (session_id, goal, done, next, updated_at)
+         VALUES (?1, ?2, ?3, ?4, datetime('now'))
+         ON CONFLICT(session_id) DO UPDATE SET goal = ?2, done = ?3, next = ?4, updated_at = datetime('now')",
+        params![session_id, row.goal, row.done, row.next],
+    )
+    .map_err(|err| err.to_string())?;
+
+    Ok(())
+}
+
+pub fn get_resume(conn: &Connection, session_id: &str) -> Option<ResumeRow> {
+    conn.query_row(
+        "SELECT goal, done, next FROM turn_resume WHERE session_id = ?1",
+        params![session_id],
+        |r| {
+            Ok(ResumeRow {
+                goal: r.get(0)?,
+                done: r.get(1)?,
+                next: r.get(2)?,
+            })
+        },
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
+pub fn clear_resume(conn: &Connection, session_id: &str) -> Result<(), String> {
+    conn.execute(
+        "DELETE FROM turn_resume WHERE session_id = ?1",
+        params![session_id],
+    )
+    .map_err(|err| err.to_string())?;
+
+    Ok(())
 }
 
 pub fn set_vote(

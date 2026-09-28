@@ -311,6 +311,17 @@ pub fn project(
         system.push_str(&notes);
     }
 
+    // After the notes and before the transcript: it is state about the turn,
+    // not a memory the agent chose to keep. A sub-agent gets its own task
+    // brief, never the parent's unfinished work — inheriting that is how a
+    // child spends its window re-deriving a conversation it was not in.
+    if let Some(resume) = crate::sessions::resume::prompt_include(conn, session_id) {
+        if !child {
+            system.push_str("\n\n");
+            system.push_str(&resume);
+        }
+    }
+
     if let Some(index) = past_index(conn, session_id) {
         system.push_str("\n\n");
         system.push_str(&index);

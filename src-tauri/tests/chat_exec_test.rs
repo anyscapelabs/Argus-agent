@@ -23,7 +23,8 @@
 
 use argus_lib::gateway::schema::ToolCall;
 use argus_lib::prompt::project;
-use argus_lib::sessions::chat::{repeated, sanitize_tags};
+use argus_lib::sessions::chat::sanitize_tags;
+use argus_lib::sessions::guards::repeated;
 use argus_lib::sessions::schema::NewSession;
 use argus_lib::tools::{
     build_executions, has_orphaned_action_block, normalize_actions, ToolExecution, ToolStatus,

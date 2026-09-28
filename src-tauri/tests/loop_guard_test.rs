@@ -1,4 +1,4 @@
-use argus_lib::sessions::chat::{budget_state, thrashing, turn_budget, Budget};
+use argus_lib::sessions::guards::{budget_state, thrashing, turn_budget, Budget};
 
 fn k(tool: &str, args: &str) -> (String, String) {
     (tool.into(), args.into())

@@ -2,6 +2,7 @@ pub mod browser_import;
 pub mod chat;
 pub mod events;
 pub mod ext_install;
+pub mod guards;
 pub mod resume;
 pub mod schema;
 pub mod store;

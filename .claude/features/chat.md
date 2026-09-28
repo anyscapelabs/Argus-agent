@@ -33,6 +33,7 @@ Code: `src-tauri/src/sessions/{chat.rs,mod.rs,store.rs,schema.rs,browser_import.
 - `Turn{text,term:Record<idx,chunk>,termCode,approval,err}` mutated incrementally; `step` clears turn + reloads; `done` clears + reloads; `err` preserves retryable turn. Background turns fire `notifyDone` only when not watching (`App.tsx:45-70`).
 - Rendering: `AgentBubble` parses `lib/agentXml.ts` tags; `ApprovalBlock` Run/Deny; `SessionList` + `listen("sessions-changed")` in `App.tsx:75`.
 - Email drafts: `gmail.send`/`outlook.send` pending approvals render as interactive `EmailDraftCard` (editable To/Subject/Body) inside `ToolActivity` via `actionStep` email branch; Send → `resolveApproval(id, true, editedArgs)`, Discard → deny. History `<email-draft>` blocks render read-only.
+- Tool records are rows, not markup: `tool_events` (`sessions/events.rs` + `store::add_event/list_events`) written alongside each exec; fresh native turns persist prose-only text. UI (`toolEvents.ts` → `ToolActivity`, `sess_list_events`) prefers rows, parses text only for legacy/degraded rows. Text block writers (`terminal_block` etc.) serve degraded/template turns only.
 
 ## Rules for agents
 

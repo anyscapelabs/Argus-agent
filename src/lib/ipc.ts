@@ -18,6 +18,7 @@ const CMD_SESS_MOD = "sess_set_model";
 const CMD_SESS_WEB = "sess_set_web_search";
 const CMD_SESS_EXP = "sess_export_json";
 const CMD_SESS_MSGS = "sess_list_messages";
+const CMD_SESS_EVENTS = "sess_list_events";
 const CMD_SESS_LOCAL = "sess_run_local";
 const CMD_SESS_VOTE = "sess_set_vote";
 const CMD_SESS_SUP = "sess_supersede_from";
@@ -255,6 +256,26 @@ export function sessExportJson(sessionId: string): Promise<string> {
 
 export function sessListMessages(sessionId: string): Promise<MsgRow[]> {
   return invoke<MsgRow[]>(CMD_SESS_MSGS, { sessionId });
+}
+
+export type ToolEvent = {
+  id: string;
+  message_id: string;
+  session_id: string;
+  kind: string;
+  tool: string;
+  args_json: string;
+  status: string;
+  elapsed_ms: number;
+  code: number;
+  output: string;
+  label: string;
+  detail: string;
+  created_at: string;
+};
+
+export function sessListEvents(sessionId: string): Promise<ToolEvent[]> {
+  return invoke<ToolEvent[]>(CMD_SESS_EVENTS, { sessionId });
 }
 
 /// Store a line the app answers itself as a turn. The backend refuses a command

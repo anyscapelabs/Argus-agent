@@ -138,6 +138,7 @@ pub fn run() {
             sessions::sess_delete_session,
             sessions::sess_export_json,
             sessions::sess_list_messages,
+            sessions::sess_list_events,
             sessions::sess_set_vote,
             sessions::sess_clean_dangling,
             sessions::sess_add_message,

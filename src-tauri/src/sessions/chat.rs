@@ -827,7 +827,14 @@ pub async fn send<R: tauri::Runtime>(
         }
 
         let done = pending.is_empty();
-        let text = tools::render_actions(&base_text, &pending);
+        // Native turns persist prose only: the event rows own what ran, so no
+        // record markup is stored to be re-parsed later. Degraded and template
+        // turns keep the text blocks — they are the only record those have.
+        let text = if style == tools::ToolCallStyle::Native && !stats.degraded {
+            tools::strip_actions(&base_text)
+        } else {
+            tools::render_actions(&base_text, &pending)
+        };
 
         let calls_json = if stats.tool_calls.is_empty() {
             None
@@ -1175,6 +1182,14 @@ pub async fn send<R: tauri::Runtime>(
                 )?;
             }
 
+            // The structured twin of the text block below. Same execution, so
+            // the card, the history, and the audit can never disagree. A lost
+            // row retries next turn; a lost turn must never fail.
+            if let Ok(conn) = gw.conn.lock() {
+                let ev = crate::sessions::events::from_execution(exec, &asst.id, session_id);
+                let _ = store::add_event(&conn, &ev);
+            }
+
             if is_term {
                 let terminal_failed = exec.status == tools::ToolStatus::Failed;
                 if status == "ok" || terminal_failed {
@@ -1268,7 +1283,13 @@ pub async fn send<R: tauri::Runtime>(
             }
         }
 
-        if !edits.is_empty() || !append_blocks.is_empty() {
+        // Native turns keep prose only: events own the records (written
+        // above), so splicing text blocks would resurrect the markup the
+        // structured path exists to delete. Degraded turns have no events
+        // worth reading, so their text blocks stay.
+        if (!edits.is_empty() || !append_blocks.is_empty())
+            && (style != tools::ToolCallStyle::Native || stats.degraded)
+        {
             let mut updated = text.clone();
 
             for (s, end, blk) in edits.into_iter().rev() {

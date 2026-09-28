@@ -1,5 +1,6 @@
 pub mod browser_import;
 pub mod chat;
+pub mod events;
 pub mod ext_install;
 pub mod schema;
 pub mod store;
@@ -105,6 +106,15 @@ pub fn sess_export_json(gw: State<'_, Gateway>, session_id: String) -> Result<St
 pub fn sess_list_messages(gw: State<'_, Gateway>, session_id: String) -> Result<Vec<Msg>, String> {
     let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     store::list_msgs(&conn, &session_id)
+}
+
+#[tauri::command]
+pub fn sess_list_events(
+    gw: State<'_, Gateway>,
+    session_id: String,
+) -> Result<Vec<schema::ToolEvent>, String> {
+    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+    store::list_events(&conn, &session_id)
 }
 
 #[tauri::command]

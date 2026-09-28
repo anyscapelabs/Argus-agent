@@ -44,6 +44,29 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS idx_msgs_session ON messages(session_id, seq);
 
+-- One row per tool execution, written alongside the assistant message that
+-- caused it. The message keeps prose; this table keeps what ran. Readers
+-- (UI cards, history projection, audit) use these rows and never re-parse
+-- markup out of message text. No foreign key on purpose: superseding a
+-- message must not erase the record that the work happened.
+CREATE TABLE IF NOT EXISTS tool_events (
+  id          TEXT PRIMARY KEY,
+  message_id  TEXT NOT NULL,
+  session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL,
+  tool        TEXT NOT NULL,
+  args_json   TEXT NOT NULL DEFAULT '{}',
+  status      TEXT NOT NULL,
+  elapsed_ms  INTEGER NOT NULL DEFAULT 0,
+  code        INTEGER NOT NULL DEFAULT 0,
+  output      TEXT NOT NULL DEFAULT '',
+  label       TEXT NOT NULL DEFAULT '',
+  detail      TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_events_message ON tool_events(message_id);
+CREATE INDEX IF NOT EXISTS idx_events_session ON tool_events(session_id);
+
 CREATE TABLE IF NOT EXISTS summaries (
   id         TEXT PRIMARY KEY,
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -164,4 +187,39 @@ pub struct NewMsg {
     pub tool_call_id: Option<String>,
     #[serde(default)]
     pub attachments: Option<String>,
+}
+
+// A structured record of one tool execution. Written once, read by the UI
+// cards, the history projection, and any audit — never reconstructed by
+// parsing message text.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ToolEvent {
+    pub id: String,
+    pub message_id: String,
+    pub session_id: String,
+    pub kind: String,
+    pub tool: String,
+    pub args_json: String,
+    pub status: String,
+    pub elapsed_ms: i64,
+    pub code: i64,
+    pub output: String,
+    pub label: String,
+    pub detail: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Default)]
+pub struct NewEvent {
+    pub message_id: String,
+    pub session_id: String,
+    pub kind: String,
+    pub tool: String,
+    pub args_json: String,
+    pub status: String,
+    pub elapsed_ms: i64,
+    pub code: i64,
+    pub output: String,
+    pub label: String,
+    pub detail: String,
 }

@@ -8,6 +8,7 @@ import {
   sessCleanDangling,
   sessCreateSession,
   sessDeleteSession,
+  sessListEvents,
   sessListMessages,
   sessListSessions,
   sessResolveApproval,
@@ -25,6 +26,7 @@ import {
   type MsgRow,
   type SessionRow,
   type StreamEvent,
+  type ToolEvent,
 } from "../lib/ipc";
 import { attachStore } from "./attachments";
 
@@ -77,6 +79,9 @@ type State = {
   turns: Record<string, Turn>;
   stopped: Record<string, boolean>;
   agentRuns: Record<string, AgentRun>;
+  // Structured tool records by session. Present means the turn was written
+  // after events landed: steps render from these, never by re-parsing text.
+  events: Record<string, ToolEvent[]>;
   /// What a local slash command answered. Not a message: no model ran, so
   /// there is nothing to persist and nothing to reload.
   notes: Record<string, Note[]>;
@@ -103,6 +108,7 @@ class SessionStore {
     turns: {},
     stopped: {},
     agentRuns: {},
+    events: {},
     notes: {},
   };
 
@@ -164,6 +170,13 @@ class SessionStore {
       this.set({ msgs: { ...this.state.msgs, [sessionId]: rows } });
     } catch {
       this.set({ msgs: { ...this.state.msgs, [sessionId]: [] } });
+    }
+
+    try {
+      const events = await sessListEvents(sessionId);
+      this.set({ events: { ...this.state.events, [sessionId]: events } });
+    } catch {
+      this.set({ events: { ...this.state.events, [sessionId]: [] } });
     }
   }
 

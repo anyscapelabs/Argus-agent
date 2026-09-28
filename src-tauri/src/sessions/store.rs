@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
-use super::schema::{Folder, Msg, NewMsg, NewSession, Session};
+use super::schema::{Folder, Msg, NewEvent, NewMsg, NewSession, Session, ToolEvent};
 
 pub fn migrate(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(super::schema::MIGRATE)
@@ -595,6 +595,75 @@ pub fn list_msgs(conn: &Connection, session_id: &str) -> Result<Vec<Msg>, String
 
     let rows = stmt
         .query_map(params![session_id], row_msg)
+        .map_err(|err| err.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())
+}
+
+const EVENT_COLS: &str =
+    "id, message_id, session_id, kind, tool, args_json, status, elapsed_ms, code, output, label, detail, created_at";
+
+fn row_event(r: &rusqlite::Row) -> rusqlite::Result<ToolEvent> {
+    Ok(ToolEvent {
+        id: r.get(0)?,
+        message_id: r.get(1)?,
+        session_id: r.get(2)?,
+        kind: r.get(3)?,
+        tool: r.get(4)?,
+        args_json: r.get(5)?,
+        status: r.get(6)?,
+        elapsed_ms: r.get(7)?,
+        code: r.get(8)?,
+        output: r.get(9)?,
+        label: r.get(10)?,
+        detail: r.get(11)?,
+        created_at: r.get(12)?,
+    })
+}
+
+pub fn add_event(conn: &Connection, e: &NewEvent) -> Result<ToolEvent, String> {
+    let id = Uuid::new_v4().to_string();
+
+    conn.execute(
+        "INSERT INTO tool_events (id, message_id, session_id, kind, tool, args_json, status, elapsed_ms, code, output, label, detail)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        params![
+            id,
+            e.message_id,
+            e.session_id,
+            e.kind,
+            e.tool,
+            e.args_json,
+            e.status,
+            e.elapsed_ms,
+            e.code,
+            e.output,
+            e.label,
+            e.detail,
+        ],
+    )
+    .map_err(|err| err.to_string())?;
+
+    conn.query_row(
+        &format!("SELECT {EVENT_COLS} FROM tool_events WHERE id = ?1"),
+        params![id],
+        row_event,
+    )
+    .map_err(|err| err.to_string())
+}
+
+// Every event for the session, oldest first. Keyed by session rather than
+// liveness: superseding a message retries the turn, it does not un-run tools.
+pub fn list_events(conn: &Connection, session_id: &str) -> Result<Vec<ToolEvent>, String> {
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT {EVENT_COLS} FROM tool_events WHERE session_id = ?1 ORDER BY created_at, id"
+        ))
+        .map_err(|err| err.to_string())?;
+
+    let rows = stmt
+        .query_map(params![session_id], row_event)
         .map_err(|err| err.to_string())?;
 
     rows.collect::<Result<Vec<_>, _>>()

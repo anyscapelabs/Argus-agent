@@ -4,6 +4,7 @@ import AgentBubble from "./AgentBubble";
 import UsageCard from "./UsageCard";
 import UserBubble from "./UserBubble";
 import { parseCached, type BlockNode } from "../lib/agentXml";
+import { docBlockFor, eventsFor, eventStep } from "../lib/toolEvents";
 import ToolActivity, {
   actionStep,
   browserDoneStep,
@@ -14,7 +15,7 @@ import ToolActivity, {
 } from "./agent/ToolActivity";
 import { parseDbTime } from "../lib/relativeTime";
 import { sessionStore, useSessions, type Turn } from "../stores/sessions";
-import { learningRecordCorrection, type Attachment, type MsgRow, type UsageWindow } from "../lib/ipc";
+import { learningRecordCorrection, type Attachment, type MsgRow, type ToolEvent, type UsageWindow } from "../lib/ipc";
 import { toast } from "../stores/toast";
 
 const SCROLL_LINE = 40;
@@ -128,6 +129,14 @@ export default function ChatTranscript({
 
   const rows = msgs[sessionId] ?? [];
   const turn = turns[sessionId];
+  // Events by owning message. A message with rows here was written after
+  // events landed, so its steps render from rows and its text is prose.
+  const eventMap = new Map<string, ToolEvent[]>();
+  for (const ev of st.events[sessionId] ?? []) {
+    const list = eventMap.get(ev.message_id) ?? [];
+    list.push(ev);
+    eventMap.set(ev.message_id, list);
+  }
   const running = turn !== undefined && turn.err === null;
   // The turn can be over while the work is not. A parent that fanned out and
   // said it would report when the children finish has not finished saying it.
@@ -300,14 +309,32 @@ export default function ChatTranscript({
             let stepIdx = 0;
 
             for (const m of msgs) {
+              const isLive = liveIds.has(m.id);
+
+              // Events own the turn when the backend wrote them: steps come
+              // from rows, and document cards from the event, with no text
+              // parsing. Legacy and degraded rows fall through to the parser.
+              if (!isLive) {
+                const owned = eventsFor(eventMap, m.id);
+
+                if (owned !== null) {
+                  for (const ev of owned) {
+                    steps.push(eventStep(ev));
+                    stepIdx++;
+
+                    const doc = docBlockFor(ev);
+                    if (doc !== null) docBlocks.push(doc);
+                  }
+                  continue;
+                }
+              }
+
               let blocks;
               try {
                 blocks = parseCached(m.content);
               } catch {
                 continue;
               }
-
-              const isLive = liveIds.has(m.id);
 
               for (let bi = 0; bi < blocks.length; bi++) {
                 const b = blocks[bi];

@@ -235,7 +235,7 @@ fn a_sub_agent_prompt_is_capped_so_a_wish_cannot_become_a_wall() {
 #[test]
 fn a_sub_agent_cannot_ask_for_approval_when_nobody_is_watching() {
     use argus_lib::gateway::schema::StreamEvent;
-    use argus_lib::sessions::chat::ChatSink;
+    use argus_lib::sessions::sink::ChatSink;
 
     struct Fan<'a>(&'a Gateway, String);
 
@@ -333,7 +333,7 @@ fn the_prune_is_counted_per_parent_not_globally() {
 #[test]
 fn a_sub_agents_output_stays_out_of_the_chat_that_started_it() {
     use argus_lib::gateway::schema::StreamEvent;
-    use argus_lib::sessions::chat::ChatSink;
+    use argus_lib::sessions::sink::ChatSink;
 
     let app = app();
     let pid = parent(&app);
@@ -343,7 +343,7 @@ fn a_sub_agents_output_stays_out_of_the_chat_that_started_it() {
     let mut parent_rx = gw.subscribe(&pid);
     let mut child_rx = gw.subscribe(child);
 
-    let sink = chat::FanSink {
+    let sink = argus_lib::sessions::sink::FanSink {
         gw: gw.inner(),
         child_id: child.into(),
         parent_id: pid.clone(),
@@ -375,7 +375,7 @@ fn a_sub_agents_output_stays_out_of_the_chat_that_started_it() {
 #[test]
 fn only_an_approval_crosses_into_the_chat_that_started_it() {
     use argus_lib::gateway::schema::StreamEvent;
-    use argus_lib::sessions::chat::ChatSink;
+    use argus_lib::sessions::sink::ChatSink;
 
     let app = app();
     let pid = parent(&app);
@@ -384,7 +384,7 @@ fn only_an_approval_crosses_into_the_chat_that_started_it() {
 
     let mut parent_rx = gw.subscribe(&pid);
 
-    let sink = chat::FanSink {
+    let sink = argus_lib::sessions::sink::FanSink {
         gw: gw.inner(),
         child_id: child.into(),
         parent_id: pid.clone(),

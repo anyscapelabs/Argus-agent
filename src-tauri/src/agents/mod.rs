@@ -288,7 +288,7 @@ async fn supervise<R: tauri::Runtime>(
          the whole exchange.\n\n\
          {summary}\n\
          </agent-done>",
-        chat::attr_escape(title)
+        crate::sessions::blocks::esc_attr(title)
     );
 
     // The last one out calls the parent back, so the turn that fanned out

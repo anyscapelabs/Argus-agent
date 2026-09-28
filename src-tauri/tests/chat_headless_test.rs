@@ -1,4 +1,4 @@
-use argus_lib::sessions::chat::NullSink;
+use argus_lib::sessions::sink::NullSink;
 use std::collections::HashSet;
 use std::sync::Mutex;
 
@@ -97,7 +97,7 @@ async fn an_open_window_does_not_make_a_detached_turn_trusted() {
 #[tokio::test]
 async fn a_detached_turn_still_refuses_to_ask_with_a_watcher_attached() {
     use argus_lib::gateway::schema::StreamEvent;
-    use argus_lib::sessions::chat::ChatSink;
+    use argus_lib::sessions::sink::ChatSink;
 
     struct Watcher<'a>(&'a argus_lib::gateway::Gateway, String);
 

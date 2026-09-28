@@ -18,38 +18,38 @@ use super::sink;
 use super::store;
 
 const DEFAULT_TITLE: &str = "New chat";
-const MAX_STEPS: usize = 24;
-const RESULT_CLIP: usize = 4000;
+pub const MAX_STEPS: usize = 24;
+pub const RESULT_CLIP: usize = 4000;
 const TERM_TIMEOUT: u64 = 300;
 
 const WATCH_IDLE: std::time::Duration = std::time::Duration::from_millis(150);
 
 const WAKE_SLOTS: u32 = 240;
 const WAKE_SLOT_MS: u64 = 500;
-const DENIED_CODE: i64 = -2;
-const MAX_CLAIM_NUDGES: usize = 2;
-const MAX_TRUNC_CONTS: usize = 2;
+pub const DENIED_CODE: i64 = -2;
+pub const MAX_CLAIM_NUDGES: usize = 2;
+pub const MAX_TRUNC_CONTS: usize = 2;
 
-const NUDGE: &str = "Your last reply neither ran a tool nor closed the turn. A reply ends \
+pub const NUDGE: &str = "Your last reply neither ran a tool nor closed the turn. A reply ends \
 one of exactly two ways: with a tool call, or with the final answer followed by \
 <final/> on its own last line. If you meant to act, make the call now and end the reply \
 right after it. If you cannot act, say so plainly and end with <final/> — never \
 describe an action without running it.";
 
-const SUMMARY_DEMAND: &str = "Your last replies kept ending without closing the turn. \
+pub const SUMMARY_DEMAND: &str = "Your last replies kept ending without closing the turn. \
 Do not emit any more tool blocks. Reply now with a plain-text summary of what was \
 actually accomplished in this turn and what is still left to do, then close it with \
 <final/> on its own last line.";
 
-const TRUNC_CONT: &str = "Your previous reply was cut off at the model's output limit. \
+pub const TRUNC_CONT: &str = "Your previous reply was cut off at the model's output limit. \
 Continue with the next step now. If a tool-result already arrived for an action, \
 that work is done — do not repeat it. Only if you were in the middle of an action \
 block that has no matching tool-result yet, re-emit that whole block from its start.";
 
-const EMPTY_CONT: &str = "Your last reply was empty. Continue with the task now; to act, \
+pub const EMPTY_CONT: &str = "Your last reply was empty. Continue with the task now; to act, \
 end your reply with an action block.";
 
-const HARD_STEPS: usize = 6;
+pub const HARD_STEPS: usize = 6;
 
 pub const SKILL_NUDGE: &str =
     "That took real work. If the task succeeded and any part of it is reusable, \
@@ -57,7 +57,7 @@ save it as a skill now: first skill.search for overlap, then skill.create with a
 a one-line description, and a body of When to use, Steps, and Pitfalls sections. \
 If nothing here is worth reusing, say so in one line and finish.";
 
-fn auto_model(conn: &Connection) -> Result<String, String> {
+pub fn auto_model(conn: &Connection) -> Result<String, String> {
     let models = crate::gateway::store::list_chat_models(conn)?;
 
     models
@@ -66,15 +66,8 @@ fn auto_model(conn: &Connection) -> Result<String, String> {
         .ok_or("auto mode: no enabled models".into())
 }
 
-fn approval_id() -> String {
+pub fn approval_id() -> String {
     format!("ap{}", uuid::Uuid::new_v4().as_simple())
-}
-
-pub fn attr_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
 }
 
 /// Put a message in a conversation without running a turn for it, and tell
@@ -191,7 +184,7 @@ pub fn announce<R: tauri::Runtime>(
     });
 }
 
-async fn ask_approval(
+pub async fn ask_approval(
     gw: &Gateway,
     sink: &dyn sink::ChatSink,
     id: &str,
@@ -225,7 +218,7 @@ async fn ask_approval(
     reply
 }
 
-async fn run_skill_reflection<R: tauri::Runtime>(app: &AppHandle<R>, session_id: &str) {
+pub async fn run_skill_reflection<R: tauri::Runtime>(app: &AppHandle<R>, session_id: &str) {
     let gw = app.state::<Gateway>();
 
     let req: ChatReq = {
@@ -321,21 +314,6 @@ pub async fn send<R: tauri::Runtime>(
         .unwrap_or_else(|_| ("ask".into(), false))
     };
 
-    let mut tok_in_sum = 0i64;
-    let mut act_base = 0usize;
-    let mut nudge: Option<String> = None;
-    let mut claim_nudges = 0usize;
-    let mut forced_summary = false;
-    let mut reflect_nudges = 0usize;
-    let mut trunc_conts = 0usize;
-    let mut empty_retries = 0usize;
-    let mut finished = false;
-    let mut acts_run = 0usize;
-    let mut recent: Vec<(String, String)> = vec![];
-    // Outcomes of completed attempts, aligned with `recent`: a semantic retry
-    // streak only means churn when every attempt in it failed.
-    let mut recent_out: Vec<bool> = vec![];
-    let mut turn_origin: Option<crate::tools::sandbox::Origin> = None;
     let allow_hosts: Vec<String> = {
         let conn = gw.conn.lock().map_err(|err| err.to_string())?;
         crate::gateway::store::kv_get(&conn, crate::tools::sandbox::KV_ALLOW_HOSTS)
@@ -354,775 +332,24 @@ pub async fn send<R: tauri::Runtime>(
         let window = crate::prompt::config::context_window(&conn, row.0.as_deref());
         guards::turn_budget(if row.1 > 0 { row.1 } else { window })
     };
-    let mut budget_warned = false;
-    // (label, succeeded) per exec this turn, in order. The resume record is
-    // built from it: the loop's own account, not the model's.
-    let mut turn_actions: Vec<(String, bool)> = vec![];
 
-    for _step in 0..MAX_STEPS {
-        let req = {
-            let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-            let mut p = project(&conn, session_id, &gw.library_dir)?;
-            if p.model_id.is_none() {
-                p.model_id = Some(auto_model(&conn)?);
-            }
-
-            let mut r = p.chat_req();
-            blocks::attach_shots(&mut r.msgs);
-
-            if let Some(n) = nudge.take() {
-                r.msgs.push(WireMsg {
-                    role: "user".into(),
-                    content: n,
-                    ..Default::default()
-                });
-            }
-
-            r.prefix_hash = Some(p.prefix_hash);
-            r
-        };
-
-        // Checked before the call, not after: at Stop the turn is over and the
-        // model never gets to spend what is left of the budget.
-        if guards::budget_state(tok_in_sum, turn_budget) == guards::Budget::Stop {
-            // One of three places that promise the user a 'continue' can pick
-            // the work up, so all three have to leave a resume behind.
-            blocks::save_resume(gw, session_id, &turn_actions);
-
-            if let Ok(conn) = gw.conn.lock() {
-                let _ = crate::playbook::store::record(
-                    &conn,
-                    crate::playbook::Kind::BudgetStop,
-                    &crate::sessions::ext_install::host_id(),
-                    Some(session_id),
-                    &format!("{tok_in_sum} of {turn_budget} tokens"),
-                );
-            }
-            if let Ok(conn) = gw.conn.lock() {
-                if let Ok(last) = store::get_last_final(&conn, session_id) {
-                    let _ = conn.execute(
-                        "UPDATE messages SET content = content || ?2 WHERE id = ?1",
-                        params![
-                            &last,
-                            "\n<warning severity=\"medium\">this turn hit its budget — the work \
-                             above is saved; send 'continue' to pick it up in a new turn</warning>"
-                        ],
-                    );
-                    let _ = store::mark_final(&conn, &last);
-                }
-            }
-            sink.emit(StreamEvent::Notice {
-                msg: "this turn hit its budget — the work above is saved; send 'continue' to \
-                      pick it up in a new turn"
-                    .into(),
-            });
-            finished = true;
-            break;
-        }
-
-        if !budget_warned && guards::budget_state(tok_in_sum, turn_budget) == guards::Budget::Warn {
-            // A contract break already queued its own correction and is more
-            // urgent than a heads-up, so the budget warning waits one step
-            // rather than overwriting it. Latched only once actually queued,
-            // or it would be lost and never re-fires.
-            if nudge.is_none() {
-                budget_warned = true;
-                nudge = Some(format!(
-                    "You have used about {pct}% of this turn's budget. Finish the task now, \
-                     or report what is done and what is left in one answer. Close it with \
-                     <final/>.",
-                    pct = (guards::BUDGET_WARN_FRACTION * 100.0) as u32
-                ));
-            }
-        }
-
-        let stats = router::stream_run(gw, req, model_chan).await?;
-        tok_in_sum += stats.tok_in;
-
-        if stats.text.trim().is_empty() && stats.tool_calls.is_empty() {
-            if empty_retries < 1 {
-                empty_retries += 1;
-                nudge = Some(EMPTY_CONT.into());
-                continue;
-            }
-
-            return Err("model returned an empty reply — try again".into());
-        }
-
-        let normalized = blocks::sanitize_tags(&tools::normalize_actions(&stats.text));
-        let (closed, base_text) = tools::split_commit(&normalized);
-        // Degraded replies have no API channel, so the text must execute
-        // regardless of style. Otherwise the resolved style decides: native
-        // prose is never executed, template text is decoded.
-        let style = if stats.degraded {
-            tools::ToolCallStyle::GlmXml
-        } else {
-            match gw.conn.lock() {
-                Ok(conn) => crate::prompt::config::tool_style(&conn, Some(stats.model_id.as_str())),
-                Err(_) => tools::ToolCallStyle::Native,
-            }
-        };
-        let mut pending =
-            tools::build_executions_styled(&base_text, &stats.tool_calls, act_base, style);
-
-        // An unknown model showing the duplication signature gets classified
-        // once, here. Next turn it resolves to the template style directly.
-        if style == tools::ToolCallStyle::Native
-            && tools::has_native_text_duplicate(&base_text, &stats.tool_calls)
-        {
-            if let Ok(conn) = gw.conn.lock() {
-                crate::prompt::config::upgrade_tool_style(&conn, &stats.model_id);
-            }
-        }
-
-        let done = pending.is_empty();
-        // Native turns persist prose only: the event rows own what ran, so no
-        // record markup is stored to be re-parsed later. Degraded and template
-        // turns keep the text blocks — they are the only record those have.
-        let text = if style == tools::ToolCallStyle::Native && !stats.degraded {
-            tools::strip_actions(&base_text)
-        } else {
-            tools::render_actions(&base_text, &pending)
-        };
-
-        let calls_json = if stats.tool_calls.is_empty() {
-            None
-        } else {
-            serde_json::to_string(&stats.tool_calls).ok()
-        };
-
-        // The turn told us it speaks the XML dialect by writing it. That is a
-        // fact about the model, recorded where the classification happens, so
-        // a lesson exists for the same turn that caused it.
-        if style == tools::ToolCallStyle::GlmXml && !stats.degraded {
-            if let Ok(conn) = gw.conn.lock() {
-                let _ = crate::playbook::store::record(
-                    &conn,
-                    crate::playbook::Kind::StyleXml,
-                    &stats.model_id,
-                    Some(session_id),
-                    "wrote a tool call as XML text",
-                );
-            }
-        }
-
-        // The provider refused the tool schemas. The turn still worked, via
-        // the in-band format, so this is infrastructure, not a model failure.
-        if stats.degraded {
-            if let Ok(conn) = gw.conn.lock() {
-                let _ = crate::playbook::store::record(
-                    &conn,
-                    crate::playbook::Kind::Degraded,
-                    &crate::sessions::ext_install::host_id(),
-                    Some(session_id),
-                    &stats.provider_id,
-                );
-            }
-        }
-
-        let model_id = stats.model_id.clone();
-        let (asst, said_again) = {
-            let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-            store::add_msg_dedup(
-                &conn,
-                &NewMsg {
-                    session_id: session_id.into(),
-                    role: "assistant".into(),
-                    content: text.clone(),
-                    model_id: Some(model_id.clone()),
-                    provider_id: Some(stats.provider_id),
-                    tok_in: Some(stats.tok_in),
-                    tok_out: Some(stats.tok_out),
-                    tool_calls: calls_json,
-                    tool_call_id: None,
-                    attachments: None,
-                },
-            )?
-        };
-
-        let mut trunc_overflow = false;
-        if stats.truncated {
-            trunc_conts += 1;
-
-            // A model told to carry on and answering the same thing has
-            // nothing left to say. Asking again only buys another copy of the
-            // same words, which is how one answer ends up in the chat three
-            // times over.
-            if trunc_conts > MAX_TRUNC_CONTS || said_again {
-                if done {
-                    // A model that just repeated itself was not cut off — it had
-                    // nothing left to say. Blaming a limit it never hit would be
-                    // a worse lie than saying nothing.
-                    if !said_again {
-                        sink.emit(StreamEvent::Notice {
-                            msg: "the model's reply was cut off at its output limit twice — \
-                                  partial work above is saved; send 'continue' to resume"
-                                .into(),
-                        });
-                    }
-
-                    if let Ok(conn) = gw.conn.lock() {
-                        let _ = store::mark_final(&conn, &asst.id);
-                    }
-
-                    finished = true;
-                    break;
-                }
-                trunc_overflow = true;
-            } else {
-                nudge = Some(TRUNC_CONT.into());
-
-                if done {
-                    continue;
-                }
-            }
-        } else if done {
-            // Asked of what the model actually wrote, not of the text the
-            // transcript shows: a fragment too broken to run is cut out of the
-            // answer, and the model still has to be told to say it again.
-            let orphaned = tools::has_orphaned_action_block(&stats.text);
-
-            if !closed
-                || reflect::fakes_output(&text)
-                || reflect::has_faux_sandbox(&text)
-                || orphaned
-            {
-                if claim_nudges < MAX_CLAIM_NUDGES {
-                    claim_nudges += 1;
-                    nudge = Some(NUDGE.into());
-                    continue;
-                }
-
-                if !forced_summary {
-                    forced_summary = true;
-                    nudge = Some(SUMMARY_DEMAND.into());
-                    continue;
-                }
-
-                sink.emit(StreamEvent::Notice {
-                    msg: "the reply described an action but none ran — partial work \
-                          above is saved; send 'continue' to let it retry"
-                        .into(),
-                });
-
-                if let Ok(conn) = gw.conn.lock() {
-                    let _ = conn.execute(
-                        "UPDATE messages SET content = content || ?2 WHERE id = ?1",
-                        params![
-                            &asst.id,
-                            "\n<warning severity=\"medium\">this turn described actions that \
-                             never ran — the work above is saved; send 'continue' to let it \
-                             retry</warning>"
-                        ],
-                    );
-                    let _ = store::mark_final(&conn, &asst.id);
-                }
-                // "Send continue to retry" is a promise, so the retry has to
-                // find out what was attempted.
-                blocks::save_resume(gw, session_id, &turn_actions);
-
-                finished = true;
-                break;
-            }
-
-            if acts_run >= HARD_STEPS {
-                let app2 = app.clone();
-                let sid = session_id.to_string();
-                tauri::async_runtime::spawn(async move {
-                    run_skill_reflection(&app2, &sid).await;
-                });
-            }
-
-            // A finished turn closes its own resume: leaving one behind would
-            // tell the next turn there is unfinished work that is not.
-            if let Ok(conn) = gw.conn.lock() {
-                super::resume::clear(&conn, session_id);
-            }
-
-            let reflect_on: bool = gw
-                .conn
-                .lock()
-                .ok()
-                .and_then(|conn| {
-                    conn.query_row(
-                        "SELECT reflect FROM sessions WHERE id = ?1",
-                        params![session_id],
-                        |r| r.get::<_, i64>(0),
-                    )
-                    .ok()
-                })
-                .map(|v| v != 0)
-                .unwrap_or(false);
-
-            if reflect::should_reflect(reflect_on, acts_run, reflect_nudges) {
-                match reflect::run_reflection_check(gw, session_id, &text).await {
-                    Ok(None) => {
-                        if let Ok(conn) = gw.conn.lock() {
-                            let _ = conn.execute(
-                                "UPDATE messages SET content = content || ?2 WHERE id = ?1",
-                                params![&asst.id, format!("\n{}", reflect::check_block(true))],
-                            );
-                        }
-                    }
-                    Ok(Some(instruction)) => {
-                        reflect_nudges += 1;
-
-                        if let Ok(conn) = gw.conn.lock() {
-                            let _ = conn.execute(
-                                "UPDATE messages SET content = content || ?2 WHERE id = ?1",
-                                params![&asst.id, format!("\n{}", reflect::check_block(false))],
-                            );
-                        }
-
-                        nudge = Some(instruction);
-                        continue;
-                    }
-                    Err(_) => {}
-                }
-            }
-
-            {
-                let app3 = app.clone();
-                let sid = session_id.to_string();
-                let mid = model_id.clone();
-                tauri::async_runtime::spawn(async move {
-                    let app4 = app3.clone();
-                    let gw = app4.state::<Gateway>();
-                    crate::learning::learn_pending(&gw).await;
-
-                    // Curating is a lookup and an upsert per kind, with the
-                    // sentences fixed in code — no model call, so it cannot
-                    // stall a turn or cost anything.
-                    let conn = gw.conn.lock().ok();
-                    if let Some(conn) = conn {
-                        let _ = crate::playbook::curate(&conn, &mid, Some(&sid));
-                        let _ = crate::playbook::curate(
-                            &conn,
-                            &crate::sessions::ext_install::host_id(),
-                            Some(&sid),
-                        );
-                    }
-                });
-            }
-
-            if let Ok(conn) = gw.conn.lock() {
-                let _ = store::mark_final(&conn, &asst.id);
-            }
-
-            finished = true;
-            break;
-        }
-
-        sink.emit(StreamEvent::Step);
-
-        let mut edits: Vec<(usize, usize, String)> = vec![];
-        let mut append_blocks: Vec<String> = vec![];
-        let mut shown_candidates: Vec<(String, &'static str, String)> = vec![];
-
-        let mut events_ok = true;
-
-        for exec in pending.iter_mut() {
-            let idx: usize = exec
-                .id
-                .strip_prefix('a')
-                .and_then(|n| n.parse().ok())
-                .unwrap_or(act_base);
-            if idx >= act_base {
-                act_base = idx + 1;
-            }
-
-            let is_term = exec.is_terminal_tool();
-            let is_browser = exec.is_browser_tool();
-
-            let args_v: serde_json::Value =
-                serde_json::from_str(&exec.args).unwrap_or(serde_json::Value::Null);
-
-            let cmd = if is_term {
-                args_v["command"].as_str().unwrap_or_default().to_string()
-            } else {
-                String::new()
-            };
-
-            let pre_failed = exec.status.is_terminal();
-            let mut denied = false;
-            // Set on the gate path below, read by the single observation site
-            // after it. A pre-failed exec never trips the guard, so it starts
-            // false rather than reading a stale value from the last exec.
-            let mut thrashed = false;
-            let code: i64;
-
-            if pre_failed {
-                code = -1;
-                // Recorded here because the gate below is skipped, but the
-                // outcome itself is pushed once for every exec further down,
-                // so both histories stay aligned and failure-first.
-                recent.push((exec.tool.clone(), exec.args.clone()));
-            } else {
-                if exec.tool_call_id.is_some() {
-                    sink.emit(StreamEvent::Delta {
-                        text: format!("<action tool=\"{}\">{}</action>", exec.tool, exec.args),
-                    });
-                }
-
-                exec.begin();
-
-                let sensitive = is_browser && tools::browser::sensitive(&exec.tool, &args_v).await;
-                let needs_ask = (perm == "ask" && tools::is_mutating(&exec.tool)) || sensitive;
-
-                let key = (exec.tool.clone(), exec.args.clone());
-                let looped = guards::repeated(&recent, &key);
-                thrashed = guards::thrashing(&recent, &recent_out, &key);
-                recent.push(key);
-
-                // A guard trip is not an approval question, so it never opens
-                // the Run/Deny card: showing it and then failing the call
-                // anyway asks the user to approve something already refused.
-                // The user is the escape hatch, and the guard is advisory.
-                let mut allow = !needs_ask && !looped && !thrashed;
-                let needs_ask = needs_ask && !looped && !thrashed;
-
-                if !allow && (looped || thrashed) {
-                    sink.emit(StreamEvent::Notice {
-                        msg: if thrashed {
-                            "skipped a step that retried the same failing approach — say what to \
-                             try instead, or run it yourself"
-                        } else {
-                            "skipped a step that repeats the same call — say what to try \
-                             instead, or run it yourself"
-                        }
-                        .into(),
-                    });
-                }
-
-                if needs_ask {
-                    let what = if is_browser {
-                        blocks::browser_what(&exec.tool, &args_v, false)
-                    } else if exec.tool == "doc.create" {
-                        args_v
-                            .get("name")
-                            .and_then(|v| v.as_str())
-                            .map(|s| format!("doc.create {}", s))
-                            .unwrap_or_else(|| "doc.create".into())
-                    } else {
-                        cmd.clone()
-                    };
-
-                    let mut edited: Option<String> = None;
-
-                    if sink.detached() {
-                        sink.emit(StreamEvent::Notice {
-                            msg: format!(
-                                "skipped a step that needs your approval ({what}) — nothing was \
-                                 listening, so it was refused rather than guessed at. Open the \
-                                 session and ask again, or set it to never"
-                            ),
-                        });
-                        allow = false;
-                        denied = true;
-                    } else {
-                        let reply = ask_approval(gw, sink, &approval_id(), idx as u32, &what).await;
-                        edited = reply.args;
-                        allow = reply.allow;
-                        denied = !allow;
-                    }
-
-                    if allow && !exec.is_browser_tool() {
-                        if let Some(args) = edited {
-                            exec.args = args;
-                        }
-                    }
-
-                    if denied && is_term {
-                        sink.emit(StreamEvent::TermEnd {
-                            idx: idx as u32,
-                            code: DENIED_CODE,
-                        });
-                    }
-                }
-
-                if looped || thrashed {
-                    exec.fail(
-                        if thrashed {
-                            "retried the same approach without progress — change approach or ask the user"
-                        } else {
-                            "same action 3 times without visible progress — change approach or ask the user"
-                        }
-                        .to_string(),
-                    );
-                    code = -1;
-                } else if denied {
-                    exec.cancel("action denied by user".to_string());
-                    code = DENIED_CODE;
-                } else {
-                    let t0 = std::time::Instant::now();
-                    let outcome = tools::recover::exec_with_recovery(
-                        app,
-                        gw,
-                        &exec.tool,
-                        &exec.args,
-                        &perm,
-                        web,
-                        allow,
-                        sink.term_chan().map(|c| (c, idx as u32)),
-                    )
-                    .await;
-                    exec.elapsed_ms = t0.elapsed().as_millis();
-                    match outcome.result {
-                        Ok(t) => {
-                            code = blocks::exit_of(&t);
-                            exec.succeed(t);
-                        }
-                        Err(err) => {
-                            if exec.is_browser_tool()
-                                && err.contains("Chrome is not connected to Argus")
-                            {
-                                sink.emit(StreamEvent::Notice {
-                                    msg: "the agent needs your real Chrome once: open \
-                                        chrome://extensions, enable Developer mode, click \
-                                        Load unpacked and pick the Argus extension folder, \
-                                        then tell it to try again"
-                                        .into(),
-                                });
-                            }
-
-                            exec.fail(err);
-                            code = -1;
-                        }
-                    }
-                }
-            }
-
-            debug_assert!(
-                exec.status.is_terminal(),
-                "tool execution must end terminal: {}",
-                exec.tool
-            );
-            let status = exec.result_status();
-            let body = exec.result_body().to_string();
-            // Outcome for the semantic guard. One push per exec, on every path
-            // including pre-failed ones that never ran: the caller pushes to
-            // `recent` unconditionally too, and the two must stay the same
-            // length for the window slices to mean anything.
-            let exec_failed = exec.status == tools::ToolStatus::Failed
-                || exec.status == tools::ToolStatus::Cancelled;
-            recent_out.push(exec_failed);
-            turn_actions.push((blocks::exec_label(exec, is_term), !exec_failed));
-
-            // A failure is the one moment worth learning from, so it is
-            // observed here rather than at each site that could fail. A
-            // dropped signal costs a lesson; a spurious one costs prompt
-            // budget, and neither is worth a turn's outcome.
-            if exec_failed {
-                if let Ok(conn) = gw.conn.lock() {
-                    blocks::observe_exec(&conn, &stats.model_id, exec, thrashed);
-                }
-            }
-
-            if is_browser {
-                shown_candidates.push((exec.args.clone(), status, body.clone()));
-            }
-            let msg = exec.to_tool_result(RESULT_CLIP);
-
-            {
-                let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-                store::add_msg(
-                    &conn,
-                    &NewMsg {
-                        session_id: session_id.into(),
-                        role: "user".into(),
-                        content: msg,
-                        model_id: None,
-                        provider_id: None,
-                        tok_in: None,
-                        tok_out: None,
-                        tool_calls: None,
-                        tool_call_id: exec.tool_call_id.clone(),
-                        attachments: None,
-                    },
-                )?;
-            }
-
-            // The structured twin of the text block below. Same execution, so
-            // the card, the history, and the audit can never disagree. A lost
-            // row falls back to text (the turn must never fail over logging)
-            // and is counted in connector_logs under service `sessions`.
-            let ev = crate::sessions::events::from_execution(exec, &asst.id, session_id);
-            let ev_err = match gw.conn.lock() {
-                Ok(conn) => store::add_event(&conn, &ev).err(),
-                Err(err) => Some(err.to_string()),
-            };
-            if let Some(err) = ev_err {
-                events_ok = false;
-                crate::connectors::log::event(
-                    "sessions",
-                    "tool_event_write",
-                    &format!("{}: {err}", exec.tool),
-                    "err",
-                );
-            }
-
-            if is_term {
-                let terminal_failed = exec.status == tools::ToolStatus::Failed;
-                if status == "ok" || terminal_failed {
-                    let term_code = if denied { DENIED_CODE } else { code };
-                    sink.emit(StreamEvent::TermEnd {
-                        idx: idx as u32,
-                        code: term_code,
-                    });
-                }
-
-                let out = if denied || exec.status == tools::ToolStatus::Cancelled {
-                    "command denied by user".to_string()
-                } else {
-                    body.strip_prefix("exit ")
-                        .and_then(|r| r.split_once('\n'))
-                        .map(|(_, o)| o.to_string())
-                        .unwrap_or_else(|| body.clone())
-                };
-
-                let blk = blocks::terminal_block(idx, &cmd, code, &out, exec.elapsed_ms);
-                match (exec.start, exec.end) {
-                    (Some(s), Some(e)) => edits.push((s, e, blk)),
-                    _ => append_blocks.push(blk),
-                }
-            }
-
-            if is_browser {
-                let url = args_v["url"]
-                    .as_str()
-                    .map(Into::into)
-                    .unwrap_or_else(|| blocks::body_url(&body));
-
-                let blk = blocks::browser_block(
-                    idx,
-                    &exec.tool,
-                    &url,
-                    &blocks::browser_what(&exec.tool, &args_v, true),
-                );
-                match (exec.start, exec.end) {
-                    (Some(s), Some(e)) => edits.push((s, e, blk)),
-                    _ => append_blocks.push(blk),
-                }
-            }
-
-            if exec.tool == "doc.create" && status == "ok" {
-                let id = blocks::doc_field(&body, "id=");
-                let name = blocks::doc_field(&body, "name=");
-                let ext = blocks::doc_field(&body, "ext=");
-                let pages = blocks::doc_field(&body, "pages=");
-                let title = if name.is_empty() {
-                    "Untitled document".into()
-                } else {
-                    name
-                };
-                let blk = blocks::doc_block(&id, &title, &ext, &pages);
-                match (exec.start, exec.end) {
-                    (Some(s), Some(e)) => edits.push((s, e, blk)),
-                    _ => append_blocks.push(blk),
-                }
-            }
-
-            if exec.tool == "code.run" {
-                let cmd = args_v
-                    .get("command")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("command");
-                let blk = crate::tools::sandbox::record_block(
-                    cmd,
-                    crate::tools::sandbox::Profile::Restricted.as_str(),
-                    &crate::tools::sandbox::origin_label(turn_origin.as_ref(), &allow_hosts),
-                    status,
-                    &body,
-                );
-                match (exec.start, exec.end) {
-                    (Some(s), Some(e)) => edits.push((s, e, blk)),
-                    _ => append_blocks.push(blk),
-                }
-            }
-
-            if exec.tool != "code.run" {
-                if let Some(o) = crate::tools::sandbox::origin_of_tool(&exec.tool, &exec.args) {
-                    turn_origin = Some(o);
-                }
-            }
-
-            if exec.tool_call_id.is_some() && !is_term && !is_browser && exec.tool != "doc.create" {
-                append_blocks.push(format!(
-                    "<action tool=\"{}\">{}</action>",
-                    exec.tool, exec.args
-                ));
-            }
-        }
-
-        // Native turns keep prose only: events own the records (written
-        // above), so splicing text blocks would resurrect the markup the
-        // structured path exists to delete. A lost event row falls back to
-        // text so the work stays visible. Degraded turns have no events
-        // worth reading, so their text blocks stay.
-        if (!edits.is_empty() || !append_blocks.is_empty())
-            && blocks::needs_text_blocks(style, stats.degraded, events_ok)
-        {
-            let mut updated = text.clone();
-
-            for (s, end, blk) in edits.into_iter().rev() {
-                if s <= end
-                    && end <= updated.len()
-                    && updated.is_char_boundary(s)
-                    && updated.is_char_boundary(end)
-                {
-                    updated.replace_range(s..end, &blk);
-                }
-            }
-            for blk in append_blocks {
-                if !updated.is_empty() && !updated.ends_with('\n') {
-                    updated.push('\n');
-                }
-                updated.push_str(&blk);
-            }
-
-            let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-            conn.execute(
-                "UPDATE messages SET content = ?2 WHERE id = ?1",
-                params![&asst.id, &updated],
-            )
-            .map_err(|err| err.to_string())?;
-        }
-
-        for (args_json, status, body) in shown_candidates {
-            if status != "ok" {
-                continue;
-            }
-            let Ok(args_v) = serde_json::from_str::<serde_json::Value>(&args_json) else {
-                continue;
-            };
-            if let Some(gen) = tools::browser::shown_gen_in(&body) {
-                tools::browser::note_shown(&args_v, gen).await;
-            }
-        }
-
-        acts_run += pending.len();
-
-        if trunc_overflow {
-            sink.emit(StreamEvent::Notice {
-                msg: "the model's reply was cut off at its output limit twice — \
-                      partial work above is saved; send 'continue' to resume"
-                    .into(),
-            });
-            blocks::save_resume(gw, session_id, &turn_actions);
-            finished = true;
-            break;
-        }
-    }
-
-    if !finished {
-        sink.emit(StreamEvent::Notice {
-            msg: format!(
-                "paused mid-task after {MAX_STEPS} steps — everything above is saved; \
-                 send 'continue' to resume"
-            ),
-        });
-        blocks::save_resume(gw, session_id, &turn_actions);
-    }
+    let mut turn = super::turn::Turn::new();
+    turn.run(
+        gw,
+        app,
+        session_id,
+        sink,
+        model_chan,
+        &perm,
+        web,
+        &allow_hosts,
+        turn_budget,
+    )
+    .await?;
+
+    let finished = turn.finished;
+    let tok_in_sum = turn.tok_in_sum;
+    let recent = turn.recent;
 
     {
         let tools_seen: Vec<String> = recent.iter().map(|(t, _)| t.clone()).collect();

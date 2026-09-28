@@ -1450,8 +1450,8 @@ pub async fn exec<R: tauri::Runtime>(
                 &format!(
                     "<agent id=\"{id}\" name=\"{name}\" state=\"running\">\n{title}\n</agent>",
                     id = run.id,
-                    name = crate::sessions::chat::attr_escape(&run.name),
-                    title = crate::sessions::chat::attr_escape(&run.title),
+                    name = crate::sessions::blocks::esc_attr(&run.name),
+                    title = crate::sessions::blocks::esc_attr(&run.title),
                 ),
             );
 

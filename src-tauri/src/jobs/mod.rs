@@ -382,7 +382,7 @@ async fn supervise<R: tauri::Runtime>(
              Its output is on disk. Read it with job.read before drawing any conclusion \
              about whether the work actually succeeded — the exit code alone rarely says.\n\n\
              {summary}\n</job-done>",
-            crate::sessions::chat::attr_escape(&label),
+            crate::sessions::blocks::esc_attr(&label),
         ),
         wake,
     );

@@ -131,7 +131,7 @@ fn labels_mirror_card_titles() {
 #[test]
 fn failed_status_and_error_are_kept() {
     let conn = db();
-    let mut e = build_executions(r#"<action tool="terminal">{}</action>"#, &[], 0)
+    let e = build_executions(r#"<action tool="terminal">{}</action>"#, &[], 0)
         .pop()
         .unwrap();
     assert_eq!(e.status, ToolStatus::Failed);

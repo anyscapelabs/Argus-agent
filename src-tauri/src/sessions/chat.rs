@@ -674,6 +674,14 @@ pub fn attach_shots(msgs: &mut [WireMsg]) {
     }
 }
 
+// Text blocks are the legacy record format. Fresh native turns persist prose
+// only and read rows instead — unless the row write failed, in which case the
+// text is the only record left and must stay. Degraded turns never have rows
+// worth reading. One predicate so the rule cannot drift between callers.
+pub fn needs_text_blocks(style: tools::ToolCallStyle, degraded: bool, events_ok: bool) -> bool {
+    style != tools::ToolCallStyle::Native || degraded || !events_ok
+}
+
 pub fn sanitize_tags(s: &str) -> String {
     let mut t = s.to_string();
     t = t
@@ -1011,6 +1019,8 @@ pub async fn send<R: tauri::Runtime>(
         let mut append_blocks: Vec<String> = vec![];
         let mut shown_candidates: Vec<(String, &'static str, String)> = vec![];
 
+        let mut events_ok = true;
+
         for exec in pending.iter_mut() {
             let idx: usize = exec
                 .id
@@ -1184,10 +1194,21 @@ pub async fn send<R: tauri::Runtime>(
 
             // The structured twin of the text block below. Same execution, so
             // the card, the history, and the audit can never disagree. A lost
-            // row retries next turn; a lost turn must never fail.
-            if let Ok(conn) = gw.conn.lock() {
-                let ev = crate::sessions::events::from_execution(exec, &asst.id, session_id);
-                let _ = store::add_event(&conn, &ev);
+            // row falls back to text (the turn must never fail over logging)
+            // and is counted in connector_logs under service `sessions`.
+            let ev = crate::sessions::events::from_execution(exec, &asst.id, session_id);
+            let ev_err = match gw.conn.lock() {
+                Ok(conn) => store::add_event(&conn, &ev).err(),
+                Err(err) => Some(err.to_string()),
+            };
+            if let Some(err) = ev_err {
+                events_ok = false;
+                crate::connectors::log::event(
+                    "sessions",
+                    "tool_event_write",
+                    &format!("{}: {err}", exec.tool),
+                    "err",
+                );
             }
 
             if is_term {
@@ -1285,10 +1306,11 @@ pub async fn send<R: tauri::Runtime>(
 
         // Native turns keep prose only: events own the records (written
         // above), so splicing text blocks would resurrect the markup the
-        // structured path exists to delete. Degraded turns have no events
+        // structured path exists to delete. A lost event row falls back to
+        // text so the work stays visible. Degraded turns have no events
         // worth reading, so their text blocks stay.
         if (!edits.is_empty() || !append_blocks.is_empty())
-            && (style != tools::ToolCallStyle::Native || stats.degraded)
+            && needs_text_blocks(style, stats.degraded, events_ok)
         {
             let mut updated = text.clone();
 

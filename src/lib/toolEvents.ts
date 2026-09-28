@@ -14,6 +14,88 @@ function parseArgs(raw: string): Record<string, unknown> {
   }
 }
 
+// How often the text parser still carries a turn. `suspicious` means the
+// session has event rows yet a message fell back to markup — the shape the
+// structured path exists to delete. `legacy` means a pre-events session,
+// expected until old chats age out. Counts persist under
+// `argus.metrics.fallback`; read that key when deciding whether the template
+// text splice can be deleted.
+const COUNT_KEY = "argus.metrics.fallback";
+const counted = new Set<string>();
+
+export type FallbackCounts = { suspicious: number; legacy: number };
+
+export type CountStore = {
+  get(): string | null;
+  set(v: string): void;
+};
+
+function domStore(): CountStore | null {
+  if (typeof localStorage === "undefined") return null;
+
+  try {
+    return {
+      get: () => localStorage.getItem(COUNT_KEY),
+      set: (v: string) => localStorage.setItem(COUNT_KEY, v),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function fallbackCounts(store: CountStore | null = domStore()): FallbackCounts {
+  const zero = { suspicious: 0, legacy: 0 };
+  if (store === null) return zero;
+
+  try {
+    const raw = store.get();
+    if (raw === null) return zero;
+    const cur = JSON.parse(raw) as Partial<FallbackCounts>;
+    return {
+      suspicious: cur.suspicious ?? 0,
+      legacy: cur.legacy ?? 0,
+    };
+  } catch {
+    return zero;
+  }
+}
+
+const RECORD_TAGS = new Set([
+  "action",
+  "terminal",
+  "sandbox",
+  "browser-action",
+  "document",
+  "check",
+]);
+
+export function hasRecordBlocks(tags: string[]): boolean {
+  return tags.some((t) => RECORD_TAGS.has(t));
+}
+
+export function noteFallback(
+  messageId: string,
+  sessionHasEvents: boolean,
+  tags: string[],
+  store: CountStore | null = domStore(),
+): void {
+  if (!hasRecordBlocks(tags) || counted.has(messageId)) return;
+  counted.add(messageId);
+  if (counted.size > 5000) {
+    const first = counted.values().next();
+    if (!first.done) counted.delete(first.value);
+  }
+  if (store === null) return;
+
+  try {
+    const cur = fallbackCounts(store);
+    const key = sessionHasEvents ? "suspicious" : "legacy";
+    store.set(JSON.stringify({ ...cur, [key]: cur[key] + 1 }));
+  } catch {
+    // Metrics must never break rendering.
+  }
+}
+
 // Steps built from event rows, not by re-parsing message text. Labels,
 // details, and codes arrive computed; this maps them onto the card shapes
 // the work panel already renders. Text parsing remains only for rows that

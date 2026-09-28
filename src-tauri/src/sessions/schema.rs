@@ -49,6 +49,11 @@ CREATE INDEX IF NOT EXISTS idx_msgs_session ON messages(session_id, seq);
 -- (UI cards, history projection, audit) use these rows and never re-parse
 -- markup out of message text. No foreign key on purpose: superseding a
 -- message must not erase the record that the work happened.
+--
+-- SHAPE DISCIPLINE: this table is append-shaped, not edit-shaped. A new field
+-- needs a discussed migration with eval coverage (see tool_events_eval_test),
+-- never a silent DDL amend — every amend so far has meant the design was
+-- guessed, and guessing twice is how markup ended up in prose.
 CREATE TABLE IF NOT EXISTS tool_events (
   id          TEXT PRIMARY KEY,
   message_id  TEXT NOT NULL,

@@ -1,4 +1,5 @@
-use argus_lib::sessions::chat::{clean_title, fakes_output};
+use argus_lib::sessions::chat::{clean_title, fakes_output, needs_text_blocks};
+use argus_lib::tools::ToolCallStyle;
 use argus_lib::tools::{protocol_section, split_commit, FINAL_MARKER};
 
 #[test]
@@ -105,4 +106,16 @@ fn protocol_declares_the_close_marker() {
         p.contains("ends one of exactly two ways"),
         "protocol must state the two-way turn contract"
     );
+}
+
+// Text blocks persist only when rows cannot carry the turn: degraded replies
+// have no rows worth reading, and a lost row falls back to text so the work
+// stays visible. Fresh native turns with healthy rows persist prose only.
+#[test]
+fn text_blocks_persist_only_without_readable_rows() {
+    assert!(!needs_text_blocks(ToolCallStyle::Native, false, true));
+    assert!(needs_text_blocks(ToolCallStyle::Native, false, false));
+    assert!(needs_text_blocks(ToolCallStyle::Native, true, true));
+    assert!(needs_text_blocks(ToolCallStyle::GlmXml, false, true));
+    assert!(needs_text_blocks(ToolCallStyle::GlmXml, true, false));
 }

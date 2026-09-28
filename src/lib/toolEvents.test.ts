@@ -1,7 +1,14 @@
 import { describe, expect, it } from "bun:test";
 
 import type { ToolEvent } from "./ipc";
-import { eventsFor, eventStep } from "./toolEvents";
+import {
+  eventsFor,
+  eventStep,
+  fallbackCounts,
+  hasRecordBlocks,
+  noteFallback,
+  type CountStore,
+} from "./toolEvents";
 
 function ev(part: Partial<ToolEvent>): ToolEvent {
   return {
@@ -85,5 +92,44 @@ describe("legacy fallback selection", () => {
     expect(eventsFor(map, "m1")?.length).toBe(1);
     expect(eventsFor(map, "m-old")).toBeNull();
     expect(eventsFor(new Map(), "m1")).toBeNull();
+  });
+});
+
+describe("fallback metrics", () => {
+  function memStore(): CountStore {
+    let v: string | null = null;
+    return {
+      get: () => v,
+      set: (s: string) => {
+        v = s;
+      },
+    };
+  }
+
+  it("splits suspicious from legacy and counts each message once", () => {
+    expect(hasRecordBlocks(["p", "terminal"])).toBe(true);
+    expect(hasRecordBlocks(["p", "thinking"])).toBe(false);
+    expect(hasRecordBlocks([])).toBe(false);
+
+    const store = memStore();
+    const id = `m-${Date.now()}-${Math.random()}`;
+    noteFallback(id, true, ["terminal"], store);
+    noteFallback(id, true, ["terminal"], store);
+    noteFallback(`${id}-old`, false, ["action"], store);
+
+    expect(fallbackCounts(store)).toEqual({ suspicious: 1, legacy: 1 });
+  });
+
+  it("ignores prose-only fallbacks", () => {
+    const store = memStore();
+    noteFallback(`m-prose-${Date.now()}`, true, ["p", "h2"], store);
+
+    expect(fallbackCounts(store)).toEqual({ suspicious: 0, legacy: 0 });
+  });
+
+  it("stays silent with no storage at all", () => {
+    noteFallback(`m-null-${Date.now()}`, true, ["terminal"], null);
+
+    expect(fallbackCounts(null)).toEqual({ suspicious: 0, legacy: 0 });
   });
 });

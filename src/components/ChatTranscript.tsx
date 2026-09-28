@@ -4,7 +4,12 @@ import AgentBubble from "./AgentBubble";
 import UsageCard from "./UsageCard";
 import UserBubble from "./UserBubble";
 import { parseCached, type BlockNode } from "../lib/agentXml";
-import { docBlockFor, eventsFor, eventStep } from "../lib/toolEvents";
+import {
+  docBlockFor,
+  eventsFor,
+  eventStep,
+  noteFallback,
+} from "../lib/toolEvents";
 import ToolActivity, {
   actionStep,
   browserDoneStep,
@@ -301,6 +306,7 @@ export default function ChatTranscript({
             assistants.push(a);
           }
           const live = running && gi === groups.length - 1;
+          const sessionHasEvents = eventMap.size > 0;
           const buildWorkSteps = (
             msgs: MsgRow[],
             liveIds: Set<string>,
@@ -334,6 +340,15 @@ export default function ChatTranscript({
                 blocks = parseCached(m.content);
               } catch {
                 continue;
+              }
+
+              // Counted, not shown: feeds the delete-the-splice decision.
+              if (!isLive) {
+                noteFallback(
+                  m.id,
+                  sessionHasEvents,
+                  blocks.map((b) => b.tag),
+                );
               }
 
               for (let bi = 0; bi < blocks.length; bi++) {

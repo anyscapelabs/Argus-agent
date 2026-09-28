@@ -10,7 +10,25 @@ const COLS: &str = "id, name, kind, ext, path, session_id, sz, created_at";
 
 pub fn migrate(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(super::schema::MIGRATE)
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+
+    // `CREATE TABLE IF NOT EXISTS` leaves an existing table alone, so a
+    // library written before this column existed never gets it.
+    let has_sha = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('library') WHERE name = 'sha'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap_or(1)
+        != 0;
+
+    if !has_sha {
+        conn.execute("ALTER TABLE library ADD COLUMN sha TEXT", [])
+            .map_err(|err| err.to_string())?;
+    }
+
+    Ok(())
 }
 
 fn row_item(r: &rusqlite::Row) -> rusqlite::Result<LibItem> {
@@ -123,6 +141,33 @@ pub fn add(conn: &Connection, dir: &Path, item: &NewLibItem) -> Result<LibItem, 
     get(conn, dir, &id)
 }
 
+/// Same bytes, same session, same name — the same document. A model that
+/// re-issues a call it already had answered gets the document it already has
+/// back, instead of a second file whose only difference is a `-2` suffix.
+///
+/// Scoped to one session on purpose: two sessions asking for a file with the
+/// same name and content are two deliberate acts, and collapsing them would
+/// hide a document the user expected to find.
+fn same_content(
+    conn: &Connection,
+    dir: &Path,
+    name: &str,
+    ext: &str,
+    sha: &str,
+    session_id: Option<&str>,
+) -> Option<LibItem> {
+    let id: String = conn
+        .query_row(
+            "SELECT id FROM library WHERE sha = ?1 AND ext = ?2 AND name = ?3 \
+             AND session_id IS ?4 ORDER BY created_at DESC LIMIT 1",
+            params![sha, ext, name, session_id],
+            |r| r.get(0),
+        )
+        .ok()?;
+
+    get(conn, dir, &id).ok()
+}
+
 pub fn create_bytes(
     conn: &Connection,
     dir: &Path,
@@ -136,6 +181,13 @@ pub fn create_bytes(
     if ext.is_empty() || ext.len() > 8 {
         return Err("bad extension".into());
     }
+
+    let sha = sha256_hex(bytes);
+
+    if let Some(hit) = same_content(conn, dir, name, &ext, &sha, session_id) {
+        return Ok(hit);
+    }
+
     let ym = chrono_ym();
     fs::create_dir_all(dir.join(&ym)).map_err(|err| err.to_string())?;
     let file_name = sanitize(name);
@@ -149,8 +201,9 @@ pub fn create_bytes(
     let sz = bytes.len() as i64;
     let id = Uuid::new_v4().to_string();
     conn.execute(
-        "INSERT INTO library (id, name, kind, ext, path, session_id, sz) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![id, name, kind_of(&ext), ext, rel, session_id, sz],
+        "INSERT INTO library (id, name, kind, ext, path, session_id, sz, sha) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![id, name, kind_of(&ext), ext, rel, session_id, sz, sha],
     )
     .map_err(|err| err.to_string())?;
     if bytes.len() <= 200_000 {
@@ -158,6 +211,13 @@ pub fn create_bytes(
         let _ = crate::memory::store::index_file(conn, &id, session_id, &text);
     }
     get(conn, dir, &id)
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+
+    let digest = Sha256::digest(bytes);
+    digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 fn chrono_ym() -> String {

@@ -1,4 +1,4 @@
-use argus_lib::tools::shell::{default_timeout_for, detect, kill_process_group};
+use argus_lib::tools::shell::{auth_agent_hint, default_timeout_for, detect, kill_process_group};
 
 #[cfg(unix)]
 #[tokio::test]
@@ -155,4 +155,30 @@ async fn admin_privilege_bypasses_sudo_refusal() {
         Ok((text, _)) => assert!(text.contains("hi")),
         Err(err) => assert!(!err.contains("do not write sudo")),
     }
+}
+
+// pkexec says "Request dismissed" both when the user said no and when there
+// was nobody to show the prompt to. The second is a broken machine, not a
+// refusal, and the model that reads it as a refusal retries forever.
+#[test]
+fn a_pkexec_dismissal_names_the_missing_agent() {
+    let hint = auth_agent_hint("Error executing command as another user: Request dismissed")
+        .expect("the pkexec shape must be recognised");
+
+    assert!(hint.contains("policykit-1-gnome"), "{hint}");
+    assert!(
+        hint.contains("retrying will not help"),
+        "the point is to stop the retry loop: {hint}"
+    );
+}
+
+#[test]
+fn a_command_that_merely_mentions_dismissal_is_left_alone() {
+    // The hint is only for a failed elevated run, and only for pkexec's own
+    // wording. A normal command that mentions authorization is not a broken
+    // polkit and must not be rewritten into one.
+    assert!(auth_agent_hint("apt: not authorized to install, check your sources.list").is_none());
+    assert!(auth_agent_hint("Everything installed, done.").is_none());
+    assert!(auth_agent_hint("").is_none());
+    assert!(auth_agent_hint("command not found").is_none());
 }

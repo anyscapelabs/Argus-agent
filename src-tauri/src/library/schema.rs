@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS library (
   path        TEXT NOT NULL UNIQUE,
   session_id  TEXT,
   sz          INTEGER NOT NULL DEFAULT 0,
+  sha         TEXT,
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_library_session ON library(session_id);

@@ -502,10 +502,43 @@ pub async fn run_stream(
         return Err("stopped".into());
     }
 
+    // pkexec cannot raise a dialog with no authentication agent registered,
+    // and it reports that the same way it reports a user who said no. Left
+    // alone, the message reads as a refusal, so the model apologises, retries,
+    // and burns the turn on a prompt that was never shown to anyone.
+    if elevated && run.exit != 0 {
+        if let Some(why) = auth_agent_hint(&run.out) {
+            return Err(why.into());
+        }
+    }
+
     if run.timed_out {
         let secs = hard.as_secs();
         return Ok((format!("{}\ncommand timed out after {secs}s", run.out), -1));
     }
 
     Ok((run.out, run.exit))
+}
+
+/// The shapes pkexec uses for "nobody was there to ask", and for a user who
+/// genuinely declined. Only the first is Argus's problem to explain.
+///
+/// Matched on the wrapper's own phrasing rather than a bare "dismissed": a
+/// command whose own output contains that word is not a broken polkit, and
+/// rewriting it into one would send the user off to install a package they
+/// do not need.
+pub fn auth_agent_hint(out: &str) -> Option<&'static str> {
+    let out = out.to_lowercase();
+
+    let no_agent = out.contains("error executing command as another user")
+        || out.contains("request dismissed")
+        || (out.contains("not authorized") && out.contains("pkexec"))
+        || (out.contains("not authorised") && out.contains("pkexec"));
+
+    no_agent.then_some(
+        "the OS never showed a privilege prompt, so this did not run and retrying will not \
+         help — no polkit authentication agent is running on this machine, which is what draws \
+         the password dialog. Tell the user to run: sudo apt install policykit-1-gnome — then log \
+         out and back in, and verify with: pgrep -a polkit-gnome",
+    )
 }

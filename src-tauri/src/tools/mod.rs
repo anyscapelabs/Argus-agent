@@ -1435,7 +1435,8 @@ pub async fn exec<R: tauri::Runtime>(
             out
         }
         "doc.create" => {
-            let (item, pages) = crate::library::doc::create(gw, &args, None)?;
+            let sid = crate::tools::notepad::current_session();
+            let (item, pages) = crate::library::doc::create(gw, &args, sid.as_deref())?;
             Ok(format!(
                 "id={}\npath={}\nname={}\nkind={}\next={}\npages={}",
                 item.id, item.path, item.name, item.kind, item.ext, pages

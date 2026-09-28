@@ -1,5 +1,5 @@
 use argus_lib::gateway::schema::WireMsg;
-use argus_lib::sessions::chat::{attach_shots, shot_marker};
+use argus_lib::sessions::blocks::{attach_shots, shot_marker};
 
 fn msg(content: &str) -> WireMsg {
     WireMsg {

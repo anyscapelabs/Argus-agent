@@ -242,7 +242,7 @@ async fn supervise<R: tauri::Runtime>(
     let mut owned = parent.clone();
     owned.id = child_id.to_string();
 
-    let sink = chat::FanSink {
+    let sink = crate::sessions::sink::FanSink {
         gw: gw.inner(),
         child_id: child_id.to_string(),
         parent_id: parent_id.to_string(),

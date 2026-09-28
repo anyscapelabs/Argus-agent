@@ -1,4 +1,4 @@
-use argus_lib::sessions::chat::{check_block, parse_reflection_verdict, should_reflect};
+use argus_lib::sessions::reflect::{check_block, parse_reflection_verdict, should_reflect};
 
 #[test]
 fn reflection_gates_on_toggle_work_and_budget() {

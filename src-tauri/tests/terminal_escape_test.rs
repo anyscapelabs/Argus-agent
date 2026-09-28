@@ -1,4 +1,4 @@
-use argus_lib::sessions::chat::esc_attr;
+use argus_lib::sessions::blocks::esc_attr;
 
 // A multi-line command must survive inside one attribute: no raw newline, no
 // raw `>`, or the line-scoped frontend tokenizer drops the whole tag.

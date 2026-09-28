@@ -1,4 +1,4 @@
-use argus_lib::sessions::chat::{fakes_output, has_faux_sandbox};
+use argus_lib::sessions::reflect::{fakes_output, has_faux_sandbox};
 
 #[test]
 fn faux_sandbox_flags_model_written_blocks() {

@@ -43,7 +43,7 @@ fn an_empty_args_failure_is_a_model_signal() {
     let conn = db();
     let e = exec_with("terminal", "{}", Some("call for `terminal` arrived with empty arguments — nothing ran; send it again with its arguments"), "");
 
-    argus_lib::sessions::chat::observe_exec(&conn, "prov/m", &e, false);
+    argus_lib::sessions::blocks::observe_exec(&conn, "prov/m", &e, false);
 
     let got = store::signals_for(&conn, Kind::EmptyArgs, "prov/m").unwrap();
     assert_eq!(got.len(), 1, "one signal on the model");
@@ -64,7 +64,7 @@ fn a_missing_cwd_refusal_is_a_host_signal() {
         "",
     );
 
-    argus_lib::sessions::chat::observe_exec(&conn, "prov/m", &e, false);
+    argus_lib::sessions::blocks::observe_exec(&conn, "prov/m", &e, false);
 
     assert_eq!(
         store::signals_for(&conn, Kind::SandboxNoCwd, &host())
@@ -90,7 +90,7 @@ fn a_sandbox_denial_is_a_host_signal() {
     let conn = db();
     let e = exec_with("terminal", r#"{"command":"ls"}"#, None, &denial_tail());
 
-    argus_lib::sessions::chat::observe_exec(&conn, "prov/m", &e, false);
+    argus_lib::sessions::blocks::observe_exec(&conn, "prov/m", &e, false);
 
     assert_eq!(
         store::signals_for(&conn, Kind::SandboxDenied, &host())
@@ -118,7 +118,7 @@ fn the_marker_earlier_in_the_output_is_not_a_denial() {
     );
     let e = exec_with("terminal", r#"{"command":"cat README"}"#, None, &body);
 
-    argus_lib::sessions::chat::observe_exec(&conn, "prov/m", &e, false);
+    argus_lib::sessions::blocks::observe_exec(&conn, "prov/m", &e, false);
 
     assert!(
         store::signals_for(&conn, Kind::SandboxDenied, &host())
@@ -138,7 +138,7 @@ fn thrashing_is_a_model_signal() {
         "",
     );
 
-    argus_lib::sessions::chat::observe_exec(&conn, "prov/m", &e, true);
+    argus_lib::sessions::blocks::observe_exec(&conn, "prov/m", &e, true);
 
     assert_eq!(
         store::signals_for(&conn, Kind::Thrashing, "prov/m")
@@ -154,10 +154,10 @@ fn one_turn_can_produce_both_scopes() {
     let conn = db();
 
     let empty = exec_with("terminal", "{}", Some("call for `x` arrived with empty arguments — nothing ran; send it again with its arguments"), "");
-    argus_lib::sessions::chat::observe_exec(&conn, "prov/m", &empty, false);
+    argus_lib::sessions::blocks::observe_exec(&conn, "prov/m", &empty, false);
 
     let denied = exec_with("terminal", r#"{"command":"ls"}"#, None, &denial_tail());
-    argus_lib::sessions::chat::observe_exec(&conn, "prov/m", &denied, false);
+    argus_lib::sessions::blocks::observe_exec(&conn, "prov/m", &denied, false);
 
     assert_eq!(
         store::signals_for(&conn, Kind::EmptyArgs, "prov/m")
@@ -179,7 +179,7 @@ fn a_successful_call_records_nothing() {
     let conn = db();
     let e = exec_with("terminal", r#"{"command":"ls"}"#, None, "exit 0\nfile");
 
-    argus_lib::sessions::chat::observe_exec(&conn, "prov/m", &e, false);
+    argus_lib::sessions::blocks::observe_exec(&conn, "prov/m", &e, false);
 
     for kind in Kind::all() {
         assert!(

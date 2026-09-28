@@ -1,19 +1,20 @@
-use std::sync::OnceLock;
 use std::time::Duration;
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::gateway::router;
 use crate::gateway::schema::{ChatReq, StreamEvent, WireMsg};
 use crate::gateway::Gateway;
-use crate::prompt::config::truncate_chars;
 use crate::prompt::{compressor, project};
 use crate::tools;
 
+use super::blocks;
 use super::guards;
+use super::reflect;
 use super::schema::NewMsg;
+use super::sink;
 use super::store;
 
 const DEFAULT_TITLE: &str = "New chat";
@@ -28,12 +29,6 @@ const WAKE_SLOT_MS: u64 = 500;
 const DENIED_CODE: i64 = -2;
 const MAX_CLAIM_NUDGES: usize = 2;
 const MAX_TRUNC_CONTS: usize = 2;
-const MAX_REFLECT_NUDGES: usize = 1;
-
-const TITLE_SYS: &str =
-    "You are the title generator for Argus, a personal AI agent the user chats with. \
-Write a short session title for the user's message. Reply with only the title: \
-3 to 6 words, no quotes, no trailing punctuation.";
 
 const NUDGE: &str = "Your last reply neither ran a tool nor closed the turn. A reply ends \
 one of exactly two ways: with a tool call, or with the final answer followed by \
@@ -62,179 +57,6 @@ save it as a skill now: first skill.search for overlap, then skill.create with a
 a one-line description, and a body of When to use, Steps, and Pitfalls sections. \
 If nothing here is worth reusing, say so in one line and finish.";
 
-pub fn fakes_output(text: &str) -> bool {
-    text.contains("<browser-action") || text.contains("<terminal")
-}
-
-pub fn has_faux_sandbox(text: &str) -> bool {
-    text.contains("<sandbox")
-}
-
-pub fn should_reflect(reflect_on: bool, acts_run: usize, reflect_nudges: usize) -> bool {
-    reflect_on && acts_run > 0 && reflect_nudges < MAX_REFLECT_NUDGES
-}
-
-pub fn parse_reflection_verdict(text: &str) -> Option<String> {
-    let t = text.trim();
-    let upper = t.to_ascii_uppercase();
-
-    if upper == "PASS"
-        || upper.starts_with("PASS ")
-        || upper.starts_with("PASS\n")
-        || upper.starts_with("PASS.")
-        || upper.starts_with("PASS:")
-    {
-        return None;
-    }
-
-    Some(t.chars().take(2000).collect())
-}
-
-pub fn check_block(pass: bool) -> String {
-    if pass {
-        "<check status=\"pass\"/>".into()
-    } else {
-        "<check status=\"retry\"/>".into()
-    }
-}
-
-async fn run_reflection_check(
-    gw: &Gateway,
-    session_id: &str,
-    answer: &str,
-) -> Result<Option<String>, String> {
-    let (goal, model) = {
-        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-        let goal: Option<String> = conn
-            .query_row(
-                "SELECT content FROM messages WHERE session_id = ?1 AND role = 'user' \
-                 AND active = 1 AND content NOT LIKE '<tool-result%' \
-                 ORDER BY seq LIMIT 1",
-                params![session_id],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(|err| err.to_string())?;
-        let Some(goal) = goal else {
-            return Ok(None);
-        };
-        let model = crate::prompt::compressor::utility_model(&conn)?;
-        (goal, model)
-    };
-
-    let instruction = format!(
-        "You are Argus's answer checker. Does the reply below actually satisfy the goal \
-         stated in the first message? Did any tool call actually fail without the reply \
-         acknowledging it? Reply with exactly PASS if yes to the first and no surprises, \
-         otherwise reply with one short corrective instruction.\n\
-         \n\
-         GOAL:\n\
-         {goal}\n\
-         \n\
-         REPLY:\n\
-         {answer}"
-    );
-
-    let request = ChatReq {
-        model,
-        msgs: vec![WireMsg {
-            role: "user".into(),
-            content: instruction,
-            ..Default::default()
-        }],
-        prefix_hash: None,
-        tools: vec![],
-    };
-
-    let response = crate::gateway::router::run_opts(gw, &request, 1).await?;
-
-    Ok(parse_reflection_verdict(&response.content))
-}
-
-async fn generate_title(gw: &Gateway, session_id: &str, content: &str) -> Result<(), String> {
-    let (util, selected) = {
-        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-        let selected: Option<String> = conn
-            .query_row(
-                "SELECT model_id FROM sessions WHERE id = ?1",
-                params![session_id],
-                |r| r.get(0),
-            )
-            .map_err(|err| err.to_string())?;
-        (compressor::utility_model(&conn), selected)
-    };
-
-    let msgs = vec![
-        WireMsg {
-            role: "system".into(),
-            content: TITLE_SYS.into(),
-            ..Default::default()
-        },
-        WireMsg {
-            role: "user".into(),
-            content: truncate_chars(content, 500),
-            ..Default::default()
-        },
-    ];
-
-    let raw = match util {
-        Ok(u) => {
-            let req = ChatReq {
-                model: u,
-                msgs: msgs.clone(),
-                prefix_hash: None,
-                tools: vec![],
-            };
-            match router::run_opts(gw, &req, 2).await {
-                Ok(resp) => resp.content,
-                Err(_) => fallback_title(gw, selected, &msgs).await?,
-            }
-        }
-        Err(_) => fallback_title(gw, selected, &msgs).await?,
-    };
-
-    let title = clean_title(&raw).ok_or("title model returned nothing usable")?;
-
-    let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-    conn.execute(
-        "UPDATE sessions SET title = ?2 WHERE id = ?1",
-        params![session_id, title],
-    )
-    .map_err(|err| err.to_string())?;
-
-    Ok(())
-}
-
-async fn fallback_title(
-    gw: &Gateway,
-    selected: Option<String>,
-    msgs: &[WireMsg],
-) -> Result<String, String> {
-    let model = selected
-        .filter(|m| !m.is_empty())
-        .ok_or("no fallback model for title")?;
-
-    let req = ChatReq {
-        model,
-        msgs: msgs.to_vec(),
-        prefix_hash: None,
-        tools: vec![],
-    };
-
-    Ok(router::run_opts(gw, &req, 2).await?.content)
-}
-
-pub fn clean_title(raw: &str) -> Option<String> {
-    let line = raw.lines().next().unwrap_or("").trim();
-    let t = line.trim_matches('"').trim_matches('\'').trim();
-
-    if t.is_empty() || t.contains('<') || t.contains('>') {
-        return None;
-    }
-
-    Some(truncate_chars(t, 60))
-}
-
 fn auto_model(conn: &Connection) -> Result<String, String> {
     let models = crate::gateway::store::list_chat_models(conn)?;
 
@@ -246,82 +68,6 @@ fn auto_model(conn: &Connection) -> Result<String, String> {
 
 fn approval_id() -> String {
     format!("ap{}", uuid::Uuid::new_v4().as_simple())
-}
-
-pub trait ChatSink: Send + Sync {
-    fn emit(&self, ev: StreamEvent);
-
-    fn term_chan(&self) -> Option<&Channel<StreamEvent>> {
-        None
-    }
-
-    fn detached(&self) -> bool {
-        false
-    }
-}
-
-impl ChatSink for Channel<StreamEvent> {
-    fn emit(&self, ev: StreamEvent) {
-        let _ = self.send(ev);
-    }
-
-    fn term_chan(&self) -> Option<&Channel<StreamEvent>> {
-        Some(self)
-    }
-}
-
-pub struct NullSink;
-
-impl ChatSink for NullSink {
-    fn emit(&self, _ev: StreamEvent) {}
-}
-
-pub struct BusSink<'a> {
-    pub gw: &'a Gateway,
-    pub session_id: String,
-}
-
-impl ChatSink for BusSink<'_> {
-    fn emit(&self, ev: StreamEvent) {
-        self.gw.publish(&self.session_id, ev);
-    }
-
-    fn detached(&self) -> bool {
-        !self.gw.watched(&self.session_id)
-    }
-}
-
-/// A sub-agent runs in its own session but answers to the chat that spawned
-/// it. Only an approval crosses into the parent, because a human has to be
-/// able to answer it and the parent chat is where approvals are answered.
-/// Everything else — deltas, terminal output, and above all TurnEnd, which
-/// would end the parent's turn out from under it — stays in the child.
-///
-/// The one thing it will not do is ask when nobody is there. `detached` keys
-/// off the parent being attached, so the moment that window closes the agent
-/// fails closed exactly like any other unattended turn.
-pub struct FanSink<'a> {
-    pub gw: &'a Gateway,
-    pub child_id: String,
-    pub parent_id: String,
-}
-
-impl ChatSink for FanSink<'_> {
-    /// Only an approval crosses into the parent, because a human has to be
-    /// able to answer it and the parent chat is where approvals are answered.
-    /// Everything else — deltas, terminal output, and above all TurnEnd, which
-    /// would tear down the parent's own turn — stays on the child's own bus.
-    fn emit(&self, ev: StreamEvent) {
-        if matches!(ev, StreamEvent::Approval { .. }) {
-            self.gw.publish(&self.parent_id, ev.clone());
-        }
-
-        self.gw.publish(&self.child_id, ev);
-    }
-
-    fn detached(&self) -> bool {
-        !self.gw.attached(&self.parent_id)
-    }
 }
 
 pub fn attr_escape(s: &str) -> String {
@@ -394,7 +140,7 @@ pub fn announce<R: tauri::Runtime>(
             let gw = app2.state::<Gateway>();
 
             if gw.claim_turn(&sid) {
-                let sink = BusSink {
+                let sink = sink::BusSink {
                     gw: gw.inner(),
                     session_id: sid.clone(),
                 };
@@ -447,7 +193,7 @@ pub fn announce<R: tauri::Runtime>(
 
 async fn ask_approval(
     gw: &Gateway,
-    sink: &dyn ChatSink,
+    sink: &dyn sink::ChatSink,
     id: &str,
     idx: u32,
     cmd: &str,
@@ -496,7 +242,7 @@ async fn run_skill_reflection<R: tauri::Runtime>(app: &AppHandle<R>, session_id:
         }
 
         let mut r = p.chat_req();
-        attach_shots(&mut r.msgs);
+        blocks::attach_shots(&mut r.msgs);
         r.msgs.push(WireMsg {
             role: "user".into(),
             content: SKILL_NUDGE.into(),
@@ -511,7 +257,7 @@ async fn run_skill_reflection<R: tauri::Runtime>(app: &AppHandle<R>, session_id:
         return;
     };
 
-    let base_text = sanitize_tags(&tools::normalize_actions(&stats.text));
+    let base_text = blocks::sanitize_tags(&tools::normalize_actions(&stats.text));
     let execs = tools::build_executions(&base_text, &stats.tool_calls, 0);
 
     for e in execs {
@@ -526,286 +272,13 @@ async fn run_skill_reflection<R: tauri::Runtime>(app: &AppHandle<R>, session_id:
     }
 }
 
-pub fn esc_attr(s: &str) -> String {
-    // A value can legally contain all of these; the tag cannot survive them raw.
-    s.replace('&', "&amp;")
-        .replace('"', "&quot;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('\n', "&#10;")
-        .replace('\r', "&#13;")
-}
-
-fn terminal_block(idx: usize, cmd: &str, code: i64, out: &str, ms: u128) -> String {
-    let status = if code == 0 { "ok" } else { "error" };
-    let body = out.replace('&', "&amp;").replace('<', "&lt;");
-
-    format!(
-        "<terminal id=\"a{idx}\" command=\"{}\" status=\"{status}\" duration_ms=\"{ms}\">{}</terminal>",
-        esc_attr(cmd),
-        body.trim()
-    )
-}
-
-fn exit_of(body: &str) -> i64 {
-    body.strip_prefix("exit ")
-        .and_then(|r| r.split_once('\n'))
-        .and_then(|(c, _)| c.parse::<i64>().ok())
-        .unwrap_or(-1)
-}
-
-fn browser_what(tool: &str, v: &serde_json::Value, masked: bool) -> String {
-    let text = v.get("text").and_then(|t| t.as_str()).map(|s| {
-        if masked {
-            "····".into()
-        } else {
-            s.to_string()
-        }
-    });
-    let what = v
-        .get("url")
-        .and_then(|u| u.as_str())
-        .map(Into::into)
-        .or(text)
-        .unwrap_or_default();
-
-    v.get("ref")
-        .and_then(|r| r.as_u64())
-        .map_or(format!("{tool} {what}"), |r| {
-            format!("{tool} ref {r} {what}")
-        })
-}
-
-fn browser_block(idx: usize, tool: &str, url: &str, what: &str) -> String {
-    format!(
-        "<browser-action id=\"a{idx}\" url=\"{}\" action=\"{}\">{}</browser-action>",
-        esc_attr(url),
-        esc_attr(tool),
-        esc_attr(what)
-    )
-}
-
-fn doc_field(body: &str, key: &str) -> String {
-    body.lines()
-        .find(|l| l.starts_with(key))
-        .map(|l| l[key.len()..].trim().to_string())
-        .unwrap_or_default()
-}
-
-fn doc_block(id: &str, title: &str, doctype: &str, pages: &str) -> String {
-    format!(
-        "<document id=\"{}\" title=\"{}\" doctype=\"{}\" pages=\"{}\" status=\"ready\" />",
-        esc_attr(id),
-        esc_attr(title),
-        esc_attr(doctype),
-        esc_attr(pages)
-    )
-}
-
-fn body_url(body: &str) -> String {
-    body.lines()
-        .find(|l| l.starts_with("url "))
-        .map(|l| l[4..].trim().to_string())
-        .unwrap_or_default()
-}
-
-pub fn shot_marker(line: &str) -> Option<String> {
-    let p = line
-        .split("screenshot: ")
-        .nth(1)?
-        .split_whitespace()
-        .next()?
-        .trim();
-
-    (p.ends_with(".png") && p.contains("/screenshots/shot-")).then(|| p.to_string())
-}
-
-pub fn attach_shots(msgs: &mut [WireMsg]) {
-    let mut left = 2usize;
-
-    for m in msgs.iter_mut().rev() {
-        let paths: Vec<String> = m.content.lines().filter_map(shot_marker).collect();
-
-        if paths.is_empty() || left == 0 {
-            continue;
-        }
-
-        // Extend, not replace: a message can carry an image the user attached
-        // and a screenshot the model took, and the second is not a reason to
-        // drop the first.
-        m.images.extend(paths);
-        left -= 1;
-    }
-}
-
-// Text blocks are the legacy record format. Fresh native turns persist prose
-// only and read rows instead — unless the row write failed, in which case the
-// text is the only record left and must stay. Degraded turns never have rows
-// worth reading. One predicate so the rule cannot drift between callers.
-pub fn needs_text_blocks(style: tools::ToolCallStyle, degraded: bool, events_ok: bool) -> bool {
-    style != tools::ToolCallStyle::Native || degraded || !events_ok
-}
-
-/// Record where the turn stopped, so the next one resumes instead of
-/// re-deriving. The goal is the task as first asked, not the word that
-/// resumed it: on a `continue` the current message says "continue", and a
-/// resume claiming that is worse than no resume.
-fn save_resume(gw: &Gateway, session_id: &str, actions: &[(String, bool)]) {
-    let Ok(conn) = gw.conn.lock() else {
-        return;
-    };
-    let goal = store::first_user_msg(&conn, session_id).unwrap_or_default();
-    super::resume::save(&conn, session_id, &goal, actions);
-}
-
-/// What one finished execution tells the playbook. One place, so a new failure
-/// mode is recorded by adding a line here rather than by remembering seven
-/// scattered call sites.
-///
-/// Each check matches a string Argus itself wrote about its own behaviour —
-/// an error message from this crate, a note the sandbox layer attached. A
-/// model cannot talk its way into a lesson, because model prose never reaches
-/// these comparisons.
-pub fn observe_exec(
-    conn: &rusqlite::Connection,
-    model_id: &str,
-    exec: &tools::ToolExecution,
-    thrashed: bool,
-) {
-    observe_signals(conn, model_id, exec, thrashed)
-}
-
-fn observe_signals(
-    conn: &rusqlite::Connection,
-    model_id: &str,
-    exec: &tools::ToolExecution,
-    thrashed: bool,
-) {
-    use crate::playbook::store::{record, Kind};
-
-    let err = exec.error.as_deref().unwrap_or_default();
-
-    if err.contains(EMPTY_ARGS_ERR) {
-        let _ = record(conn, Kind::EmptyArgs, model_id, None, &exec.tool);
-    }
-
-    if thrashed {
-        let _ = record(conn, Kind::Thrashing, model_id, None, &exec.tool);
-    }
-
-    let host = crate::sessions::ext_install::host_id();
-
-    if err.contains(MISSING_CWD_ERR) {
-        let _ = record(conn, Kind::SandboxNoCwd, &host, None, &exec.tool);
-    }
-
-    if err.contains(crate::tools::sandbox::DENIAL_NOTE) || denial_in_output(exec) {
-        let _ = record(conn, Kind::SandboxDenied, &host, None, &exec.tool);
-    }
-}
-
-/// A sandbox refusal is appended after the command's own output, so it is the
-/// tail of the body. Checking the tail rather than the whole body means a
-/// file the agent read containing these words is not mistaken for a refusal.
-///
-/// The residual is honest: a command could print the exact trailing string. It
-/// would cost one host lesson about a sandbox, and closing it properly needs a
-/// per-run nonce shared between the sandbox and the chat loop, which is not
-/// worth the coupling for a note that is already in the model's context.
-fn denial_in_output(exec: &tools::ToolExecution) -> bool {
-    const TAIL_MAX: usize = 200;
-
-    let body = exec.result_body();
-    let Some(at) = body.rfind(crate::tools::sandbox::DENIAL_NOTE) else {
-        return false;
-    };
-
-    body.len() - at <= TAIL_MAX
-}
-
-/// Phrases this crate writes about its own behaviour. Matching on them is what
-/// makes a signal unforgeable: the model cannot emit them into a place we read.
-const EMPTY_ARGS_ERR: &str = "arrived with empty arguments";
-const MISSING_CWD_ERR: &str = "project profile needs cwd";
-
-/// What the resume says ran. Read from `exec.args` at record time, not from
-/// the args the model proposed: a user-approved edit rewrites them, and a
-/// resume that misreports the approved command is worse than no command.
-fn exec_label(exec: &tools::ToolExecution, is_term: bool) -> String {
-    if is_term {
-        let v: serde_json::Value = serde_json::from_str(&exec.args).unwrap_or_default();
-        let cmd = v["command"].as_str().unwrap_or_default().trim();
-
-        if !cmd.is_empty() {
-            return format!("terminal: {cmd}");
-        }
-    }
-
-    let args: serde_json::Value = serde_json::from_str(&exec.args).unwrap_or_default();
-    hint_of_args(&args, &exec.tool)
-}
-
-/// A tool plus the one argument that identifies it. Two different `fs.write`
-/// calls must not read as the same action in a resume.
-fn hint_of_args(args: &serde_json::Value, tool: &str) -> String {
-    for k in ["command", "url", "query", "name", "path", "pattern", "id"] {
-        if let Some(s) = args[k].as_str() {
-            let s = s.trim();
-
-            if !s.is_empty() {
-                let head: String = s.chars().take(80).collect();
-                return format!("{tool} {head}");
-            }
-        }
-    }
-
-    tool.to_string()
-}
-
-pub fn sanitize_tags(s: &str) -> String {
-    let mut t = s.to_string();
-    t = t
-        .replace("<strong>", "<bold>")
-        .replace("</strong>", "</bold>");
-    t = t.replace("<b>", "<bold>").replace("</b>", "</bold>");
-    t = t.replace("<em>", "<italic>").replace("</em>", "</italic>");
-    t = t.replace("<i>", "<italic>").replace("</i>", "</italic>");
-    t = t
-        .replace("<u>", "<underline>")
-        .replace("</u>", "</underline>");
-    t = t
-        .replace("<a ", "<link ")
-        .replace("<a>", "<link>")
-        .replace("</a>", "</link>");
-
-    // Compiled once, not per message. The `regex` crate's own docs call
-    // compiling inside a function an anti-pattern: it costs microseconds to
-    // milliseconds each time, and this runs on every assistant message.
-    static DROP_TAGS: OnceLock<regex::Regex> = OnceLock::new();
-    static BR: OnceLock<regex::Regex> = OnceLock::new();
-
-    // `expect` rather than a `None` fallback: a pattern that fails to compile
-    // is a bug in this source file, not bad input, and a silent skip would
-    // leave the tags in the transcript with no signal that anything went wrong.
-    let drop_tags = DROP_TAGS.get_or_init(|| {
-        regex::Regex::new(r"(?i)</?(p|div|span|command|output|think)[^>]*>")
-            .expect("drop-tag pattern")
-    });
-    t = drop_tags.replace_all(&t, "").into_owned();
-
-    let br = BR.get_or_init(|| regex::Regex::new(r"(?i)<br\s*/?>").expect("br pattern"));
-    t = br.replace_all(&t, "\n").into_owned();
-
-    t
-}
-
 pub async fn send<R: tauri::Runtime>(
     gw: &Gateway,
     app: &AppHandle<R>,
     session_id: &str,
     content: &str,
     attachments: Option<&str>,
-    sink: &dyn ChatSink,
+    sink: &dyn sink::ChatSink,
     role: &str,
 ) -> Result<(), String> {
     {
@@ -895,7 +368,7 @@ pub async fn send<R: tauri::Runtime>(
             }
 
             let mut r = p.chat_req();
-            attach_shots(&mut r.msgs);
+            blocks::attach_shots(&mut r.msgs);
 
             if let Some(n) = nudge.take() {
                 r.msgs.push(WireMsg {
@@ -914,7 +387,7 @@ pub async fn send<R: tauri::Runtime>(
         if guards::budget_state(tok_in_sum, turn_budget) == guards::Budget::Stop {
             // One of three places that promise the user a 'continue' can pick
             // the work up, so all three have to leave a resume behind.
-            save_resume(gw, session_id, &turn_actions);
+            blocks::save_resume(gw, session_id, &turn_actions);
 
             if let Ok(conn) = gw.conn.lock() {
                 let _ = crate::playbook::store::record(
@@ -976,7 +449,7 @@ pub async fn send<R: tauri::Runtime>(
             return Err("model returned an empty reply — try again".into());
         }
 
-        let normalized = sanitize_tags(&tools::normalize_actions(&stats.text));
+        let normalized = blocks::sanitize_tags(&tools::normalize_actions(&stats.text));
         let (closed, base_text) = tools::split_commit(&normalized);
         // Degraded replies have no API channel, so the text must execute
         // regardless of style. Otherwise the resolved style decides: native
@@ -1109,7 +582,11 @@ pub async fn send<R: tauri::Runtime>(
             // answer, and the model still has to be told to say it again.
             let orphaned = tools::has_orphaned_action_block(&stats.text);
 
-            if !closed || fakes_output(&text) || has_faux_sandbox(&text) || orphaned {
+            if !closed
+                || reflect::fakes_output(&text)
+                || reflect::has_faux_sandbox(&text)
+                || orphaned
+            {
                 if claim_nudges < MAX_CLAIM_NUDGES {
                     claim_nudges += 1;
                     nudge = Some(NUDGE.into());
@@ -1142,7 +619,7 @@ pub async fn send<R: tauri::Runtime>(
                 }
                 // "Send continue to retry" is a promise, so the retry has to
                 // find out what was attempted.
-                save_resume(gw, session_id, &turn_actions);
+                blocks::save_resume(gw, session_id, &turn_actions);
 
                 finished = true;
                 break;
@@ -1177,13 +654,13 @@ pub async fn send<R: tauri::Runtime>(
                 .map(|v| v != 0)
                 .unwrap_or(false);
 
-            if should_reflect(reflect_on, acts_run, reflect_nudges) {
-                match run_reflection_check(gw, session_id, &text).await {
+            if reflect::should_reflect(reflect_on, acts_run, reflect_nudges) {
+                match reflect::run_reflection_check(gw, session_id, &text).await {
                     Ok(None) => {
                         if let Ok(conn) = gw.conn.lock() {
                             let _ = conn.execute(
                                 "UPDATE messages SET content = content || ?2 WHERE id = ?1",
-                                params![&asst.id, format!("\n{}", check_block(true))],
+                                params![&asst.id, format!("\n{}", reflect::check_block(true))],
                             );
                         }
                     }
@@ -1193,7 +670,7 @@ pub async fn send<R: tauri::Runtime>(
                         if let Ok(conn) = gw.conn.lock() {
                             let _ = conn.execute(
                                 "UPDATE messages SET content = content || ?2 WHERE id = ?1",
-                                params![&asst.id, format!("\n{}", check_block(false))],
+                                params![&asst.id, format!("\n{}", reflect::check_block(false))],
                             );
                         }
 
@@ -1319,7 +796,7 @@ pub async fn send<R: tauri::Runtime>(
 
                 if needs_ask {
                     let what = if is_browser {
-                        browser_what(&exec.tool, &args_v, false)
+                        blocks::browser_what(&exec.tool, &args_v, false)
                     } else if exec.tool == "doc.create" {
                         args_v
                             .get("name")
@@ -1392,7 +869,7 @@ pub async fn send<R: tauri::Runtime>(
                     exec.elapsed_ms = t0.elapsed().as_millis();
                     match outcome.result {
                         Ok(t) => {
-                            code = exit_of(&t);
+                            code = blocks::exit_of(&t);
                             exec.succeed(t);
                         }
                         Err(err) => {
@@ -1429,7 +906,7 @@ pub async fn send<R: tauri::Runtime>(
             let exec_failed = exec.status == tools::ToolStatus::Failed
                 || exec.status == tools::ToolStatus::Cancelled;
             recent_out.push(exec_failed);
-            turn_actions.push((exec_label(exec, is_term), !exec_failed));
+            turn_actions.push((blocks::exec_label(exec, is_term), !exec_failed));
 
             // A failure is the one moment worth learning from, so it is
             // observed here rather than at each site that could fail. A
@@ -1437,7 +914,7 @@ pub async fn send<R: tauri::Runtime>(
             // budget, and neither is worth a turn's outcome.
             if exec_failed {
                 if let Ok(conn) = gw.conn.lock() {
-                    observe_exec(&conn, &stats.model_id, exec, thrashed);
+                    blocks::observe_exec(&conn, &stats.model_id, exec, thrashed);
                 }
             }
 
@@ -1503,7 +980,7 @@ pub async fn send<R: tauri::Runtime>(
                         .unwrap_or_else(|| body.clone())
                 };
 
-                let blk = terminal_block(idx, &cmd, code, &out, exec.elapsed_ms);
+                let blk = blocks::terminal_block(idx, &cmd, code, &out, exec.elapsed_ms);
                 match (exec.start, exec.end) {
                     (Some(s), Some(e)) => edits.push((s, e, blk)),
                     _ => append_blocks.push(blk),
@@ -1514,13 +991,13 @@ pub async fn send<R: tauri::Runtime>(
                 let url = args_v["url"]
                     .as_str()
                     .map(Into::into)
-                    .unwrap_or_else(|| body_url(&body));
+                    .unwrap_or_else(|| blocks::body_url(&body));
 
-                let blk = browser_block(
+                let blk = blocks::browser_block(
                     idx,
                     &exec.tool,
                     &url,
-                    &browser_what(&exec.tool, &args_v, true),
+                    &blocks::browser_what(&exec.tool, &args_v, true),
                 );
                 match (exec.start, exec.end) {
                     (Some(s), Some(e)) => edits.push((s, e, blk)),
@@ -1529,16 +1006,16 @@ pub async fn send<R: tauri::Runtime>(
             }
 
             if exec.tool == "doc.create" && status == "ok" {
-                let id = doc_field(&body, "id=");
-                let name = doc_field(&body, "name=");
-                let ext = doc_field(&body, "ext=");
-                let pages = doc_field(&body, "pages=");
+                let id = blocks::doc_field(&body, "id=");
+                let name = blocks::doc_field(&body, "name=");
+                let ext = blocks::doc_field(&body, "ext=");
+                let pages = blocks::doc_field(&body, "pages=");
                 let title = if name.is_empty() {
                     "Untitled document".into()
                 } else {
                     name
                 };
-                let blk = doc_block(&id, &title, &ext, &pages);
+                let blk = blocks::doc_block(&id, &title, &ext, &pages);
                 match (exec.start, exec.end) {
                     (Some(s), Some(e)) => edits.push((s, e, blk)),
                     _ => append_blocks.push(blk),
@@ -1583,7 +1060,7 @@ pub async fn send<R: tauri::Runtime>(
         // text so the work stays visible. Degraded turns have no events
         // worth reading, so their text blocks stay.
         if (!edits.is_empty() || !append_blocks.is_empty())
-            && needs_text_blocks(style, stats.degraded, events_ok)
+            && blocks::needs_text_blocks(style, stats.degraded, events_ok)
         {
             let mut updated = text.clone();
 
@@ -1631,7 +1108,7 @@ pub async fn send<R: tauri::Runtime>(
                       partial work above is saved; send 'continue' to resume"
                     .into(),
             });
-            save_resume(gw, session_id, &turn_actions);
+            blocks::save_resume(gw, session_id, &turn_actions);
             finished = true;
             break;
         }
@@ -1644,7 +1121,7 @@ pub async fn send<R: tauri::Runtime>(
                  send 'continue' to resume"
             ),
         });
-        save_resume(gw, session_id, &turn_actions);
+        blocks::save_resume(gw, session_id, &turn_actions);
     }
 
     {
@@ -1685,7 +1162,7 @@ pub async fn send<R: tauri::Runtime>(
     };
 
     if untitled {
-        let temp = clean_title(content).unwrap_or_else(|| DEFAULT_TITLE.into());
+        let temp = reflect::clean_title(content).unwrap_or_else(|| DEFAULT_TITLE.into());
 
         {
             let conn = gw.conn.lock().map_err(|err| err.to_string())?;
@@ -1702,7 +1179,10 @@ pub async fn send<R: tauri::Runtime>(
 
         tauri::async_runtime::spawn(async move {
             let gw = app.state::<Gateway>();
-            if generate_title(gw.inner(), &sid, &user_text).await.is_err() {}
+            if reflect::generate_title(gw.inner(), &sid, &user_text)
+                .await
+                .is_err()
+            {}
             let _ = app.emit("sessions-changed", ());
         });
     }
@@ -1761,7 +1241,7 @@ pub async fn sess_chat_stream(
         }
     });
 
-    let sink = BusSink {
+    let sink = sink::BusSink {
         gw: gw.inner(),
         session_id: session_id.clone(),
     };

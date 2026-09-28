@@ -1,4 +1,5 @@
-use argus_lib::sessions::chat::{clean_title, fakes_output, needs_text_blocks};
+use argus_lib::sessions::blocks::needs_text_blocks;
+use argus_lib::sessions::reflect::{clean_title, fakes_output};
 use argus_lib::tools::ToolCallStyle;
 use argus_lib::tools::{protocol_section, split_commit, FINAL_MARKER};
 
@@ -74,7 +75,7 @@ fn rejects_junk_titles() {
 
 #[test]
 fn strips_think_tags_from_replies() {
-    use argus_lib::sessions::chat::sanitize_tags;
+    use argus_lib::sessions::blocks::sanitize_tags;
 
     assert_eq!(
         sanitize_tags("done.</think> Folder created."),

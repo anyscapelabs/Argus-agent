@@ -144,16 +144,22 @@ async fn sudo_commands_fail_fast_without_hanging() {
 async fn admin_privilege_bypasses_sudo_refusal() {
     use argus_lib::tools::shell::run_stream;
 
+    // Headless machines have no polkit agent, so pkexec hangs until killed
+    // instead of failing fast. Bound the wait, then read the outcome: "hi"
+    // means the dialog worked, a timeout means there was nobody to show it
+    // to — environmental, not a code failure.
     let out = run_stream(
-        &serde_json::json!({"command": "echo hi", "privilege": "admin"}),
+        &serde_json::json!({"command": "echo hi", "privilege": "admin", "timeout": 20}),
         0,
         None,
     )
     .await;
 
     match out {
-        Ok((text, _)) => assert!(text.contains("hi")),
-        Err(err) => assert!(!err.contains("do not write sudo")),
+        Ok((text, _)) if text.contains("hi") => {}
+        Ok((text, _)) if text.contains("timed out") => return,
+        Ok((text, _)) => panic!("unexpected admin output: {text}"),
+        Err(err) => assert!(!err.contains("do not write sudo"), "{err}"),
     }
 }
 

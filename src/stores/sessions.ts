@@ -215,14 +215,23 @@ class SessionStore {
     const msgs = { ...this.state.msgs };
     const turns = { ...this.state.turns };
     const stopped = { ...this.state.stopped };
+    const agentRuns = { ...this.state.agentRuns };
+    const events = { ...this.state.events };
+    const notes = { ...this.state.notes };
     delete msgs[sessionId];
     delete turns[sessionId];
     delete stopped[sessionId];
+    delete agentRuns[sessionId];
+    delete events[sessionId];
+    delete notes[sessionId];
 
     this.set({
       msgs,
       turns,
       stopped,
+      agentRuns,
+      events,
+      notes,
       sessions: this.state.sessions.filter((s) => s.id !== sessionId),
       activeId: this.state.activeId === sessionId ? null : this.state.activeId,
     });
@@ -263,16 +272,15 @@ class SessionStore {
 
     try {
       await apply();
-    } catch (err) {
-      try {
-        await apply();
-      } catch (err2) {
-        this.set({
-          sessions: this.state.sessions.map((s) =>
-            s.id === sessionId ? { ...s, [field]: row[field] } : s,
-          ),
-        });
-      }
+    } catch {
+      // One attempt only: the setters are not idempotent, so retrying would
+      // execute a permission/model change twice. Roll back to the last known
+      // row instead.
+      this.set({
+        sessions: this.state.sessions.map((s) =>
+          s.id === sessionId ? { ...s, [field]: row[field] } : s,
+        ),
+      });
     }
   }
 

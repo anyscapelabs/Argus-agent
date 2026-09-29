@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { gwProviderModels, gwSetModelEnabled, type ProviderModel } from "../lib/ipc";
 
@@ -13,19 +13,28 @@ export function useModels() {
   const [err, setErr] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
+  const aliveRef = useRef(true);
+
   const refresh = useCallback(async () => {
     try {
-      setModels(await gwProviderModels());
+      const rows = await gwProviderModels();
+      if (!aliveRef.current) return;
+      setModels(rows);
       setErr(null);
     } catch (e) {
+      if (!aliveRef.current) return;
       setErr(String(e));
     }
 
-    setLoading(false);
+    if (aliveRef.current) setLoading(false);
   }, []);
 
   useEffect(() => {
+    aliveRef.current = true;
     refresh();
+    return () => {
+      aliveRef.current = false;
+    };
   }, [refresh]);
 
   const toggle = useCallback(

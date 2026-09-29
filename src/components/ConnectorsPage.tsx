@@ -57,22 +57,25 @@ function ConnectorGrid({
 }: GridProps) {
   const [connected, setConnected] = useState<Record<string, boolean>>({});
 
-  const refresh = async () => {
-    const entries = await Promise.all(
-      GRID.map(async (s) => {
-        const tok = await connHasToken(s.id).catch(() => false);
-        const cli = await connHasClient(s.id).catch(() => false);
-
-        return [s.id, tok || cli] as const;
-      }),
-    );
-
-    setConnected(Object.fromEntries(entries));
-  };
-
   useEffect(() => {
-    void refresh();
-  }, []);
+    let live = true;
+    void (async () => {
+      const entries = await Promise.all(
+        GRID.map(async (s) => {
+          const tok = await connHasToken(s.id).catch(() => false);
+          const cli = await connHasClient(s.id).catch(() => false);
+
+          return [s.id, tok || cli] as const;
+        }),
+      );
+
+      if (live) setConnected(Object.fromEntries(entries));
+    })();
+    return () => {
+      live = false;
+    };
+    // OAuth completion bumps oauthTick; the grid must re-read token state.
+  }, [oauthTick]);
 
   return (
     <div className="mt-2 grid grid-cols-2 gap-4">
@@ -162,19 +165,37 @@ function BrowserCard() {
   useEffect(() => {
     if (extState === "off" || extState === "busy") return;
 
-    const poll = setInterval(async () => {
+    let live = true;
+    let delay = 2_000;
+    let timer: ReturnType<typeof setTimeout>;
+    // Back off while the bridge stays down: a fixed 2s poll is 30 req/min
+    // forever with an open tab. Caps at 30s; success stops the chain.
+    const tick = async () => {
       try {
         const up = await sessExtStatus();
+
+        if (!live) return;
 
         if (up) {
           setExtState("connected");
           setNote("");
+          return;
         }
       } catch {
+        // Bridge down: back off and try again.
       }
-    }, 2_000);
 
-    return () => clearInterval(poll);
+      if (!live) return;
+      delay = Math.min(delay * 2, 30_000);
+      timer = setTimeout(tick, delay);
+    };
+
+    timer = setTimeout(tick, delay);
+
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
   }, [extState]);
 
   useEffect(() => {

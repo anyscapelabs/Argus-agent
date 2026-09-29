@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   gwConnect,
@@ -14,19 +14,28 @@ export function useProviders() {
   const [syncing, setSyncing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const aliveRef = useRef(true);
+
   const refresh = useCallback(async () => {
     try {
-      setProviders(await gwListProviders());
+      const rows = await gwListProviders();
+      if (!aliveRef.current) return;
+      setProviders(rows);
       setErr(null);
     } catch (e) {
+      if (!aliveRef.current) return;
       setErr(String(e));
     }
 
-    setLoading(false);
+    if (aliveRef.current) setLoading(false);
   }, []);
 
   useEffect(() => {
+    aliveRef.current = true;
     refresh();
+    return () => {
+      aliveRef.current = false;
+    };
   }, [refresh]);
 
   const connect = useCallback(

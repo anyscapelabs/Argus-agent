@@ -20,7 +20,7 @@ use super::{ToolCallStyle, ToolMeta, MAX_OUT, TOOLS, WEB_TOOLS};
 // One catalog line. `write!` appends in place; `push_str(&format!(..))`
 // allocates a throwaway String per tool, per prompt, per step.
 fn spec_line(s: &mut String, t: &ToolMeta) {
-    let _ = write!(s, "- {} — {}. args: {}\n", t.name, t.desc, t.args);
+    let _ = writeln!(s, "- {} — {}. args: {}", t.name, t.desc, t.args);
 }
 
 #[derive(serde::Serialize)]

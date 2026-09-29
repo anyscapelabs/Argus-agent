@@ -30,10 +30,6 @@ pub async fn set_email(email: String) {
     *EMAIL.lock().await = Some(email);
 }
 
-pub async fn get_email() -> Option<String> {
-    EMAIL.lock().await.clone()
-}
-
 pub async fn access_token() -> Result<String, String> {
     if let Some((tok, exp)) = ACCESS.lock().await.clone() {
         if Instant::now() + SKEW < exp {

@@ -1,3 +1,8 @@
+// Test harnesses hold std guards across awaits on purpose: whole-test
+// serialization plus direct DB-handle helpers. Production code never does
+// this (audited); the lint would only ever fire here by design.
+#![allow(clippy::await_holding_lock)]
+
 //! Real-model browser stale-reference recovery evaluation (8B).
 //!
 //! Corrected replacement for the failed Test 8. Real `sessions/chat.rs::send()`
@@ -86,7 +91,6 @@ fn result_tool_name(content: &str) -> Option<String> {
 
 #[derive(Debug, Clone)]
 struct NativeCall {
-    turn: usize,
     name: String,
     ref_opt: Option<u64>,
     snap_opt: Option<u64>,
@@ -94,7 +98,7 @@ struct NativeCall {
 
 fn native_calls(msgs: &[argus_lib::sessions::schema::Msg]) -> Vec<NativeCall> {
     let mut out = vec![];
-    for (turn, m) in msgs
+    for (_, m) in msgs
         .iter()
         .enumerate()
         .filter(|(_, m)| m.role == "assistant")
@@ -108,7 +112,6 @@ fn native_calls(msgs: &[argus_lib::sessions::schema::Msg]) -> Vec<NativeCall> {
             let args: serde_json::Value =
                 serde_json::from_str(&c.args).unwrap_or(serde_json::Value::Null);
             out.push(NativeCall {
-                turn,
                 name: c.name,
                 ref_opt: args.get("ref").and_then(|v| v.as_u64()),
                 snap_opt: args.get("snapshot").and_then(|v| v.as_u64()),
@@ -438,7 +441,6 @@ async fn eval_real_browser_stale2_task() {
     let chan = tauri::ipc::Channel::new({
         let events = events.clone();
         let event_times = event_times.clone();
-        let t0 = t0.clone();
         move |body: tauri::ipc::InvokeResponseBody| {
             let s = match body {
                 tauri::ipc::InvokeResponseBody::Json(s) => s,
@@ -662,15 +664,14 @@ async fn eval_real_browser_stale2_task() {
         second_click.and_then(|s| s.ref_opt));
     eprintln!("=== REAL BROWSER-STALE2 EVAL TRACE (COMPLETE TAIL) ===");
 
-    let verdict = if !status_run.is_ok() {
-        "FAIL"
-    } else if !initial_ok || !pre_click_clean {
-        "FAIL"
-    } else if !forced_ok || !stale_has_recovery {
-        "FAIL"
-    } else if !new_ref_ok {
-        "FAIL"
-    } else if !isolation_ok {
+    let verdict = if status_run.is_err()
+        || !initial_ok
+        || !pre_click_clean
+        || !forced_ok
+        || !stale_has_recovery
+        || !new_ref_ok
+        || !isolation_ok
+    {
         "FAIL"
     } else if !success_ok {
         "PARTIAL"

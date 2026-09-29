@@ -15,7 +15,7 @@ pub mod specs;
 
 // The catalog and the prompt text behind it, re-exported so callers keep
 // reaching them at `tools::`.
-pub use dispatch::exec;
+pub use dispatch::{exec, ExecIn};
 pub use parse::*;
 pub use specs::*;
 pub mod web;

@@ -1,6 +1,6 @@
 use crate::tools::sandbox::backends::Probe;
 use crate::tools::sandbox::plan::{Plan, SandboxError, SandboxResult, SbplPlan};
-use crate::tools::sandbox::policy::{EnvPolicy, FsAccess, FsPolicy, NetPolicy, Policy, Profile};
+use crate::tools::sandbox::policy::{FsAccess, FsPolicy, NetPolicy, Policy, Profile};
 
 pub const NAME: &str = "macos";
 
@@ -152,13 +152,6 @@ pub fn macos_plan(policy: &Policy) -> SandboxResult<Plan> {
     Ok(Plan::Macos(SbplPlan {
         profile: sbpl(policy)?,
     }))
-}
-
-pub fn env_args(policy: &Policy) -> (bool, Vec<String>) {
-    match &policy.env {
-        EnvPolicy::Inherit => (false, Vec::new()),
-        EnvPolicy::Only(keys) => (true, keys.clone()),
-    }
 }
 
 #[cfg(target_os = "macos")]

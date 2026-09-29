@@ -160,7 +160,17 @@ async fn execute_and_persist_all(
 ) {
     for exec in pending.iter_mut() {
         exec.begin();
-        match argus_lib::tools::exec(app, gw, &exec.tool, &exec.args, perm, false, true, None).await
+        match argus_lib::tools::exec(argus_lib::tools::ExecIn {
+            app,
+            gw,
+            name: &exec.tool,
+            args_json: &exec.args,
+            permission: perm,
+            web: false,
+            approved: true,
+            on_term: None,
+        })
+        .await
         {
             Ok(body) => exec.succeed(body),
             Err(err) => exec.fail(err),
@@ -213,7 +223,7 @@ async fn chat_single_tool_one_exec_one_result_in_next_context() {
     assert_eq!(pending[0].tool, "memory.search");
     assert_eq!(pending[0].tool_call_id.as_deref(), Some("call_1"));
 
-    execute_and_persist_all(&app, &gw, &sid, &mut pending, "never").await;
+    execute_and_persist_all(app, &gw, &sid, &mut pending, "never").await;
     assert_eq!(pending[0].status, ToolStatus::Succeeded);
 
     let msgs = session_msgs(&gw, &sid);
@@ -258,7 +268,7 @@ async fn chat_multi_tool_deterministic_order_all_results_before_next_request() {
     assert_eq!(pending[0].tool, "memory.search");
     assert_eq!(pending[1].tool, "skill.search");
 
-    execute_and_persist_all(&app, &gw, &sid, &mut pending, "never").await;
+    execute_and_persist_all(app, &gw, &sid, &mut pending, "never").await;
     assert!(pending.iter().all(|e| e.status.is_terminal()));
 
     let msgs = session_msgs(&gw, &sid);
@@ -296,7 +306,7 @@ async fn chat_failed_tool_does_not_kill_loop_and_next_call_runs() {
         &[native("call_1", "skill.read", "{}")],
         0,
     );
-    execute_and_persist_all(&app, &gw, &sid, &mut r1, "never").await;
+    execute_and_persist_all(app, &gw, &sid, &mut r1, "never").await;
     assert_eq!(r1[0].status, ToolStatus::Failed);
     let msgs = session_msgs(&gw, &sid);
     assert!(msgs.last().unwrap().content.contains(r#"status="err""#));
@@ -311,7 +321,7 @@ async fn chat_failed_tool_does_not_kill_loop_and_next_call_runs() {
         &[native("call_2", "skill.search", r#"{"query":""}"#)],
         r1.len(),
     );
-    execute_and_persist_all(&app, &gw, &sid, &mut r2, "never").await;
+    execute_and_persist_all(app, &gw, &sid, &mut r2, "never").await;
     assert_eq!(r2[0].status, ToolStatus::Succeeded);
 
     let msgs = session_msgs(&gw, &sid);
@@ -425,7 +435,7 @@ async fn chat_native_authoritative_duplicate_xml_runs_once() {
     );
     assert_eq!(pending[0].tool_call_id.as_deref(), Some("call_1"));
 
-    execute_and_persist_all(&app, &gw, &sid, &mut pending, "never").await;
+    execute_and_persist_all(app, &gw, &sid, &mut pending, "never").await;
     let msgs = session_msgs(&gw, &sid);
     let results: Vec<_> = msgs
         .iter()
@@ -469,7 +479,7 @@ async fn chat_truncated_output_with_pending_is_executed_not_discarded() {
         .unwrap();
     }
     assert!(truncated);
-    execute_and_persist_all(&app, &gw, &sid, &mut pending, "never").await;
+    execute_and_persist_all(app, &gw, &sid, &mut pending, "never").await;
 
     let msgs = session_msgs(&gw, &sid);
     assert!(
@@ -523,7 +533,7 @@ async fn chat_two_step_result_a_visible_for_b_final_after_b() {
         &[native("call_1", "memory.search", r#"{"query":"alpha"}"#)],
         0,
     );
-    execute_and_persist_all(&app, &gw, &sid, &mut r1, "never").await;
+    execute_and_persist_all(app, &gw, &sid, &mut r1, "never").await;
     assert_eq!(r1[0].status, ToolStatus::Succeeded);
 
     // Result A must already be in context before response 2 runs.
@@ -547,7 +557,7 @@ async fn chat_two_step_result_a_visible_for_b_final_after_b() {
         r1.len(),
     );
     assert_eq!(r2.len(), 1);
-    execute_and_persist_all(&app, &gw, &sid, &mut r2, "never").await;
+    execute_and_persist_all(app, &gw, &sid, &mut r2, "never").await;
     assert_eq!(r2[0].status, ToolStatus::Succeeded);
 
     // Final assistant response occurs after B.

@@ -379,10 +379,10 @@ fn expand_seeds(
             .neighbors_directed(n, petgraph::Direction::Outgoing)
             .chain(graph.neighbors_directed(n, petgraph::Direction::Incoming))
         {
-            if !dist.contains_key(&m) {
-                dist.insert(m, d + 1);
+            dist.entry(m).or_insert_with_key(|&m| {
                 queue.push_back(m);
-            }
+                d + 1
+            });
         }
     }
 

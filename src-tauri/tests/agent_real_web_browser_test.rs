@@ -1,3 +1,8 @@
+// Test harnesses hold std guards across awaits on purpose: whole-test
+// serialization plus direct DB-handle helpers. Production code never does
+// this (audited); the lint would only ever fire here by design.
+#![allow(clippy::await_holding_lock)]
+
 //! Real-model web-to-browser evaluation with production Baseten config.
 //!
 //! Real `sessions/chat.rs::send()` against Baseten GLM-5.3-Fast (rows copied
@@ -116,7 +121,7 @@ fn first_url_on_line(text: &str, needle: &str) -> Option<String> {
         .and_then(|l| re.find(l))
         .map(|m| {
             m.as_str()
-                .trim_end_matches(|c| c == '.' || c == ',' || c == ')' || c == ']')
+                .trim_end_matches(['.', ',', ')', ']'])
                 .to_string()
         })
 }
@@ -550,13 +555,13 @@ async fn eval_real_web_browser_task() {
     eprintln!("open_gen={open_gen:?} click_ref={click_ref:?} click_snap={click_snap:?} gen_ok={gen_ok} mining={mining}");
     eprintln!("changed_ok={changed_ok} answer_ok={answer_ok}");
 
-    let verdict = if !status_run.is_ok() {
-        "FAIL"
-    } else if mining {
-        "FAIL"
-    } else if !(search_ok && url_ok && open_ok && pre_absence) {
-        "FAIL"
-    } else if clicks != 1 || !gen_ok || click_ref.is_none() {
+    let verdict = if status_run.is_err()
+        || mining
+        || !(search_ok && url_ok && open_ok && pre_absence)
+        || clicks != 1
+        || !gen_ok
+        || click_ref.is_none()
+    {
         "FAIL"
     } else if !(changed_ok && answer_ok) {
         "PARTIAL"

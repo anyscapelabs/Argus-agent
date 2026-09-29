@@ -110,6 +110,9 @@ pub fn library_preview(
 }
 
 #[tauri::command]
+// The parameters mirror the IPC arguments one-to-one; bundling them would
+// change the frontend contract for a lint.
+#[allow(clippy::too_many_arguments)]
 pub fn library_create_doc(
     gw: State<'_, Gateway>,
     name: String,

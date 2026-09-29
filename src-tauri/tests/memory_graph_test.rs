@@ -102,9 +102,9 @@ fn apply_rollup_writes_condensed_memory_and_links() {
     .unwrap();
     assert_eq!(condensed.content, "Brnx summary");
     assert_eq!(condensed.kind, "fact");
-    assert!(argus_lib::memory::apply_rollup(&conn, &[a.clone()], "").is_err());
-    assert!(argus_lib::memory::apply_rollup(&conn, &[], "x".into()).is_err());
-    assert!(argus_lib::memory::apply_rollup(&conn, &["missing".into()], "x".into()).is_err());
+    assert!(argus_lib::memory::apply_rollup(&conn, std::slice::from_ref(&a), "").is_err());
+    assert!(argus_lib::memory::apply_rollup(&conn, &[], "x").is_err());
+    assert!(argus_lib::memory::apply_rollup(&conn, &["missing".into()], "x").is_err());
 
     let links: Vec<(String, String, String)> = {
         let mut stmt = conn

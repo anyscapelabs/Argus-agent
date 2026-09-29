@@ -262,6 +262,9 @@ fn an_unknown_job_id_is_an_error_not_a_silent_empty() {
 }
 
 #[test]
+// Pinning the constant is the point: the ceiling must stay 12h unless
+// someone changes it deliberately, which is exactly what this fails on.
+#[allow(clippy::assertions_on_constants)]
 fn a_background_job_may_run_past_the_interactive_ceiling() {
     assert!(jobs::DEADMAN_MAX > argus_lib::tools::shell::TERM_TIMEOUT_MAX);
     assert_eq!(jobs::DEADMAN_MAX, 12 * 60 * 60);

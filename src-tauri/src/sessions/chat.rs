@@ -258,9 +258,16 @@ pub async fn run_skill_reflection<R: tauri::Runtime>(app: &AppHandle<R>, session
             continue;
         }
 
-        let _ = tools::recover::exec_with_recovery(
-            app, &gw, &e.tool, &e.args, "never", false, true, None,
-        )
+        let _ = tools::recover::exec_with_recovery(tools::ExecIn {
+            app,
+            gw: &gw,
+            name: &e.tool,
+            args_json: &e.args,
+            permission: "never",
+            web: false,
+            approved: true,
+            on_term: None,
+        })
         .await;
     }
 }
@@ -375,7 +382,9 @@ pub async fn send<R: tauri::Runtime>(
             .unwrap_or(false)
     };
 
-    if needs && compressor::compact(gw, session_id).await.is_err() {}
+    if needs {
+        let _ = compressor::compact(gw, session_id).await;
+    }
 
     let untitled = {
         let conn = gw.conn.lock().map_err(|err| err.to_string())?;

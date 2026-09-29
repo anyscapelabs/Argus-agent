@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
@@ -64,7 +64,7 @@ async fn fake_extension(stream: UnixStream, seen_tabs: Arc<StdMutex<Vec<i64>>>) 
     }
 }
 
-fn sock_path(dir: &PathBuf) -> PathBuf {
+fn sock_path(dir: &Path) -> PathBuf {
     dir.join("native.sock")
 }
 

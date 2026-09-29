@@ -11,16 +11,41 @@ use crate::gateway::schema::StreamEvent;
 
 use super::*;
 
-pub async fn exec<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-    gw: &crate::gateway::Gateway,
-    name: &str,
-    args_json: &str,
-    permission: &str,
-    web: bool,
-    approved: bool,
-    on_term: Option<(&Channel<StreamEvent>, u32)>,
-) -> Result<String, String> {
+/// One tool invocation. The eight loose arguments to `exec` became one named
+/// bundle; every caller builds it at the call site.
+pub struct ExecIn<'a, R: tauri::Runtime> {
+    pub app: &'a tauri::AppHandle<R>,
+    pub gw: &'a crate::gateway::Gateway,
+    pub name: &'a str,
+    pub args_json: &'a str,
+    pub permission: &'a str,
+    pub web: bool,
+    pub approved: bool,
+    pub on_term: Option<(&'a Channel<StreamEvent>, u32)>,
+}
+
+// Manual `Clone` + `Copy`: every field is a reference, bool, or `Option` of
+// those, so neither needs an `R` bound. (The derives would demand `R: Clone`
+// / `R: Copy`.) Retries copy the invocation per attempt.
+impl<R: tauri::Runtime> Clone for ExecIn<'_, R> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<R: tauri::Runtime> Copy for ExecIn<'_, R> {}
+
+pub async fn exec<R: tauri::Runtime>(call: ExecIn<'_, R>) -> Result<String, String> {
+    let ExecIn {
+        app,
+        gw,
+        name,
+        args_json,
+        permission,
+        web,
+        approved,
+        on_term,
+    } = call;
     let meta = TOOLS
         .iter()
         .chain(WEB_TOOLS.iter())

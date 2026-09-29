@@ -60,3 +60,12 @@ windows = { version = "0.58", features = [
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
 zip = "8.6.0"
+
+[lints.clippy]
+# Cherry-picked, not pedantic: these groups catch real defects without
+# fighting deliberate patterns (static-regex expect, IPC-shaped commands,
+# test-harness serial guards). Zero warnings is the invariant — fix the code,
+# never sprinkle allows, except where a comment names the reason.
+perf = "warn"
+complexity = "warn"
+suspicious = "warn"

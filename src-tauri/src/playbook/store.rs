@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
@@ -347,35 +345,6 @@ pub fn lessons(
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|err| err.to_string())
-}
-
-/// Every scope this machine has lessons for, keyed for assembly.
-pub fn all_scopes(
-    conn: &Connection,
-) -> Result<BTreeMap<(String, String), Vec<PlaybookItem>>, String> {
-    let mut stmt = conn
-        .prepare(&format!(
-            "SELECT {PB_COLS} FROM playbook_items WHERE evidence >= ?1
-             ORDER BY scope, scope_id, evidence DESC, last_seen DESC"
-        ))
-        .map_err(|err| err.to_string())?;
-
-    let rows = stmt
-        .query_map(params![MIN_EVIDENCE_TO_TEACH], row_item)
-        .map_err(|err| err.to_string())?;
-
-    let mut out: BTreeMap<(String, String), Vec<PlaybookItem>> = BTreeMap::new();
-    for item in rows {
-        let item = item.map_err(|err| err.to_string())?;
-        let key = (item.scope.clone(), item.scope_id.clone());
-        let bucket = out.entry(key).or_default();
-
-        if (bucket.len() as i64) < MAX_LESSONS_PER_SCOPE {
-            bucket.push(item);
-        }
-    }
-
-    Ok(out)
 }
 
 pub fn forget(conn: &Connection, scope: Scope, scope_id: &str) -> Result<usize, String> {

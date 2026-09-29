@@ -102,21 +102,6 @@ pub fn set_enabled(conn: &Connection, id: &str, on: bool) -> Result<(), String> 
     Ok(())
 }
 
-pub fn set_status(
-    conn: &Connection,
-    id: &str,
-    status: &str,
-    err: Option<&str>,
-) -> Result<(), String> {
-    conn.execute(
-        "UPDATE connectors SET status = ?2, last_error = ?3 WHERE id = ?1",
-        params![id, status, err],
-    )
-    .map_err(|err| err.to_string())?;
-
-    Ok(())
-}
-
 pub fn get(conn: &Connection, id: &str) -> Result<Option<(bool, String, String)>, String> {
     conn.query_row(
         "SELECT enabled, status, last_error FROM connectors WHERE id = ?1",

@@ -1,3 +1,8 @@
+// Test harnesses hold std guards across awaits on purpose: whole-test
+// serialization plus direct DB-handle helpers. Production code never does
+// this (audited); the lint would only ever fire here by design.
+#![allow(clippy::await_holding_lock)]
+
 //! Real-model browser stale-reference recovery evaluation.
 //!
 //! Real `sessions/chat.rs::send()` against Baseten GLM-5.3-Fast (rows copied
@@ -592,17 +597,16 @@ async fn eval_real_browser_stale_task() {
     eprintln!("pre_clean={pre_click_clean} post_status={post_click_has_status} mining={mining} answer_ok={answer_ok}");
     eprintln!("initial_ok={initial_ok} forced_ok={forced_ok} success_ok={success_ok} isolation_ok={isolation_ok} stale_genuinely={stale_genuinely}");
 
-    let verdict = if !status_run.is_ok() {
+    let verdict = if status_run.is_err()
+        || !initial_ok
+        || !pre_click_clean
+        || !forced_ok
+        || !stale_has_recovery
+        || !new_ref_ok
+        || !isolation_ok
+    {
         "FAIL"
-    } else if !initial_ok || !pre_click_clean {
-        "FAIL"
-    } else if !forced_ok || !stale_has_recovery {
-        "FAIL"
-    } else if !new_ref_ok {
-        "FAIL"
-    } else if !isolation_ok {
-        "FAIL"
-    } else if !(success_ok) {
+    } else if !success_ok {
         "PARTIAL"
     } else {
         "PASS"

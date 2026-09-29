@@ -1,7 +1,3 @@
-use tauri::ipc::Channel;
-
-use crate::gateway::schema::StreamEvent;
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RecoveryKind {
     InvalidArguments,
@@ -227,19 +223,8 @@ pub struct RetryOutcome {
     pub kind: Option<RecoveryKind>,
 }
 
-pub async fn exec_with_recovery<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-    gw: &crate::gateway::Gateway,
-    name: &str,
-    args_json: &str,
-    permission: &str,
-    web: bool,
-    approved: bool,
-    on_term: Option<(&Channel<StreamEvent>, u32)>,
-) -> RetryOutcome {
-    let (result, attempts) =
-        run_bounded(|| super::exec(app, gw, name, args_json, permission, web, approved, on_term))
-            .await;
+pub async fn exec_with_recovery<R: tauri::Runtime>(call: super::ExecIn<'_, R>) -> RetryOutcome {
+    let (result, attempts) = run_bounded(|| super::exec(call)).await;
 
     let kind = match &result {
         Ok(_) => None,

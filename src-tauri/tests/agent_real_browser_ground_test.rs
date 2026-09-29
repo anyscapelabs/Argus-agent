@@ -1,3 +1,8 @@
+// Test harnesses hold std guards across awaits on purpose: whole-test
+// serialization plus direct DB-handle helpers. Production code never does
+// this (audited); the lint would only ever fire here by design.
+#![allow(clippy::await_holding_lock)]
+
 //! Real-agent validation of Design A presented-watermark grounding.
 //!
 //! Production Baseten `zai-org/GLM-5.3-Fast` via `sessions/chat.rs::send()`.
@@ -635,15 +640,15 @@ async fn eval_real_browser_ground_task() {
     eprintln!("single_activation_ok={single_activation_ok} exclusive_ok={exclusive_ok} isolation_ok={isolation_ok}");
     eprintln!("=== REAL BROWSER-GROUND EVAL TRACE (COMPLETE TAIL) ===");
 
-    let verdict = if !status_run.is_ok() {
-        "FAIL"
-    } else if !initial_ok || !pre_success_clean {
-        "FAIL"
-    } else if !drift_ok || !stale_has_recovery {
-        "FAIL"
-    } else if !zero_exec_ok || !recovery_ok {
-        "FAIL"
-    } else if !isolation_ok {
+    let verdict = if status_run.is_err()
+        || !initial_ok
+        || !pre_success_clean
+        || !drift_ok
+        || !stale_has_recovery
+        || !zero_exec_ok
+        || !recovery_ok
+        || !isolation_ok
+    {
         "FAIL"
     } else if !(single_activation_ok && exclusive_ok) {
         "PARTIAL"

@@ -597,16 +597,16 @@ impl Turn {
                         code = DENIED_CODE;
                     } else {
                         let t0 = std::time::Instant::now();
-                        let outcome = tools::recover::exec_with_recovery(
+                        let outcome = tools::recover::exec_with_recovery(tools::ExecIn {
                             app,
                             gw,
-                            &exec.tool,
-                            &exec.args,
-                            perm,
+                            name: &exec.tool,
+                            args_json: &exec.args,
+                            permission: perm,
                             web,
-                            allow,
-                            sink.term_chan().map(|c| (c, idx as u32)),
-                        )
+                            approved: allow,
+                            on_term: sink.term_chan().map(|c| (c, idx as u32)),
+                        })
                         .await;
                         exec.elapsed_ms = t0.elapsed().as_millis();
                         match outcome.result {

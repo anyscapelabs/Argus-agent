@@ -1,5 +1,5 @@
 use std::os::windows::ffi::OsStrExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use windows::Win32::Foundation::{LocalFree, HLOCAL, WIN32_ERROR};
 use windows::Win32::Security::Authorization::{
@@ -144,11 +144,4 @@ pub fn grant(path: &Path, sid: PSID, mask: u32) -> SandboxResult<()> {
 // exits, and a hard kill skips every Drop that would have cleaned up.
 pub fn revoke(path: &Path, sid: PSID) -> SandboxResult<()> {
     patch(path, sid, 0, false)
-}
-
-pub fn revoke_all(paths: &[PathBuf], sid: PSID) -> Vec<String> {
-    paths
-        .iter()
-        .filter_map(|p| revoke(p, sid).err().map(|e| e.to_string()))
-        .collect()
 }

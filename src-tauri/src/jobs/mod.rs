@@ -126,29 +126,31 @@ pub fn get(conn: &rusqlite::Connection, id: &str) -> Result<Job, String> {
     .map_err(|_| format!("no job {id}"))
 }
 
-fn set_state(
-    conn: &rusqlite::Connection,
-    id: &str,
-    state: &str,
+/// One finished job's outcome. The loose arguments to `set_state` became one
+/// named bundle at its single call site.
+struct Outcome<'a> {
+    state: &'a str,
     exit: Option<i64>,
-    duration_ms: Option<i64>,
+    duration_ms: i64,
     out_bytes: i64,
     truncated: bool,
-    note: Option<&str>,
-) -> Result<(), String> {
+    note: Option<&'a str>,
+}
+
+fn set_state(conn: &rusqlite::Connection, id: &str, out: Outcome<'_>) -> Result<(), String> {
     conn.execute(
         "UPDATE jobs SET state = ?2, exit = ?3, ended_ms = ?4, duration_ms = ?5,
                          out_bytes = ?6, truncated = ?7, note = ?8
          WHERE id = ?1",
         params![
             id,
-            state,
-            exit,
+            out.state,
+            out.exit,
             now_ms(),
-            duration_ms,
-            out_bytes,
-            truncated as i64,
-            note
+            out.duration_ms,
+            out.out_bytes,
+            out.truncated as i64,
+            out.note
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -344,12 +346,14 @@ async fn supervise<R: tauri::Runtime>(
         let _ = set_state(
             &conn,
             id,
-            state,
-            exit,
-            Some(ms),
-            bytes,
-            truncated,
-            note.as_deref(),
+            Outcome {
+                state,
+                exit,
+                duration_ms: ms,
+                out_bytes: bytes,
+                truncated,
+                note: note.as_deref(),
+            },
         );
     }
 
@@ -437,16 +441,6 @@ pub fn kill(gw: &Gateway, id: &str) -> Result<bool, String> {
             Ok(false)
         }
     }
-}
-
-pub fn purge(gw: &Gateway, id: &str) -> Result<(), String> {
-    let conn = gw.conn.lock().map_err(|e| e.to_string())?;
-    conn.execute("DELETE FROM jobs WHERE id = ?1", params![id])
-        .map_err(|e| e.to_string())?;
-
-    let _ = std::fs::remove_file(log_path(gw, id));
-
-    Ok(())
 }
 
 pub fn cleanup(gw: &Gateway, keep: usize) -> Result<usize, String> {

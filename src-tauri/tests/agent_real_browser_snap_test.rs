@@ -1,3 +1,8 @@
+// Test harnesses hold std guards across awaits on purpose: whole-test
+// serialization plus direct DB-handle helpers. Production code never does
+// this (audited); the lint would only ever fire here by design.
+#![allow(clippy::await_holding_lock)]
+
 //! Real-model browser snapshot-token compliance evaluation (TEST 9).
 //!
 //! Diagnostic, NOT a stale-recovery test: nothing is deliberately invalidated.
@@ -83,7 +88,6 @@ fn result_tool_name(content: &str) -> Option<String> {
 
 #[derive(Debug, Clone)]
 struct ClickAttempt {
-    turn: usize,
     source: &'static str,
     ref_opt: Option<u64>,
     snap_opt: Option<u64>,
@@ -128,7 +132,7 @@ fn click_attempts(msgs: &[argus_lib::sessions::schema::Msg]) -> Vec<ClickAttempt
             .unwrap();
     let bact_re =
         regex::Regex::new(r#"(?s)<browser-action\b([^>]*)>(.*?)</browser-action>"#).unwrap();
-    for (turn, m) in msgs
+    for (_, m) in msgs
         .iter()
         .enumerate()
         .filter(|(_, m)| m.role == "assistant")
@@ -140,7 +144,6 @@ fn click_attempts(msgs: &[argus_lib::sessions::schema::Msg]) -> Vec<ClickAttempt
                 let args: serde_json::Value =
                     serde_json::from_str(&c.args).unwrap_or(serde_json::Value::Null);
                 out.push(ClickAttempt {
-                    turn,
                     source: "native",
                     ref_opt: args.get("ref").and_then(|v| v.as_u64()),
                     snap_opt: args.get("snapshot").and_then(|v| v.as_u64()),
@@ -159,7 +162,6 @@ fn click_attempts(msgs: &[argus_lib::sessions::schema::Msg]) -> Vec<ClickAttempt
                 .and_then(|v| v.as_u64())
                 .or_else(|| num_in_body(body, "snapshot"));
             out.push(ClickAttempt {
-                turn,
                 source: "action-tag",
                 ref_opt,
                 snap_opt,
@@ -180,7 +182,6 @@ fn click_attempts(msgs: &[argus_lib::sessions::schema::Msg]) -> Vec<ClickAttempt
                 .and_then(|v| v.parse().ok())
                 .or_else(|| num_in_body(body, "snapshot"));
             out.push(ClickAttempt {
-                turn,
                 source: "browser-action",
                 ref_opt,
                 snap_opt,
@@ -660,13 +661,13 @@ async fn eval_real_browser_snap_task() {
     eprintln!("open_first_ok={open_first_ok} first_action_ok={first_action_ok} both_snapshots_ok={both_snapshots_ok} isolation_ok={isolation_ok} loop_ok={loop_ok}");
     eprintln!("=== REAL BROWSER-SNAPSHOT EVAL TRACE (COMPLETE TAIL) ===");
 
-    let verdict = if !loop_ok {
-        "FAIL"
-    } else if !open_first_ok || !pre_second_clean {
-        "FAIL"
-    } else if !isolation_ok || !no_stale {
-        "FAIL"
-    } else if !both_snapshots_ok {
+    let verdict = if !loop_ok
+        || !open_first_ok
+        || !pre_second_clean
+        || !isolation_ok
+        || !no_stale
+        || !both_snapshots_ok
+    {
         "FAIL"
     } else if !(first_action_ok && one_per_control && status_exclusive && answer_ok) {
         "PARTIAL"

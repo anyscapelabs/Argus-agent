@@ -125,7 +125,7 @@ async fn a_watch_bus_is_dropped_only_once_nobody_is_left() {
 
     let mut rx = gw.subscribe(&sid);
     gw.drop_bus(&sid);
-    assert!(gw.watched(&sid) == false);
+    assert!(!gw.watched(&sid));
 
     gw.publish(
         &sid,

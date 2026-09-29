@@ -3,7 +3,6 @@ use std::sync::Mutex;
 
 use argus_lib::agents;
 use argus_lib::gateway::Gateway;
-use argus_lib::sessions::chat;
 use argus_lib::sessions::schema::NewSession;
 use argus_lib::sessions::store;
 use tauri::Manager;

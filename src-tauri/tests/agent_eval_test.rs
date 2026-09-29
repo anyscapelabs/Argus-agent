@@ -1,3 +1,8 @@
+// Test harnesses hold std guards across awaits on purpose: whole-test
+// serialization plus direct DB-handle helpers. Production code never does
+// this (audited); the lint would only ever fire here by design.
+#![allow(clippy::await_holding_lock)]
+
 //! Minimal end-to-end agent evaluation harness.
 //!
 //! Drives the REAL `sessions/chat.rs::send()` loop exactly as production
@@ -47,6 +52,9 @@ fn turn(text: &str) -> LlmTurn {
         calls: vec![],
     }
 }
+
+/// One scripted model turn: index plus request in, reply out.
+type Respond = Arc<dyn Fn(usize, &serde_json::Value) -> LlmTurn + Send + Sync>;
 
 struct MockLlm {
     base: String,
@@ -127,9 +135,7 @@ fn sse_turn(t: &LlmTurn) -> String {
     out
 }
 
-async fn start_mock_llm(
-    respond: Arc<dyn Fn(usize, &serde_json::Value) -> LlmTurn + Send + Sync>,
-) -> MockLlm {
+async fn start_mock_llm(respond: Respond) -> MockLlm {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let requests: Arc<StdMutex<Vec<serde_json::Value>>> = Arc::new(StdMutex::new(vec![]));
@@ -248,7 +254,7 @@ fn extract_first_url(text: &str) -> Option<String> {
     let re = regex::Regex::new(r##"https?://[^\s"<>]+"##).ok()?;
     re.find(text).map(|m| {
         m.as_str()
-            .trim_end_matches(|c| c == '.' || c == ',' || c == ')' || c == ']' || c == '"')
+            .trim_end_matches(['.', ',', ')', ']', '"'])
             .to_string()
     })
 }
@@ -279,12 +285,7 @@ struct Trace {
     attempts: Vec<i64>,
 }
 
-async fn setup(
-    title: &str,
-    model: &str,
-    web_search: bool,
-    respond: Arc<dyn Fn(usize, &serde_json::Value) -> LlmTurn + Send + Sync>,
-) -> Harness {
+async fn setup(title: &str, model: &str, web_search: bool, respond: Respond) -> Harness {
     let tmp = std::env::temp_dir().join(format!("argus-eval-{}", uuid::Uuid::new_v4().as_simple()));
     std::fs::create_dir_all(&tmp).unwrap();
     let skills_dir = tmp.join("skills");
@@ -492,12 +493,11 @@ async fn eval_terminal_task() {
         uuid::Uuid::new_v4().as_simple()
     ));
     let out_arg = out_path.display().to_string();
-    let respond: Arc<dyn Fn(usize, &serde_json::Value) -> LlmTurn + Send + Sync> = Arc::new(
-        move |idx, req| {
-            if last_result_failed(req) {
-                return failed_turn(req);
-            }
-            match idx {
+    let respond: Respond = Arc::new(move |idx, req| {
+        if last_result_failed(req) {
+            return failed_turn(req);
+        }
+        match idx {
                 0 => LlmTurn {
                     text: format!(
                         "Creating the file now.\n<action tool=\"terminal\">{{\"command\":\"printf 'EVAL-TERM-731' > '{out_arg}'\",\"cwd\":\".\"}}</action>"
@@ -506,8 +506,7 @@ async fn eval_terminal_task() {
                 },
                 _ => turn("Done. The file is written.\n<final/>"),
             }
-        },
-    );
+    });
 
     let h = setup("Eval terminal", "mock/test", false, respond).await;
     let t = h.run_task("Create a file with the given contents.").await;
@@ -533,12 +532,11 @@ async fn eval_terminal_task() {
 #[tokio::test]
 async fn eval_multi_tool_task() {
     let _guard = serial();
-    let respond: Arc<dyn Fn(usize, &serde_json::Value) -> LlmTurn + Send + Sync> = Arc::new(
-        |idx, req| {
-            if last_result_failed(req) {
-                return failed_turn(req);
-            }
-            match idx {
+    let respond: Respond = Arc::new(|idx, req| {
+        if last_result_failed(req) {
+            return failed_turn(req);
+        }
+        match idx {
                 0 => LlmTurn {
                     text: "Saving that for you.\n<action tool=\"memory.save\">{\"content\":\"eval fact BLUEBIRD-42\",\"kind\":\"fact\"}</action>".into(),
                     calls: vec![],
@@ -549,8 +547,7 @@ async fn eval_multi_tool_task() {
                 },
                 _ => turn("Found it: BLUEBIRD-42.\n<final/>"),
             }
-        },
-    );
+    });
 
     let h = setup("Eval multi", "mock/test", false, respond).await;
     let t = h.run_task("Remember a fact, then recall it.").await;
@@ -619,37 +616,36 @@ async fn eval_web_task() {
     std::env::set_var("ARGUS_SEARXNG_POOL", format!("{search_base}/search"));
     std::env::set_var("ARGUS_JINA_URL", format!("{search_base}/jina"));
 
-    let respond: Arc<dyn Fn(usize, &serde_json::Value) -> LlmTurn + Send + Sync> =
-        Arc::new(|idx, req| {
-            if last_result_failed(req) {
-                return failed_turn(req);
-            }
-            match idx {
-                0 => LlmTurn {
-                    text: "Searching now.".into(),
+    let respond: Respond = Arc::new(|idx, req| {
+        if last_result_failed(req) {
+            return failed_turn(req);
+        }
+        match idx {
+            0 => LlmTurn {
+                text: "Searching now.".into(),
+                calls: vec![(
+                    "call_1".into(),
+                    "web.search".into(),
+                    r#"{"query":"eval query"}"#.into(),
+                )],
+            },
+            1 => {
+                let url = last_tool_result_text(req)
+                    .as_deref()
+                    .and_then(extract_first_url)
+                    .unwrap_or_default();
+                LlmTurn {
+                    text: "Reading the top result.".into(),
                     calls: vec![(
-                        "call_1".into(),
-                        "web.search".into(),
-                        r#"{"query":"eval query"}"#.into(),
+                        "call_2".into(),
+                        "web.read".into(),
+                        format!(r#"{{"url":"{url}"}}"#),
                     )],
-                },
-                1 => {
-                    let url = last_tool_result_text(req)
-                        .as_deref()
-                        .and_then(extract_first_url)
-                        .unwrap_or_default();
-                    LlmTurn {
-                        text: "Reading the top result.".into(),
-                        calls: vec![(
-                            "call_2".into(),
-                            "web.read".into(),
-                            format!(r#"{{"url":"{url}"}}"#),
-                        )],
-                    }
                 }
-                _ => turn("The eval fact is QUOKKA-7.\n<final/>"),
             }
-        });
+            _ => turn("The eval fact is QUOKKA-7.\n<final/>"),
+        }
+    });
 
     let h = setup("Eval web", "mock/test", true, respond).await;
     let t = h.run_task("Search for the eval fact and report it.").await;
@@ -762,37 +758,36 @@ async fn eval_browser_task() {
     }
     assert!(argus_lib::tools::browser::extpipe::connected());
 
-    let respond: Arc<dyn Fn(usize, &serde_json::Value) -> LlmTurn + Send + Sync> =
-        Arc::new(|idx, req| {
-            if last_result_failed(req) {
-                return failed_turn(req);
-            }
-            match idx {
-                0 => LlmTurn {
-                    text: "Opening the page.".into(),
+    let respond: Respond = Arc::new(|idx, req| {
+        if last_result_failed(req) {
+            return failed_turn(req);
+        }
+        match idx {
+            0 => LlmTurn {
+                text: "Opening the page.".into(),
+                calls: vec![(
+                    "call_1".into(),
+                    "browser.open".into(),
+                    r#"{"url":"http://eval.local/"}"#.into(),
+                )],
+            },
+            1 => match last_tool_result_text(req)
+                .as_deref()
+                .and_then(extract_browser_target)
+            {
+                Some((r, g)) => LlmTurn {
+                    text: "Clicking the link.".into(),
                     calls: vec![(
-                        "call_1".into(),
-                        "browser.open".into(),
-                        r#"{"url":"http://eval.local/"}"#.into(),
+                        "call_2".into(),
+                        "browser.click".into(),
+                        format!(r#"{{"ref":{r},"snapshot":{g}}}"#),
                     )],
                 },
-                1 => match last_tool_result_text(req)
-                    .as_deref()
-                    .and_then(extract_browser_target)
-                {
-                    Some((r, g)) => LlmTurn {
-                        text: "Clicking the link.".into(),
-                        calls: vec![(
-                            "call_2".into(),
-                            "browser.click".into(),
-                            format!(r#"{{"ref":{r},"snapshot":{g}}}"#),
-                        )],
-                    },
-                    None => turn("TASK-FAILED: no ref in snapshot\n<final/>"),
-                },
-                _ => turn("Reached the second page.\n<final/>"),
-            }
-        });
+                None => turn("TASK-FAILED: no ref in snapshot\n<final/>"),
+            },
+            _ => turn("Reached the second page.\n<final/>"),
+        }
+    });
 
     let h = setup("Eval browser", "mock/test", false, respond).await;
     let t = h

@@ -1,3 +1,8 @@
+// Test harnesses hold std guards across awaits on purpose: whole-test
+// serialization plus direct DB-handle helpers. Production code never does
+// this (audited); the lint would only ever fire here by design.
+#![allow(clippy::await_holding_lock)]
+
 //! Presented-watermark (Design A) integration tests, ext backend + profiles.
 //!
 //! Mock LLM drives the real `sessions/chat.rs::send()` loop; the browser is
@@ -45,6 +50,9 @@ struct LlmTurn {
 fn turn(text: &str) -> LlmTurn {
     LlmTurn { text: text.into() }
 }
+
+/// One scripted model turn: index plus request in, reply out.
+type Respond = Arc<dyn Fn(usize, &serde_json::Value) -> LlmTurn + Send + Sync>;
 
 struct MockLlm {
     base: String,
@@ -105,9 +113,7 @@ fn sse_body(t: &LlmTurn) -> String {
     out
 }
 
-async fn start_mock_llm(
-    respond: Arc<dyn Fn(usize, &serde_json::Value) -> LlmTurn + Send + Sync>,
-) -> MockLlm {
+async fn start_mock_llm(respond: Respond) -> MockLlm {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let requests: Arc<StdMutex<Vec<serde_json::Value>>> = Arc::new(StdMutex::new(vec![]));
@@ -175,11 +181,7 @@ struct Harness {
     _app: tauri::App<tauri::test::MockRuntime>,
 }
 
-async fn setup(
-    title: &str,
-    model: &str,
-    respond: Arc<dyn Fn(usize, &serde_json::Value) -> LlmTurn + Send + Sync>,
-) -> Harness {
+async fn setup(title: &str, model: &str, respond: Respond) -> Harness {
     let tmp = std::env::temp_dir().join(format!(
         "argus-bshown-gw-{}-{}",
         std::process::id(),
@@ -516,12 +518,11 @@ fn click_action(r: u64) -> String {
 async fn tokenless_steady_flow_succeeds() {
     let _guard = serial();
     let state = ext_harness().await;
-    let respond: Arc<dyn Fn(usize, &serde_json::Value) -> LlmTurn + Send + Sync> =
-        Arc::new(|t, _| match t {
-            0 => turn(&open_action("https://shown.test/steady")),
-            1 => turn(&click_action(0)),
-            _ => turn("done\n<final/>"),
-        });
+    let respond: Respond = Arc::new(|t, _| match t {
+        0 => turn(&open_action("https://shown.test/steady")),
+        1 => turn(&click_action(0)),
+        _ => turn("done\n<final/>"),
+    });
     let h = setup("steady", "mock/shown-steady", respond).await;
     h.send("open the probe and press it").await.expect("send");
     assert!(h.llm_turns() >= 3, "loop must have run");
@@ -550,15 +551,14 @@ async fn tokenless_steady_flow_succeeds() {
 async fn tokenless_drift_rejected_with_bounded_recovery() {
     let _guard = serial();
     let state = ext_harness().await;
-    let respond: Arc<dyn Fn(usize, &serde_json::Value) -> LlmTurn + Send + Sync> =
-        Arc::new(|t, _| match t {
-            0 => turn(&open_action("https://shown.test/drift")),
-            1 => turn("observing\n<final/>"),
-            2 => turn(&click_action(0)),
-            3 => turn("noting recovery\n<final/>"),
-            4 => turn(&click_action(0)),
-            _ => turn("done\n<final/>"),
-        });
+    let respond: Respond = Arc::new(|t, _| match t {
+        0 => turn(&open_action("https://shown.test/drift")),
+        1 => turn("observing\n<final/>"),
+        2 => turn(&click_action(0)),
+        3 => turn("noting recovery\n<final/>"),
+        4 => turn(&click_action(0)),
+        _ => turn("done\n<final/>"),
+    });
     let h = setup("drift", "mock/shown-drift", respond).await;
     h.send("open the probe page").await.expect("first send");
     // Advance the table without presenting anything new to the model.
@@ -613,16 +613,15 @@ async fn tokenless_drift_rejected_with_bounded_recovery() {
 async fn same_turn_read_then_tokenless_click_is_stale() {
     let _guard = serial();
     let _state = ext_harness().await;
-    let respond: Arc<dyn Fn(usize, &serde_json::Value) -> LlmTurn + Send + Sync> =
-        Arc::new(|t, _| match t {
-            0 => turn(&open_action("https://shown.test/sameturn")),
-            1 => turn("watching"),
-            2 => turn(&format!(
-                r#"<action tool="browser.read">{{}}</action>{}"#,
-                click_action(0)
-            )),
-            _ => turn("done\n<final/>"),
-        });
+    let respond: Respond = Arc::new(|t, _| match t {
+        0 => turn(&open_action("https://shown.test/sameturn")),
+        1 => turn("watching"),
+        2 => turn(&format!(
+            r#"<action tool="browser.read">{{}}</action>{}"#,
+            click_action(0)
+        )),
+        _ => turn("done\n<final/>"),
+    });
     let h = setup("sameturn", "mock/shown-sameturn", respond).await;
     h.send("open the probe page").await.expect("first send");
     h.send("read then press without re-reading")
@@ -648,13 +647,12 @@ async fn same_turn_read_then_tokenless_click_is_stale() {
 async fn tokenless_type_drift_is_stale() {
     let _guard = serial();
     let state = ext_harness().await;
-    let respond: Arc<dyn Fn(usize, &serde_json::Value) -> LlmTurn + Send + Sync> =
-        Arc::new(|t, _| match t {
-            0 => turn(&open_action("https://shown.test/type")),
-            1 => turn("watching\n<final/>"),
-            2 => turn(r#"<action tool="browser.type">{"ref":1,"text":"hi"}</action>"#),
-            _ => turn("done\n<final/>"),
-        });
+    let respond: Respond = Arc::new(|t, _| match t {
+        0 => turn(&open_action("https://shown.test/type")),
+        1 => turn("watching\n<final/>"),
+        2 => turn(r#"<action tool="browser.type">{"ref":1,"text":"hi"}</action>"#),
+        _ => turn("done\n<final/>"),
+    });
     let h = setup("typedrift", "mock/shown-typedrift", respond).await;
     h.send("open the probe page").await.expect("first send");
     argus_lib::tools::browser::read(&serde_json::json!({}))
@@ -759,13 +757,12 @@ async fn profile_isolation_for_shown_watermark() {
         format!(r#"<action tool="browser.click">{{"ref":0,"profile":"{prof_a}"}}</action>"#);
     let click_b =
         format!(r#"<action tool="browser.click">{{"ref":0,"profile":"{prof_b}"}}</action>"#);
-    let respond: Arc<dyn Fn(usize, &serde_json::Value) -> LlmTurn + Send + Sync> =
-        Arc::new(move |t, _| match t {
-            0 => turn(&format!("{open_a}{open_b}")),
-            1 => turn("watching both\n<final/>"),
-            2 => turn(&format!("{click_a}{click_b}")),
-            _ => turn("done\n<final/>"),
-        });
+    let respond: Respond = Arc::new(move |t, _| match t {
+        0 => turn(&format!("{open_a}{open_b}")),
+        1 => turn("watching both\n<final/>"),
+        2 => turn(&format!("{click_a}{click_b}")),
+        _ => turn("done\n<final/>"),
+    });
     let h = setup("profiles", "mock/shown-profiles", respond).await;
     h.send("open the probe in two windows")
         .await

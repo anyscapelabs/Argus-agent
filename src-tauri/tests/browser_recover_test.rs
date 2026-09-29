@@ -1,3 +1,8 @@
+// Test harnesses hold std guards across awaits on purpose: whole-test
+// serialization plus direct DB-handle helpers. Production code never does
+// this (audited); the lint would only ever fire here by design.
+#![allow(clippy::await_holding_lock)]
+
 use argus_lib::tools::browser::{self, extpipe};
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -415,30 +420,30 @@ async fn approval_and_sensitive_checks_survive_recovery() {
     let mock = tauri::test::mock_app();
     let mock = &mock.handle().clone();
 
-    let err = argus_lib::tools::exec(
-        mock,
-        &gw,
-        "browser.click",
-        &serde_json::json!({"ref": 0, "snapshot": g}).to_string(),
-        "ask",
-        false,
-        false,
-        None,
-    )
+    let err = argus_lib::tools::exec(argus_lib::tools::ExecIn {
+        app: mock,
+        gw: &gw,
+        name: "browser.click",
+        args_json: &serde_json::json!({"ref": 0, "snapshot": g}).to_string(),
+        permission: "ask",
+        web: false,
+        approved: false,
+        on_term: None,
+    })
     .await
     .expect_err("mutating without approval must stay blocked");
     assert!(err.contains("asks before acting"), "got: {err}");
 
-    argus_lib::tools::exec(
-        mock,
-        &gw,
-        "browser.click",
-        &serde_json::json!({"ref": 0, "snapshot": g}).to_string(),
-        "ask",
-        false,
-        true,
-        None,
-    )
+    argus_lib::tools::exec(argus_lib::tools::ExecIn {
+        app: mock,
+        gw: &gw,
+        name: "browser.click",
+        args_json: &serde_json::json!({"ref": 0, "snapshot": g}).to_string(),
+        permission: "ask",
+        web: false,
+        approved: true,
+        on_term: None,
+    })
     .await
     .expect("approved click runs");
     assert_eq!(state.lock().unwrap().clicks, 1);

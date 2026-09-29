@@ -5,7 +5,7 @@
 //    feature is leaking across models and every session pays for someone
 //    else's failures.
 
-use argus_lib::playbook::store::{self, Kind, Scope};
+use argus_lib::playbook::store::{self, Scope};
 use argus_lib::prompt::project;
 
 fn dir() -> String {

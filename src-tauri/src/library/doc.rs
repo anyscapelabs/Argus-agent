@@ -329,35 +329,49 @@ fn docx_bytes(title: &str, body: &str) -> Vec<u8> {
     z.finish()
 }
 
-fn pptx_shape(
+/// One text box on a slide. The loose geometry arguments to `pptx_shape`
+/// became one named bundle at its single call site.
+struct Shape<'a> {
     id: u32,
     x: i64,
     y: i64,
     w: i64,
     h: i64,
-    texts: &[String],
+    texts: &'a [String],
     size: u32,
     bold: bool,
-) -> String {
-    let ps = texts
+}
+
+fn pptx_shape(s: Shape<'_>) -> String {
+    let ps = s
+        .texts
         .iter()
         .map(|t| {
             format!(
                 "<a:p><a:r><a:rPr sz=\"{}\"{} /><a:t>{}</a:t></a:r></a:p>",
-                size * 100,
-                if bold { " b=\"1\"" } else { "" },
+                s.size * 100,
+                if s.bold { " b=\"1\"" } else { "" },
                 esc_xml(t)
             )
         })
         .collect::<Vec<_>>()
         .join("");
-    format!("<p:sp><p:nvSpPr><p:cNvPr id=\"{}\" name=\"box{}\"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"{}\" y=\"{}\"/><a:ext cx=\"{}\" cy=\"{}\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/>{}</p:txBody></p:sp>", id, id, x, y, w, h, ps)
+    format!("<p:sp><p:nvSpPr><p:cNvPr id=\"{}\" name=\"box{}\"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"{}\" y=\"{}\"/><a:ext cx=\"{}\" cy=\"{}\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/>{}</p:txBody></p:sp>", s.id, s.id, s.x, s.y, s.w, s.h, ps)
 }
 
 fn pptx_slide(title: &str, bullets: &[String]) -> Vec<u8> {
     let mut texts = vec![title.to_string()];
     texts.extend(bullets.iter().map(|b| format!("{} {}", "\u{2022}", b)));
-    let shape = pptx_shape(2, 685800, 365760, 7772400, 4000000, &texts, 20, false);
+    let shape = pptx_shape(Shape {
+        id: 2,
+        x: 685800,
+        y: 365760,
+        w: 7772400,
+        h: 4000000,
+        texts: &texts,
+        size: 20,
+        bold: false,
+    });
     format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><p:sld xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"0\" cy=\"0\"/></a:xfrm></p:grpSpPr>{}</p:spTree></p:cSld></p:sld>", shape).into_bytes()
 }
 

@@ -62,7 +62,7 @@ fn the_model_is_never_told_a_line_the_app_answered() {
     say(&conn, &sid, "user", "now write the parser");
     say(&conn, &sid, "assistant", "on it");
 
-    let p = argus_lib::prompt::project(&conn, &sid, &std::path::Path::new("/tmp")).unwrap();
+    let p = argus_lib::prompt::project(&conn, &sid, std::path::Path::new("/tmp")).unwrap();
     let said: Vec<&str> = p.msgs.iter().map(|m| m.content.as_str()).collect();
 
     assert!(

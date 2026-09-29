@@ -6,6 +6,7 @@
 //! existing messages are classified.
 
 use argus_lib::tools::recover::{classify, exec_with_recovery, run_bounded, RecoveryKind};
+use argus_lib::tools::ExecIn;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Mutex;
@@ -283,29 +284,49 @@ async fn real_tool_failures_do_not_retry() {
     let app = &app.handle().clone();
 
     // Fatal: unknown tool.
-    let out = exec_with_recovery(app, &gw, "nope.tool", "{}", "never", false, true, None).await;
+    let out = exec_with_recovery(ExecIn {
+        app,
+        gw: &gw,
+        name: "nope.tool",
+        args_json: "{}",
+        permission: "never",
+        web: false,
+        approved: true,
+        on_term: None,
+    })
+    .await;
     assert!(out.result.is_err());
     assert_eq!(out.attempts, 1);
     assert_eq!(out.kind, Some(RecoveryKind::ToolNotFound));
 
     // Invalid arguments: malformed JSON.
-    let out = exec_with_recovery(
+    let out = exec_with_recovery(ExecIn {
         app,
-        &gw,
-        "skill.read",
-        "not-json",
-        "never",
-        false,
-        true,
-        None,
-    )
+        gw: &gw,
+        name: "skill.read",
+        args_json: "not-json",
+        permission: "never",
+        web: false,
+        approved: true,
+        on_term: None,
+    })
     .await;
     assert!(out.result.is_err());
     assert_eq!(out.attempts, 1);
     assert_eq!(out.kind, Some(RecoveryKind::InvalidArguments));
 
     // Invalid arguments: missing required field.
-    let out = exec_with_recovery(app, &gw, "skill.read", "{}", "never", false, true, None).await;
+    let out = exec_with_recovery(ExecIn {
+        app,
+        gw: &gw,
+        name: "skill.read",
+        args_json: "{}",
+        permission: "never",
+        web: false,
+        approved: true,
+        on_term: None,
+    })
+    .await;
     assert!(out.result.is_err());
     assert_eq!(out.attempts, 1);
     assert_eq!(out.kind, Some(RecoveryKind::InvalidArguments));
@@ -323,16 +344,16 @@ async fn real_denied_write_does_not_retry_and_reports_once() {
     let proc_target = "/proc/argus-recover-must-not-exist-zzz/out.txt";
     let args = serde_json::json!({ "path": proc_target, "content": "x" }).to_string();
     let app = tauri::test::mock_app();
-    let out = exec_with_recovery(
-        &app.handle().clone(),
-        &gw,
-        "fs.write",
-        &args,
-        "never",
-        false,
-        true,
-        None,
-    )
+    let out = exec_with_recovery(ExecIn {
+        app: &app.handle().clone(),
+        gw: &gw,
+        name: "fs.write",
+        args_json: &args,
+        permission: "never",
+        web: false,
+        approved: true,
+        on_term: None,
+    })
     .await;
     assert!(out.result.is_err());
     assert_eq!(
@@ -363,16 +384,16 @@ async fn real_success_uses_single_attempt() {
     let (gw, base) = test_gw("success");
     let app = tauri::test::mock_app();
     let app = &app.handle().clone();
-    let out = exec_with_recovery(
+    let out = exec_with_recovery(ExecIn {
         app,
-        &gw,
-        "skill.search",
-        r#"{"query":""}"#,
-        "never",
-        false,
-        true,
-        None,
-    )
+        gw: &gw,
+        name: "skill.search",
+        args_json: r#"{"query":""}"#,
+        permission: "never",
+        web: false,
+        approved: true,
+        on_term: None,
+    })
     .await;
     assert!(out.result.is_ok());
     assert_eq!(out.attempts, 1);

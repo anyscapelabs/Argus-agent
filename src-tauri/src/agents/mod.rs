@@ -201,7 +201,18 @@ pub fn spawn<R: tauri::Runtime>(
     let wake = spec.wake;
 
     tauri::async_runtime::spawn(async move {
-        supervise(&app2, &cid, &parent, &nm, &ti, &prompt, &live, cancel, wake).await;
+        supervise(Supervise {
+            app: app2,
+            child_id: cid,
+            parent_id: parent,
+            name: nm,
+            title: ti,
+            prompt,
+            parent: live,
+            cancel,
+            wake,
+        })
+        .await;
     });
 
     let conn = gw.conn.lock().map_err(|e| e.to_string())?;
@@ -226,26 +237,41 @@ pub fn report(answer: &Option<String>, outcome: &Result<(), String>, verdict: &s
     }
 }
 
-async fn supervise<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-    child_id: &str,
-    parent_id: &str,
-    name: &str,
-    title: &str,
-    prompt: &str,
-    parent: &crate::sessions::schema::Session,
+/// Everything a supervised child needs. Nine loose parameters became one
+/// named bundle; the spawn site moves it instead of threading references.
+struct Supervise<R: tauri::Runtime> {
+    app: AppHandle<R>,
+    child_id: String,
+    parent_id: String,
+    name: String,
+    title: String,
+    prompt: String,
+    parent: crate::sessions::schema::Session,
     cancel: Arc<Notify>,
     wake: bool,
-) {
+}
+
+async fn supervise<R: tauri::Runtime>(job: Supervise<R>) {
+    let Supervise {
+        app,
+        child_id,
+        parent_id,
+        name,
+        title,
+        prompt,
+        parent,
+        cancel,
+        wake,
+    } = job;
     let gw = app.state::<Gateway>();
 
-    let mut owned = parent.clone();
-    owned.id = child_id.to_string();
+    let mut owned = parent;
+    owned.id = child_id.clone();
 
     let sink = crate::sessions::sink::FanSink {
         gw: gw.inner(),
-        child_id: child_id.to_string(),
-        parent_id: parent_id.to_string(),
+        child_id: child_id.clone(),
+        parent_id: parent_id.clone(),
     };
 
     // The child does not wait for a slot: a parent that fans out must not
@@ -254,17 +280,17 @@ async fn supervise<R: tauri::Runtime>(
         .scope(
             cancel,
             crate::tools::notepad::SESSION_ID.scope(
-                Some(child_id.to_string()),
-                chat::send(gw.inner(), app, child_id, prompt, None, &sink, "user"),
+                Some(child_id.clone()),
+                chat::send(gw.inner(), &app, &child_id, &prompt, None, &sink, "user"),
             ),
         )
         .await;
 
     if let Ok(mut tasks) = gw.tasks.lock() {
-        tasks.remove(child_id);
+        tasks.remove(&child_id);
     }
 
-    let answer = last_assistant(gw.inner(), child_id);
+    let answer = last_assistant(gw.inner(), &child_id);
     let state = if outcome.is_ok() { "done" } else { "failed" };
     let verdict = match outcome {
         Ok(()) => "finished",
@@ -275,7 +301,7 @@ async fn supervise<R: tauri::Runtime>(
     // Settle the state and ask whether this was the last one in one lock, or
     // two children can both see an empty chair and both call the parent back.
     let last = if let Ok(conn) = gw.conn.lock() {
-        settle(&conn, child_id, parent_id, state)
+        settle(&conn, &child_id, &parent_id, state)
     } else {
         false
     };
@@ -288,23 +314,23 @@ async fn supervise<R: tauri::Runtime>(
          the whole exchange.\n\n\
          {summary}\n\
          </agent-done>",
-        crate::sessions::blocks::esc_attr(title)
+        crate::sessions::blocks::esc_attr(&title)
     );
 
     // The last one out calls the parent back, so the turn that fanned out
     // gets to finish the job it said it would. Every other one just lands.
     if wake && last {
-        chat::announce(app, gw.inner(), parent_id, &body, true);
+        chat::announce(&app, gw.inner(), &parent_id, &body, true);
     } else {
-        chat::post(gw.inner(), parent_id, "assistant", &body);
+        chat::post(gw.inner(), &parent_id, "assistant", &body);
     }
 
     let _ = app.emit(
         "agent-done",
         AgentDone {
-            id: child_id.to_string(),
-            name: name.to_string(),
-            title: title.to_string(),
+            id: child_id,
+            name,
+            title,
             state: state.to_string(),
         },
     );

@@ -78,12 +78,12 @@ fn decide(sit: &Situation, lessons: &[String]) -> Choice {
     // A denial is addressed first: the root lesson names the cause, and a
     // model told the cause will not read the refusal as a reason to try the
     // same path again.
-    if knows(&TOPIC_ROOT) && sit.denied {
+    if knows(TOPIC_ROOT) && sit.denied {
         return Choice::RerunUnconfined;
     }
 
     if sit.denied && sit.can_escalate {
-        return if knows(&TOPIC_THRASH) {
+        return if knows(TOPIC_THRASH) {
             Choice::ChangeApproach
         } else {
             Choice::EscalatePrivilege
@@ -95,10 +95,10 @@ fn decide(sit: &Situation, lessons: &[String]) -> Choice {
     }
 
     if sit.failed_before {
-        if knows(&TOPIC_ARGS) {
+        if knows(TOPIC_ARGS) {
             return Choice::ResendWithArgs;
         }
-        if knows(&TOPIC_THRASH) {
+        if knows(TOPIC_THRASH) {
             return Choice::ChangeApproach;
         }
         return Choice::RetrySameCall;

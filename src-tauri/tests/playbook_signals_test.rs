@@ -2,7 +2,7 @@
 // wrote. Each test here proves the negative case: model text that looks like
 // a harness fact must not become a lesson.
 
-use argus_lib::playbook::store::{self, Kind, Scope};
+use argus_lib::playbook::store::{self, Kind};
 use argus_lib::tools::{build_executions, ToolStatus};
 
 fn db() -> rusqlite::Connection {
@@ -194,7 +194,6 @@ fn a_successful_call_records_nothing() {
 // An exec that never ran (pre-failed) has no observation to offer.
 #[test]
 fn a_pre_failed_exec_records_nothing() {
-    let conn = db();
     let e = build_executions(r#"<action tool="terminal">{}</action>"#, &[], 0)
         .pop()
         .unwrap();

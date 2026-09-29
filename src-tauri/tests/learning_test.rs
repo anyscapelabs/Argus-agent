@@ -116,7 +116,7 @@ fn examples_keep_only_strongest_twelve() {
         assert!(!contents.contains(&dropped), "{contents:?}");
     }
     for held in ["example 12", "example 13", "example 14"] {
-        assert!(contents.iter().any(|c| *c == held), "{contents:?}");
+        assert!(contents.contains(&held), "{contents:?}");
     }
 }
 

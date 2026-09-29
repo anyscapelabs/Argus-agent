@@ -1,3 +1,8 @@
+// Test harnesses hold std guards across awaits on purpose: whole-test
+// serialization plus direct DB-handle helpers. Production code never does
+// this (audited); the lint would only ever fire here by design.
+#![allow(clippy::await_holding_lock)]
+
 use argus_lib::tools::browser::{self, extpipe};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
@@ -451,7 +456,7 @@ async fn verification_failure_is_single_tool_result() {
     exec.begin();
     exec.fail(failed);
     assert!(exec.status.is_terminal());
-    let results = vec![exec.to_tool_result(4000)];
+    let results = [exec.to_tool_result(4000)];
     assert_eq!(results.len(), 1);
     assert!(
         results[0].contains(r#"status="err""#),

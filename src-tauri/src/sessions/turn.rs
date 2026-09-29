@@ -29,7 +29,7 @@ use super::chat::{
 };
 use super::guards;
 use super::reflect;
-use super::schema::NewMsg;
+use super::schema::{Msg, NewMsg};
 use super::sink;
 use super::store;
 
@@ -222,6 +222,38 @@ impl Turn {
         }
     }
 
+    /// Write the assistant's turn to the transcript.
+    ///
+    /// `add_msg_dedup` reports whether this step merely repeated the previous
+    /// one, which the caller needs because a repeat is not a truncation and
+    /// must not be reported as one.
+    fn persist_assistant(
+        &self,
+        gw: &Gateway,
+        session_id: &str,
+        text: &str,
+        model_id: &str,
+        stats: &router::StreamStats,
+        tool_calls: Option<String>,
+    ) -> Result<(Msg, bool), String> {
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+        store::add_msg_dedup(
+            &conn,
+            &NewMsg {
+                session_id: session_id.into(),
+                role: "assistant".into(),
+                content: text.to_string(),
+                model_id: Some(model_id.to_string()),
+                provider_id: Some(stats.provider_id.clone()),
+                tok_in: Some(stats.tok_in),
+                tok_out: Some(stats.tok_out),
+                tool_calls,
+                tool_call_id: None,
+                attachments: None,
+            },
+        )
+    }
+
     /// Run the loop to completion. `perm`, `web`, `allow_hosts`, and
     /// `turn_budget` are fixed for the whole turn, so they arrive as
     /// parameters; everything the loop itself changes is on `self`.
@@ -306,24 +338,8 @@ impl Turn {
             self.record_observations(gw, session_id, style, &stats);
 
             let model_id = stats.model_id.clone();
-            let (asst, said_again) = {
-                let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-                store::add_msg_dedup(
-                    &conn,
-                    &NewMsg {
-                        session_id: session_id.into(),
-                        role: "assistant".into(),
-                        content: text.clone(),
-                        model_id: Some(model_id.clone()),
-                        provider_id: Some(stats.provider_id),
-                        tok_in: Some(stats.tok_in),
-                        tok_out: Some(stats.tok_out),
-                        tool_calls: calls_json,
-                        tool_call_id: None,
-                        attachments: None,
-                    },
-                )?
-            };
+            let (asst, said_again) =
+                self.persist_assistant(gw, session_id, &text, &model_id, &stats, calls_json)?;
 
             let mut trunc_overflow = false;
             if stats.truncated {

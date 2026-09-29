@@ -4,6 +4,8 @@
 // all refused here rather than downstream, so no caller can forget the check by
 // reaching for the page directly. The patterns are the whole policy.
 
+use std::sync::OnceLock;
+
 use serde_json::Value;
 
 use super::{ext, pool, ref_of, route_profile};
@@ -15,7 +17,10 @@ const LABEL_PAT: &str = "sign in|sign-in|signin|log in|log-in|login|checkout|pay
 const SECRET_PAT: &str = r"sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{12,}|xox[bap]-[A-Za-z0-9-]{10,}|Bearer\s+[A-Za-z0-9._-]{16,}|[a-f0-9]{32,}";
 
 fn secret_re() -> Option<regex::Regex> {
-    regex::Regex::new(SECRET_PAT).ok()
+    static RE: OnceLock<Option<regex::Regex>> = OnceLock::new();
+    // Literal pattern: a compile failure here is a code bug, cached once.
+    RE.get_or_init(|| regex::Regex::new(SECRET_PAT).ok())
+        .clone()
 }
 
 pub fn url_guard(url: &str) -> Result<(), String> {
@@ -48,10 +53,15 @@ pub fn sensitive_note(url: &str, out: String) -> String {
 }
 
 pub fn sensitive_pats() -> Option<(regex::Regex, regex::Regex)> {
-    Some((
-        regex::Regex::new(&format!("(?i)({URL_PAT})")).ok()?,
-        regex::Regex::new(&format!("(?i)({LABEL_PAT})")).ok()?,
-    ))
+    static PATS: OnceLock<Option<(regex::Regex, regex::Regex)>> = OnceLock::new();
+    // Literal patterns: compile once, not once per tool call.
+    PATS.get_or_init(|| {
+        Some((
+            regex::Regex::new(&format!("(?i)({URL_PAT})")).ok()?,
+            regex::Regex::new(&format!("(?i)({LABEL_PAT})")).ok()?,
+        ))
+    })
+    .clone()
 }
 
 pub async fn sensitive(tool: &str, args: &Value) -> bool {

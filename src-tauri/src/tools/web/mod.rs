@@ -245,21 +245,25 @@ struct Hit {
 }
 
 pub fn parse_results(html: &str) -> Vec<(String, String, String)> {
-    let Ok(anchor) = Regex::new(r#"<a\s([^>]*result__a[^>]*)>(.*?)</a>"#) else {
-        return vec![];
-    };
+    struct Res {
+        anchor: Regex,
+        snippet: Regex,
+        href: Regex,
+        tag: Regex,
+    }
+    static RES: OnceLock<Res> = OnceLock::new();
+    // Literals: a compile failure here is a code bug, not a runtime condition.
+    let res = RES.get_or_init(|| Res {
+        anchor: Regex::new(r#"<a\s([^>]*result__a[^>]*)>(.*?)</a>"#).expect("anchor pattern"),
+        snippet: Regex::new(r#"<a\s[^>]*result__snippet[^>]*>(.*?)</a>"#).expect("snippet pattern"),
+        href: Regex::new(r#"href="([^"]*)""#).expect("href pattern"),
+        tag: Regex::new(r#"<[^>]*>"#).expect("tag pattern"),
+    });
 
-    let Ok(snippet) = Regex::new(r#"<a\s[^>]*result__snippet[^>]*>(.*?)</a>"#) else {
-        return vec![];
-    };
-
-    let Ok(href) = Regex::new(r#"href="([^"]*)""#) else {
-        return vec![];
-    };
-
-    let Ok(tag) = Regex::new(r#"<[^>]*>"#) else {
-        return vec![];
-    };
+    let anchor = &res.anchor;
+    let snippet = &res.snippet;
+    let href = &res.href;
+    let tag = &res.tag;
 
     let mut hits: Vec<Hit> = vec![];
 
@@ -514,21 +518,25 @@ pub fn bot_wall(text: &str) -> Option<String> {
 }
 
 pub fn html_to_text(html: &str) -> String {
-    let Ok(script) = Regex::new(r"(?is)<script[^>]*>.*?</script>") else {
-        return html.to_string();
-    };
+    struct Res {
+        script: Regex,
+        style: Regex,
+        tag: Regex,
+        blank: Regex,
+    }
+    static RES: OnceLock<Res> = OnceLock::new();
+    // Literals: a compile failure here is a code bug, not a runtime condition.
+    let res = RES.get_or_init(|| Res {
+        script: Regex::new(r"(?is)<script[^>]*>.*?</script>").expect("script pattern"),
+        style: Regex::new(r"(?is)<style[^>]*>.*?</style>").expect("style pattern"),
+        tag: Regex::new(r"<[^>]*>").expect("tag pattern"),
+        blank: Regex::new(r"\n{3,}").expect("blank pattern"),
+    });
 
-    let Ok(style) = Regex::new(r"(?is)<style[^>]*>.*?</style>") else {
-        return html.to_string();
-    };
-
-    let Ok(tag) = Regex::new(r"<[^>]*>") else {
-        return html.to_string();
-    };
-
-    let Ok(blank) = Regex::new(r"\n{3,}") else {
-        return html.to_string();
-    };
+    let script = &res.script;
+    let style = &res.style;
+    let tag = &res.tag;
+    let blank = &res.blank;
 
     let no_script = script.replace_all(html, "");
     let no_css = style.replace_all(&no_script, "");

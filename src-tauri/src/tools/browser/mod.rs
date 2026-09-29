@@ -380,19 +380,25 @@ async fn launch(root: &PathBuf, name: &str) -> Result<Sess, String> {
 type SessMap = HashMap<String, Sess>;
 
 async fn sess(name: &str) -> Result<tokio::sync::MutexGuard<'static, SessMap>, String> {
-    let mut map = pool().sess.lock().await;
+    let fresh = {
+        let map = pool().sess.lock().await;
+        map.get(name).is_some_and(|s| s.last_used.elapsed() < IDLE)
+    };
 
-    if let Some(s) = map.get(name) {
-        if s.last_used.elapsed() < IDLE {
-            return Ok(map);
+    if !fresh {
+        // Launch outside the lock: starting Chrome takes seconds, and holding
+        // the pool guard across it queues every other profile behind one launch.
+        let s = launch(&pool().root, name).await?;
+        let mut map = pool().sess.lock().await;
+        // Another task may have launched while we did; keep the live one and
+        // drop the spare (dropping its Browser closes it).
+        if !map.get(name).is_some_and(|e| e.last_used.elapsed() < IDLE) {
+            map.remove(name);
+            map.insert(name.into(), s);
         }
     }
 
-    map.remove(name);
-    let s = launch(&pool().root, name).await?;
-    map.insert(name.into(), s);
-
-    Ok(map)
+    Ok(pool().sess.lock().await)
 }
 
 const SNAP_JS: &str = r#"
@@ -728,9 +734,14 @@ pub async fn close(args: &Value) -> Result<String, String> {
         return self::ext::close(args).await;
     }
 
-    let mut map = pool().sess.lock().await;
+    let sess = {
+        let mut map = pool().sess.lock().await;
+        map.remove(&name)
+    };
 
-    match map.remove(&name) {
+    // Close outside the lock: page teardown awaits the browser and must not
+    // hold the pool guard while it does.
+    match sess {
         Some(mut s) => {
             let _ = s.page.close().await;
             let _ = s._browser.close().await;

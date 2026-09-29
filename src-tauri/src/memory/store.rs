@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
 
 use petgraph::graph::{DiGraph, NodeIndex};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -623,14 +624,19 @@ const STRIP_TAGS: &[&str] = &[
 /// Tool output and rendered blocks are the bulk of a transcript and carry no
 /// meaning on replay. Keep the prose the two people actually exchanged.
 fn strip_blocks(s: &str) -> String {
+    static RES: OnceLock<Vec<regex::Regex>> = OnceLock::new();
+    let res = RES.get_or_init(|| {
+        STRIP_TAGS
+            .iter()
+            .filter_map(|tag| {
+                regex::Regex::new(&format!(r"(?s)<{tag}\b[^>]*>.*?</{tag}>|<{tag}\b[^>]*/>")).ok()
+            })
+            .collect()
+    });
+
     let mut t = s.to_string();
 
-    for tag in STRIP_TAGS {
-        let Ok(re) = regex::Regex::new(&format!(r"(?s)<{tag}\b[^>]*>.*?</{tag}>|<{tag}\b[^>]*/>"))
-        else {
-            continue;
-        };
-
+    for re in res {
         t = re.replace_all(&t, " ").into_owned();
     }
 

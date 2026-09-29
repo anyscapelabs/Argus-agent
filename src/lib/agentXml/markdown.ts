@@ -68,8 +68,7 @@ function shieldLine(line: string): {
     SINGLE_RE,
     (m) => `\u0000${saved.push(m) - 1}\u0000`,
   );
-  const restore = (s: string) =>
-    restorePlaceholders(s, saved);
+  const restore = (s: string) => restorePlaceholders(s, saved);
   return { text, restore };
 }
 
@@ -161,7 +160,8 @@ function readHeading(line: string): Heading | null {
     spaces++;
     i++;
   }
-  if (spaces === 0 && i < line.length && line.charCodeAt(i) !== 0x0a) return null;
+  if (spaces === 0 && i < line.length && line.charCodeAt(i) !== 0x0a)
+    return null;
 
   let end = line.length;
   while (end > i && isSpaceAt(line, end - 1)) end--;
@@ -246,7 +246,11 @@ function normalizeMdLine(line: string): string {
  * line with the tags replaced, or `null` when the line has no list markup.
  */
 function readList(line: string): string | null {
-  if (line.indexOf("<ul>") === -1 && line.indexOf("<ol>") === -1 && line.indexOf("<li>") === -1) {
+  if (
+    line.indexOf("<ul>") === -1 &&
+    line.indexOf("<ol>") === -1 &&
+    line.indexOf("<li>") === -1
+  ) {
     return null;
   }
 
@@ -397,7 +401,10 @@ function tryTable(
   return { xml: xml + "</table>", next: j };
 }
 
-export function normalizeMd(src: string, opts: { final?: boolean } = {}): string {
+export function normalizeMd(
+  src: string,
+  opts: { final?: boolean } = {},
+): string {
   const final = opts.final !== false;
   const lines = src.split("\n");
   const out: string[] = [];
@@ -470,7 +477,11 @@ export function normalizeMd(src: string, opts: { final?: boolean } = {}): string
     const line = lines[k];
     const lt = line.indexOf("<");
 
-    if (lt !== -1 && scanTagEnd(line, lt + 1).kind === "unterminated" && isTagLike(line, lt)) {
+    if (
+      lt !== -1 &&
+      scanTagEnd(line, lt + 1).kind === "unterminated" &&
+      isTagLike(line, lt)
+    ) {
       if (!final) break;
       out.push(line);
       k++;

@@ -181,13 +181,18 @@ function matchEmphasis(s: string, open: number, ch: number): Mark | null {
     if (s.charCodeAt(i) !== ch) continue;
 
     let closeRun = 1;
-    while (i + closeRun < s.length && s.charCodeAt(i + closeRun) === ch) closeRun++;
+    while (i + closeRun < s.length && s.charCodeAt(i + closeRun) === ch)
+      closeRun++;
     if (closeRun < need) continue;
     if (i === after) continue;
 
     // Left-flanking: the closer cannot be followed by a word character.
     const next = s.charCodeAt(i + closeRun);
-    if (i + closeRun < s.length && !isSpaceAt(s, i + closeRun) && isWordChar(next)) {
+    if (
+      i + closeRun < s.length &&
+      !isSpaceAt(s, i + closeRun) &&
+      isWordChar(next)
+    ) {
       continue;
     }
     // For `_`, a closer inside a word does not count.
@@ -271,7 +276,9 @@ function renderLink(text: string, href: string, isImage: boolean): string {
   const body = isImage ? "" : inlineMd(text);
   if (isImage) return "";
 
-  return isHttpUrl(href) ? `<link href="${esc(href)}">${body}</link>` : `<link>${body}</link>`;
+  return isHttpUrl(href)
+    ? `<link href="${esc(href)}">${body}</link>`
+    : `<link>${body}</link>`;
 }
 
 function isHttpUrl(href: string): boolean {
@@ -331,7 +338,8 @@ export function inlineOutside(line: string): string {
 function isTagRegion(line: string, from: number, to: number): boolean {
   let i = from;
 
-  if (line.charCodeAt(i) === 0x2f) i++; // a close tag
+  if (line.charCodeAt(i) === 0x2f)
+    i++; // a close tag
   else if (line.charCodeAt(i) === 0x21) return false; // a comment or CDATA
 
   if (i >= to || !isTagNameStartAt(line, i)) return false;
@@ -350,7 +358,10 @@ function isTagRegion(line: string, from: number, to: number): boolean {
       // `name="value"`: the name, the `=`, then a quoted value.
       i++;
       while (i < to && isSpaceAt(line, i)) i++;
-      if (i < to && (line.charCodeAt(i) === 0x22 || line.charCodeAt(i) === 0x27)) {
+      if (
+        i < to &&
+        (line.charCodeAt(i) === 0x22 || line.charCodeAt(i) === 0x27)
+      ) {
         const quote = line.charCodeAt(i);
         i++;
         while (i < to && line.charCodeAt(i) !== quote) i++;

@@ -20,10 +20,10 @@ const PARSE_CAP = 1_000_000;
  * engines, and this runs on every delta of every turn.
  */
 const INVISIBLE = new Set([
-  0x200b, 0x200c, 0x200d, 0xfeff, 0x00ad, 0x200e, 0x200f,
-  0x202a, 0x202b, 0x202c, 0x202d, 0x202e,
-  0x2060, 0x2061, 0x2062, 0x2063, 0x2064, 0x2065, 0x2066,
-  0x2067, 0x2068, 0x2069, 0x206a, 0x206b, 0x206c, 0x206d, 0x206e, 0x206f,
+  0x200b, 0x200c, 0x200d, 0xfeff, 0x00ad, 0x200e, 0x200f, 0x202a, 0x202b,
+  0x202c, 0x202d, 0x202e, 0x2060, 0x2061, 0x2062, 0x2063, 0x2064, 0x2065,
+  0x2066, 0x2067, 0x2068, 0x2069, 0x206a, 0x206b, 0x206c, 0x206d, 0x206e,
+  0x206f,
 ]);
 
 function stripInvisible(s: string): string {
@@ -64,7 +64,12 @@ export function parse(buf: string, opts: { final?: boolean } = {}): XmlTree {
     return buildTree(tokenize(normalizeMd(src, { final }), { final }));
   } catch {
     return [
-      { kind: "paragraph", tag: "p", attrs: {}, children: [{ kind: "text", value: src }] },
+      {
+        kind: "paragraph",
+        tag: "p",
+        attrs: {},
+        children: [{ kind: "text", value: src }],
+      },
     ];
   }
 }
@@ -75,7 +80,10 @@ const PARSE_CACHE = new Map<string, XmlTree>();
 const cacheKey = (text: string, final: boolean) =>
   final ? `final:${text}` : `live:${text}`;
 
-export function parseCached(text: string, opts: { final?: boolean } = {}): XmlTree {
+export function parseCached(
+  text: string,
+  opts: { final?: boolean } = {},
+): XmlTree {
   const final = opts.final !== false;
   const key = cacheKey(text, final);
   const hit = PARSE_CACHE.get(key);

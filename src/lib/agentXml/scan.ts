@@ -41,16 +41,38 @@ function build(): Uint8Array {
   add(0x2d, 0x2d, Char.TagName | Char.AttrName); // -
   // Digits are name characters, not just value characters: `h2`, `h3` and
   // `email-draft` all have digits in the name.
-  add(0x30, 0x39, Char.Digit | Char.HexDigit | Char.TagName | Char.AttrName | Char.AttrEnd);
+  add(
+    0x30,
+    0x39,
+    Char.Digit | Char.HexDigit | Char.TagName | Char.AttrName | Char.AttrEnd,
+  );
   add(0x3a, 0x3a, Char.TagName | Char.AttrName | Char.AttrEnd); // :
   add(0x3b, 0x3b, Char.AttrEnd);
   add(0x3c, 0x3e, Char.AttrEnd); // < = >
   add(0x3f, 0x3f, Char.TagName | Char.AttrName | Char.AttrEnd); // ?
-  add(0x41, 0x5a, Char.TagName | Char.TagNameStart | Char.AttrName | Char.HexDigit | Char.Alpha | Char.AttrEnd);
+  add(
+    0x41,
+    0x5a,
+    Char.TagName |
+      Char.TagNameStart |
+      Char.AttrName |
+      Char.HexDigit |
+      Char.Alpha |
+      Char.AttrEnd,
+  );
   add(0x5b, 0x5b, Char.AttrEnd);
   add(0x5d, 0x5d, Char.AttrEnd);
   add(0x5f, 0x5f, Char.TagName | Char.AttrName | Char.AttrEnd); // _
-  add(0x61, 0x7a, Char.TagName | Char.TagNameStart | Char.AttrName | Char.HexDigit | Char.Alpha | Char.AttrEnd);
+  add(
+    0x61,
+    0x7a,
+    Char.TagName |
+      Char.TagNameStart |
+      Char.AttrName |
+      Char.HexDigit |
+      Char.Alpha |
+      Char.AttrEnd,
+  );
 
   return t;
 }

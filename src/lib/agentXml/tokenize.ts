@@ -93,12 +93,19 @@ function decodeEntities(str: string): string {
 }
 
 /** The text between `&` and `;`, already positioned, or `null` if not one. */
-function decodeOneEntity(str: string, from: number, end: number): string | null {
+function decodeOneEntity(
+  str: string,
+  from: number,
+  end: number,
+): string | null {
   if (str.charCodeAt(from) === HASH) {
     let k = from + 1;
     let radix = 10;
 
-    if (k < end && (str.charCodeAt(k) === LOWER_X || str.charCodeAt(k) === UPPER_X)) {
+    if (
+      k < end &&
+      (str.charCodeAt(k) === LOWER_X || str.charCodeAt(k) === UPPER_X)
+    ) {
       radix = 16;
       k++;
     }
@@ -175,7 +182,10 @@ function parseAttributes(raw: string): Record<string, string> {
   let i = 0;
 
   while (i < raw.length) {
-    while (i < raw.length && (isSpaceAt(raw, i) || raw.charCodeAt(i) === 0x2f)) {
+    while (
+      i < raw.length &&
+      (isSpaceAt(raw, i) || raw.charCodeAt(i) === 0x2f)
+    ) {
       i++;
     }
 

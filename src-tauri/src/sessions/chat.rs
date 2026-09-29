@@ -352,7 +352,9 @@ pub async fn send<R: tauri::Runtime>(
     let recent = turn.recent;
 
     {
-        let tools_seen: Vec<String> = recent.iter().map(|(t, _)| t.clone()).collect();
+        // `recent` is dead after the turn; move the names out instead of
+        // cloning them for a summary the model never sees.
+        let tools_seen: Vec<String> = recent.into_iter().map(|(t, _)| t).collect();
         let mut ep =
             crate::memory::session_memory::session_memory_from_turn(content, &tools_seen, finished);
         ep.session_id = session_id.into();

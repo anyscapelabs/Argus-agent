@@ -6,6 +6,8 @@
 // do not — a tool that exists in one and not the other is a tool the model
 // will call and cannot run, or one it never hears about.
 
+use std::fmt::Write as _;
+
 use super::browser;
 use super::conn_oauth;
 use super::connector;
@@ -13,7 +15,13 @@ use super::fs;
 use super::library;
 use super::notepad;
 use super::profile;
-use super::{ToolCallStyle, MAX_OUT, TOOLS, WEB_TOOLS};
+use super::{ToolCallStyle, ToolMeta, MAX_OUT, TOOLS, WEB_TOOLS};
+
+// One catalog line. `write!` appends in place; `push_str(&format!(..))`
+// allocates a throwaway String per tool, per prompt, per step.
+fn spec_line(s: &mut String, t: &ToolMeta) {
+    let _ = write!(s, "- {} — {}. args: {}\n", t.name, t.desc, t.args);
+}
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -160,15 +168,15 @@ Available tools:\n",
     );
 
     for t in TOOLS.iter().filter(|t| t.name != "bash.run") {
-        s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));
+        spec_line(&mut s, t);
     }
 
     for t in connector::META {
-        s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));
+        spec_line(&mut s, t);
     }
 
     for t in conn_oauth::META {
-        s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));
+        spec_line(&mut s, t);
     }
 
     s
@@ -206,7 +214,7 @@ If a scan times out twice, switch strategy instead of retrying it.\n",
 
     s.push_str("Browser tools:\n");
     for t in browser::META {
-        s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));
+        spec_line(&mut s, t);
     }
     s.push_str(
         "Browser refs are the [n] numbers from the last snapshot, and they \
@@ -225,7 +233,7 @@ runs. Never open a url that carries a credential — the tool will refuse it any
         .iter()
         .filter(|t| t.name == "gmail.send" || t.name == "outlook.send")
     {
-        s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));
+        spec_line(&mut s, t);
     }
     s.push_str(
         "When the user asks you to draft, write, compose or send an email, always put the \
@@ -237,7 +245,7 @@ draft. Iterate on wording only when the user rejects or edits and asks for chang
 
     s.push_str("Notepad tools:\n");
     for t in notepad::META {
-        s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));
+        spec_line(&mut s, t);
     }
     s.push_str(
         "The notepad is your private scratchpad for working notes. Scope \"session\" \
@@ -262,7 +270,7 @@ no GUI automation tools — anything without a command-line surface cannot be do
     if web {
         s.push_str("Web tools:\n");
         for t in WEB_TOOLS {
-            s.push_str(&format!("- {} — {}. args: {}\n", t.name, t.desc, t.args));
+            spec_line(&mut s, t);
         }
         s.push_str(
             "Cite what you used: after web.search or web.read, mention the source url in the reply.\n\

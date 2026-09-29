@@ -7,6 +7,8 @@
 // rather than an error, because the loop above already treats a reply that
 // describes an action without running one as something to ask about.
 
+use std::fmt::Write as _;
+
 use serde_json::Value;
 
 fn args_equal(a: &str, b: &str) -> bool {
@@ -199,7 +201,7 @@ pub fn render_actions(text: &str, execs: &[ToolExecution]) -> String {
         };
 
         used[i] = true;
-        out.push_str(&format!("<action tool=\"{}\">{}</action>", a.tool, a.args));
+        let _ = write!(out, "<action tool=\"{}\">{}</action>", a.tool, a.args);
     }
 
     out.push_str(&text[prev..]);
@@ -209,7 +211,7 @@ pub fn render_actions(text: &str, execs: &[ToolExecution]) -> String {
             continue;
         }
 
-        out.push_str(&format!("<action tool=\"{}\">{}</action>", e.tool, e.args));
+        let _ = write!(out, "<action tool=\"{}\">{}</action>", e.tool, e.args);
     }
 
     out
@@ -458,10 +460,11 @@ pub fn normalize_actions(raw: &str) -> String {
             let span = &tail[..used];
 
             if let Some(tool) = head_name(span) {
-                out.push_str(&format!(
+                let _ = write!(
+                    out,
                     "<action tool=\"{tool}\">{}</action>",
                     Value::Object(args)
-                ));
+                );
             }
 
             rest = &tail[used..];
@@ -482,7 +485,7 @@ pub fn normalize_actions(raw: &str) -> String {
         };
 
         if let Some((tool, args)) = salvage_call(&tail[..close]) {
-            out.push_str(&format!("<action tool=\"{tool}\">{args}</action>"));
+            let _ = write!(out, "<action tool=\"{tool}\">{args}</action>");
         }
 
         rest = &tail[close + TOOL_CALL_CLOSE.len()..];
@@ -552,7 +555,7 @@ fn salvage_browser_blocks(text: &str) -> String {
         };
 
         if let Some((tool, args)) = salvage_browser_action(tag) {
-            out.push_str(&format!("<action tool=\"{tool}\">{args}</action>"));
+            let _ = write!(out, "<action tool=\"{tool}\">{args}</action>");
         } else {
             out.push_str(&tail[..consumed]);
         }

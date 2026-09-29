@@ -585,7 +585,7 @@ fn inline_body(path: &str, room: usize) -> Option<String> {
 
 fn unwrap_result(content: &str) -> String {
     let inner = match (content.find('>'), content.rfind("</tool-result>")) {
-        (Some(open), Some(end)) if open + 1 <= end => &content[open + 1..end],
+        (Some(open), Some(end)) if open < end => &content[open + 1..end],
         _ => content,
     };
 

@@ -355,10 +355,10 @@ fn expand_seeds(
     for r in rows.flatten() {
         let a = *idx
             .entry(r.0.clone())
-            .or_insert_with(|| graph.add_node(r.0.clone()));
+            .or_insert_with_key(|k| graph.add_node(k.clone()));
         let b = *idx
             .entry(r.1.clone())
-            .or_insert_with(|| graph.add_node(r.1.clone()));
+            .or_insert_with_key(|k| graph.add_node(k.clone()));
         graph.add_edge(a, b, ());
     }
 
@@ -498,7 +498,7 @@ fn hits_to_past(
     let mut scores: HashMap<String, f64> = HashMap::new();
 
     for h in hits {
-        let Some(sid) = h.session_id.clone() else {
+        let Some(sid) = h.session_id else {
             continue;
         };
 
@@ -506,11 +506,10 @@ fn hits_to_past(
             continue;
         }
 
-        if !order.contains(&sid) {
+        let bucket = by_sid.entry(sid.clone()).or_default();
+        if bucket.is_empty() {
             order.push(sid.clone());
         }
-
-        let bucket = by_sid.entry(sid.clone()).or_default();
         if bucket.len() < MAX_SNIPPETS {
             bucket.push(clip(&h.snippet, SNIPPET_CHARS));
         }
@@ -541,12 +540,14 @@ fn hits_to_past(
                 )
                 .unwrap_or_default();
 
+            let score = scores.get(&sid).copied().unwrap_or(0.0);
+            let snippets = by_sid.remove(&sid).unwrap_or_default();
             Some(PastSession {
-                session_id: sid.clone(),
+                session_id: sid,
                 title,
                 updated_at,
-                score: scores.get(&sid).copied().unwrap_or(0.0),
-                snippets: by_sid.remove(&sid).unwrap_or_default(),
+                score,
+                snippets,
             })
         })
         .collect()
@@ -721,9 +722,9 @@ pub fn load_graph(conn: &Connection, limit: i64) -> Result<MemoryGraph, String> 
     let mut node_ids: HashSet<String> = HashSet::new();
     for m in &mems {
         let id = format!("memory:{}", m.id);
+        idx.entry(id.clone())
+            .or_insert_with_key(|k| graph.add_node(k.clone()));
         node_ids.insert(id.clone());
-        let ni = graph.add_node(id.clone());
-        idx.insert(id.clone(), ni);
         nodes.push(MemoryNode {
             id,
             label: clip(&m.content, 72),

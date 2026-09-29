@@ -213,7 +213,7 @@ impl Turn {
             // Native turns persist prose only: the event rows own what ran, so no
             // record markup is stored to be re-parsed later. Degraded and template
             // turns keep the text blocks — they are the only record those have.
-            let text = if style == tools::ToolCallStyle::Native && !stats.degraded {
+            let mut text = if style == tools::ToolCallStyle::Native && !stats.degraded {
                 tools::strip_actions(&base_text)
             } else {
                 tools::render_actions(&base_text, &pending)
@@ -451,7 +451,7 @@ impl Turn {
 
             let mut edits: Vec<(usize, usize, String)> = vec![];
             let mut append_blocks: Vec<String> = vec![];
-            let mut shown_candidates: Vec<(String, &'static str, String)> = vec![];
+            let mut shown_candidates: Vec<(String, &'static str, Option<u64>)> = vec![];
 
             let mut events_ok = true;
 
@@ -656,7 +656,10 @@ impl Turn {
                 }
 
                 if is_browser {
-                    shown_candidates.push((exec.args.clone(), status, body.clone()));
+                    // Extract the generation now; the body itself is never
+                    // needed again, so it is not cloned into the candidate.
+                    let gen = tools::browser::shown_gen_in(&body);
+                    shown_candidates.push((exec.args.clone(), status, gen));
                 }
                 let msg = exec.to_tool_result(RESULT_CLIP);
 
@@ -806,7 +809,9 @@ impl Turn {
             if (!edits.is_empty() || !append_blocks.is_empty())
                 && blocks::needs_text_blocks(style, stats.degraded, events_ok)
             {
-                let mut updated = text.clone();
+                // `text` is dead after this splice (reflection already read it
+                // above), so take it instead of cloning the whole transcript.
+                let mut updated = std::mem::take(&mut text);
 
                 for (s, end, blk) in edits.into_iter().rev() {
                     if s <= end
@@ -832,16 +837,17 @@ impl Turn {
                 .map_err(|err| err.to_string())?;
             }
 
-            for (args_json, status, body) in shown_candidates {
+            for (args_json, status, gen) in shown_candidates {
                 if status != "ok" {
                     continue;
                 }
+                let Some(gen) = gen else {
+                    continue;
+                };
                 let Ok(args_v) = serde_json::from_str::<serde_json::Value>(&args_json) else {
                     continue;
                 };
-                if let Some(gen) = tools::browser::shown_gen_in(&body) {
-                    tools::browser::note_shown(&args_v, gen).await;
-                }
+                tools::browser::note_shown(&args_v, gen).await;
             }
 
             self.acts_run += pending.len();

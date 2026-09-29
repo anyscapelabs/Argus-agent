@@ -1,329 +1,31 @@
-// The turn loop: one user message, run to completion, stop, or run out of
-// budget.
+// The loop itself. `Turn` and its mutable state are in `mod.rs`; the steps that
+// surround the loop — building the request, watching the budget, classifying
+// the reply, persisting it — are one file each.
 //
-// The whole of a turn's mutable state is `Turn`. Nothing in here is on a hot
-// path in the sense of being called often — it runs once per user message, for
-// up to MAX_STEPS model calls — so the struct is plain and unshared, and the
-// loop is written to be read top to bottom: build the request, spend budget,
-// call the model, decide whether this is the last step, run the tools, record
-// what ran.
-
+// The split is by decision, not by length: each helper answers exactly one
+// question the loop asks, and none of them can reach the loop's locals. What is
+// left here is the part that genuinely has to be read top to bottom.
 use rusqlite::params;
 use tauri::ipc::Channel;
-use tauri::Manager;
+use tauri::{AppHandle, Manager};
 
+use super::{Truncation, Turn};
 use crate::gateway::router;
-use crate::gateway::schema::{ChatReq, StreamEvent, WireMsg};
+use crate::gateway::schema::StreamEvent;
 use crate::gateway::Gateway;
-use crate::prompt::project;
-use crate::tools;
-use crate::tools::sandbox::Origin;
-use crate::tools::ToolCallStyle;
-use tauri::AppHandle;
-
-use super::blocks;
-use super::chat::{
-    approval_id, ask_approval, auto_model, run_skill_reflection, DENIED_CODE, EMPTY_CONT,
-    HARD_STEPS, MAX_CLAIM_NUDGES, MAX_STEPS, MAX_TRUNC_CONTS, NUDGE, RESULT_CLIP, SUMMARY_DEMAND,
-    TRUNC_CONT,
+use crate::sessions::chat::{
+    approval_id, ask_approval, run_skill_reflection, DENIED_CODE, EMPTY_CONT, HARD_STEPS,
+    MAX_CLAIM_NUDGES, MAX_STEPS, NUDGE, RESULT_CLIP, SUMMARY_DEMAND,
 };
-use super::guards;
-use super::reflect;
-use super::schema::{Msg, NewMsg};
-use super::sink;
-use super::store;
-
-/// What a cut-off reply means for the rest of the step.
-enum Truncation {
-    /// Not truncated; carry on.
-    None,
-    /// Truncated past the limit with work still pending. The step continues, but
-    /// the next request is already over budget.
-    Overflow,
-    /// Ask the model to finish the sentence and take another step.
-    Retry,
-    /// The turn is over.
-    Finish,
-}
-
-/// Everything a single turn mutates. The loop reads and writes these across
-/// iterations; nothing else crosses a step boundary.
-pub struct Turn {
-    pub tok_in_sum: i64,
-    pub act_base: usize,
-    pub nudge: Option<String>,
-    pub claim_nudges: usize,
-    pub forced_summary: bool,
-    pub reflect_nudges: usize,
-    pub trunc_conts: usize,
-    pub empty_retries: usize,
-    pub finished: bool,
-    pub acts_run: usize,
-    pub recent: Vec<(String, String)>,
-    pub recent_out: Vec<bool>,
-    pub turn_origin: Option<Origin>,
-    pub budget_warned: bool,
-    pub turn_actions: Vec<(String, bool)>,
-}
-
-impl Default for Turn {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
+use crate::sessions::schema::NewMsg;
+use crate::sessions::{blocks, guards, reflect, sink, store};
+use crate::tools;
+use crate::tools::ToolCallStyle;
+/// Run the loop to completion. `perm`, `web`, `allow_hosts`, and
+/// `turn_budget` are fixed for the whole turn, so they arrive as
+/// parameters; everything the loop itself changes is on `self`.
+#[allow(clippy::too_many_arguments)]
 impl Turn {
-    pub fn new() -> Self {
-        Self {
-            tok_in_sum: 0,
-            act_base: 0,
-            nudge: None,
-            claim_nudges: 0,
-            forced_summary: false,
-            reflect_nudges: 0,
-            trunc_conts: 0,
-            empty_retries: 0,
-            finished: false,
-            acts_run: 0,
-            recent: vec![],
-            recent_out: vec![],
-            turn_origin: None,
-            budget_warned: false,
-            turn_actions: vec![],
-        }
-    }
-
-    /// Build the request for one step: project the transcript, resolve a model
-    /// if the session pinned none, and spend any pending nudge as a user
-    /// message. Taking the nudge here is what makes it single-use — a nudge
-    /// queued but not delivered would otherwise ride along forever.
-    fn build_request(&mut self, gw: &Gateway, session_id: &str) -> Result<ChatReq, String> {
-        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-        let mut p = project(&conn, session_id, &gw.library_dir)?;
-        if p.model_id.is_none() {
-            p.model_id = Some(auto_model(&conn)?);
-        }
-
-        let mut r = p.chat_req();
-        blocks::attach_shots(&mut r.msgs);
-
-        if let Some(n) = self.nudge.take() {
-            r.msgs.push(WireMsg {
-                role: "user".into(),
-                content: n,
-                ..Default::default()
-            });
-        }
-
-        r.prefix_hash = Some(p.prefix_hash);
-        Ok(r)
-    }
-
-    /// End the turn because it ran out of budget. Leaves a resume behind and
-    /// appends a warning to the last final message, so the "send continue"
-    /// promise the notice makes is one the next turn can actually keep.
-    ///
-    /// Returns whether the turn is over; the caller only has to break.
-    fn budget_stopped(
-        &mut self,
-        gw: &Gateway,
-        session_id: &str,
-        sink: &dyn sink::ChatSink,
-        turn_budget: i64,
-    ) -> bool {
-        if guards::budget_state(self.tok_in_sum, turn_budget) != guards::Budget::Stop {
-            return false;
-        }
-
-        blocks::save_resume(gw, session_id, &self.turn_actions);
-
-        if let Ok(conn) = gw.conn.lock() {
-            let _ = crate::playbook::store::record(
-                &conn,
-                crate::playbook::Kind::BudgetStop,
-                &crate::sessions::ext_install::host_id(),
-                Some(session_id),
-                &format!("{} of {turn_budget} tokens", self.tok_in_sum),
-            );
-        }
-        if let Ok(conn) = gw.conn.lock() {
-            if let Ok(last) = store::get_last_final(&conn, session_id) {
-                let _ = conn.execute(
-                    "UPDATE messages SET content = content || ?2 WHERE id = ?1",
-                    params![
-                        &last,
-                        "\n<warning severity=\"medium\">this turn hit its budget — the work \
-                         above is saved; send 'continue' to pick it up in a new turn</warning>"
-                    ],
-                );
-                let _ = store::mark_final(&conn, &last);
-            }
-        }
-        sink.emit(StreamEvent::Notice {
-            msg: "this turn hit its budget — the work above is saved; send 'continue' to \
-                  pick it up in a new turn"
-                .into(),
-        });
-        self.finished = true;
-        true
-    }
-
-    /// Which dialect this model speaks for this turn.
-    ///
-    /// Degraded replies have no API channel, so their text must execute
-    /// regardless of style. Otherwise the stored classification decides, and an
-    /// unknown model showing the duplication signature is classified once here
-    /// so the next turn resolves to the template style directly.
-    fn resolve_style(gw: &Gateway, stats: &router::StreamStats, base_text: &str) -> ToolCallStyle {
-        if stats.degraded {
-            return ToolCallStyle::GlmXml;
-        }
-
-        let style = match gw.conn.lock() {
-            Ok(conn) => crate::prompt::config::tool_style(&conn, Some(stats.model_id.as_str())),
-            Err(_) => ToolCallStyle::Native,
-        };
-
-        if style == ToolCallStyle::Native
-            && tools::has_native_text_duplicate(base_text, &stats.tool_calls)
-        {
-            if let Ok(conn) = gw.conn.lock() {
-                crate::prompt::config::upgrade_tool_style(&conn, &stats.model_id);
-            }
-        }
-
-        style
-    }
-
-    /// Note the two things worth remembering about a step. Both are recorded
-    /// where the classification happens, so a lesson exists for the same turn
-    /// that caused it.
-    ///
-    /// A turn that wrote its tool call as XML text has told us which dialect it
-    /// speaks. A degraded turn means the provider refused the tool schemas — the
-    /// turn still worked via the in-band format, so that is infrastructure, not
-    /// a model failure, and is recorded against the host.
-    fn record_observations(
-        &self,
-        gw: &Gateway,
-        session_id: &str,
-        style: ToolCallStyle,
-        stats: &router::StreamStats,
-    ) {
-        if style == ToolCallStyle::GlmXml && !stats.degraded {
-            if let Ok(conn) = gw.conn.lock() {
-                let _ = crate::playbook::store::record(
-                    &conn,
-                    crate::playbook::Kind::StyleXml,
-                    &stats.model_id,
-                    Some(session_id),
-                    "wrote a tool call as XML text",
-                );
-            }
-        }
-
-        if stats.degraded {
-            if let Ok(conn) = gw.conn.lock() {
-                let _ = crate::playbook::store::record(
-                    &conn,
-                    crate::playbook::Kind::Degraded,
-                    &crate::sessions::ext_install::host_id(),
-                    Some(session_id),
-                    &stats.provider_id,
-                );
-            }
-        }
-    }
-
-    /// Write the assistant's turn to the transcript.
-    ///
-    /// `add_msg_dedup` reports whether this step merely repeated the previous
-    /// one, which the caller needs because a repeat is not a truncation and
-    /// must not be reported as one.
-    fn persist_assistant(
-        &self,
-        gw: &Gateway,
-        session_id: &str,
-        text: &str,
-        model_id: &str,
-        stats: &router::StreamStats,
-        tool_calls: Option<String>,
-    ) -> Result<(Msg, bool), String> {
-        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-        store::add_msg_dedup(
-            &conn,
-            &NewMsg {
-                session_id: session_id.into(),
-                role: "assistant".into(),
-                content: text.to_string(),
-                model_id: Some(model_id.to_string()),
-                provider_id: Some(stats.provider_id.clone()),
-                tok_in: Some(stats.tok_in),
-                tok_out: Some(stats.tok_out),
-                tool_calls,
-                tool_call_id: None,
-                attachments: None,
-            },
-        )
-    }
-
-    /// Decide what to do about a reply the model could not finish.
-    ///
-    /// A model told to carry on and answering the same thing has nothing left to
-    /// say — asking again only buys another copy of the same words, which is how
-    /// one answer ends up in the chat three times over. So a repeat counts
-    /// against the limit, and the notice is only sent when the model really was
-    /// cut off: telling a model that had finished that it was cut off would be a
-    /// worse lie than saying nothing.
-    fn handle_truncation(
-        &mut self,
-        gw: &Gateway,
-        asst: &Msg,
-        sink: &dyn sink::ChatSink,
-        stats: &router::StreamStats,
-        done: bool,
-        said_again: bool,
-    ) -> Truncation {
-        if !stats.truncated {
-            return Truncation::None;
-        }
-
-        self.trunc_conts += 1;
-
-        if self.trunc_conts > MAX_TRUNC_CONTS || said_again {
-            if !done {
-                return Truncation::Overflow;
-            }
-
-            if !said_again {
-                sink.emit(StreamEvent::Notice {
-                    msg: "the model's reply was cut off at its output limit twice — \
-                          partial work above is saved; send 'continue' to resume"
-                        .into(),
-                });
-            }
-
-            if let Ok(conn) = gw.conn.lock() {
-                let _ = store::mark_final(&conn, &asst.id);
-            }
-
-            self.finished = true;
-            return Truncation::Finish;
-        }
-
-        self.nudge = Some(TRUNC_CONT.into());
-
-        if done {
-            Truncation::Retry
-        } else {
-            Truncation::None
-        }
-    }
-
-    /// Run the loop to completion. `perm`, `web`, `allow_hosts`, and
-    /// `turn_budget` are fixed for the whole turn, so they arrive as
-    /// parameters; everything the loop itself changes is on `self`.
-    #[allow(clippy::too_many_arguments)]
     pub async fn run<R: tauri::Runtime>(
         &mut self,
         gw: &Gateway,
@@ -381,7 +83,7 @@ impl Turn {
             // Degraded replies have no API channel, so the text must execute
             // regardless of style. Otherwise the resolved style decides: native
             // prose is never executed, template text is decoded.
-            let style = Self::resolve_style(gw, &stats, &base_text);
+            let style = Turn::resolve_style(gw, &stats, &base_text);
             let mut pending =
                 tools::build_executions_styled(&base_text, &stats.tool_calls, self.act_base, style);
 
@@ -475,7 +177,7 @@ impl Turn {
                 // A self.finished turn closes its own resume: leaving one behind would
                 // tell the next turn there is unfinished work that is not.
                 if let Ok(conn) = gw.conn.lock() {
-                    super::resume::clear(&conn, session_id);
+                    crate::sessions::resume::clear(&conn, session_id);
                 }
 
                 let reflect_on: bool = gw
@@ -623,15 +325,15 @@ impl Turn {
 
                     if !allow && (looped || thrashed) {
                         sink.emit(StreamEvent::Notice {
-                    msg: if thrashed {
-                        "skipped a step that retried the same failing approach — say what to \
+                            msg: if thrashed {
+                                "skipped a step that retried the same failing approach — say what to \
                          try instead, or run it yourself"
-                    } else {
-                        "skipped a step that repeats the same call — say what to try \
+                            } else {
+                                "skipped a step that repeats the same call — say what to try \
                          instead, or run it yourself"
-                    }
-                    .into(),
-                });
+                            }
+                            .into(),
+                        });
                     }
 
                     if needs_ask {
@@ -652,10 +354,10 @@ impl Turn {
                         if sink.detached() {
                             sink.emit(StreamEvent::Notice {
                                 msg: format!(
-                            "skipped a step that needs your approval ({what}) — nothing was \
+                                    "skipped a step that needs your approval ({what}) — nothing was \
                              listening, so it was refused rather than guessed at. Open the \
                              session and ask again, or set it to never"
-                        ),
+                                ),
                             });
                             allow = false;
                             denied = true;

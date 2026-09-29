@@ -18,6 +18,7 @@ use crate::gateway::Gateway;
 use crate::prompt::project;
 use crate::tools;
 use crate::tools::sandbox::Origin;
+use crate::tools::ToolCallStyle;
 use tauri::AppHandle;
 
 use super::blocks;
@@ -154,6 +155,33 @@ impl Turn {
         true
     }
 
+    /// Which dialect this model speaks for this turn.
+    ///
+    /// Degraded replies have no API channel, so their text must execute
+    /// regardless of style. Otherwise the stored classification decides, and an
+    /// unknown model showing the duplication signature is classified once here
+    /// so the next turn resolves to the template style directly.
+    fn resolve_style(gw: &Gateway, stats: &router::StreamStats, base_text: &str) -> ToolCallStyle {
+        if stats.degraded {
+            return ToolCallStyle::GlmXml;
+        }
+
+        let style = match gw.conn.lock() {
+            Ok(conn) => crate::prompt::config::tool_style(&conn, Some(stats.model_id.as_str())),
+            Err(_) => ToolCallStyle::Native,
+        };
+
+        if style == ToolCallStyle::Native
+            && tools::has_native_text_duplicate(base_text, &stats.tool_calls)
+        {
+            if let Ok(conn) = gw.conn.lock() {
+                crate::prompt::config::upgrade_tool_style(&conn, &stats.model_id);
+            }
+        }
+
+        style
+    }
+
     /// Run the loop to completion. `perm`, `web`, `allow_hosts`, and
     /// `turn_budget` are fixed for the whole turn, so they arrive as
     /// parameters; everything the loop itself changes is on `self`.
@@ -215,34 +243,15 @@ impl Turn {
             // Degraded replies have no API channel, so the text must execute
             // regardless of style. Otherwise the resolved style decides: native
             // prose is never executed, template text is decoded.
-            let style = if stats.degraded {
-                tools::ToolCallStyle::GlmXml
-            } else {
-                match gw.conn.lock() {
-                    Ok(conn) => {
-                        crate::prompt::config::tool_style(&conn, Some(stats.model_id.as_str()))
-                    }
-                    Err(_) => tools::ToolCallStyle::Native,
-                }
-            };
+            let style = Self::resolve_style(gw, &stats, &base_text);
             let mut pending =
                 tools::build_executions_styled(&base_text, &stats.tool_calls, self.act_base, style);
-
-            // An unknown model showing the duplication signature gets classified
-            // once, here. Next turn it resolves to the template style directly.
-            if style == tools::ToolCallStyle::Native
-                && tools::has_native_text_duplicate(&base_text, &stats.tool_calls)
-            {
-                if let Ok(conn) = gw.conn.lock() {
-                    crate::prompt::config::upgrade_tool_style(&conn, &stats.model_id);
-                }
-            }
 
             let done = pending.is_empty();
             // Native turns persist prose only: the event rows own what ran, so no
             // record markup is stored to be re-parsed later. Degraded and template
             // turns keep the text blocks — they are the only record those have.
-            let mut text = if style == tools::ToolCallStyle::Native && !stats.degraded {
+            let mut text = if style == ToolCallStyle::Native && !stats.degraded {
                 tools::strip_actions(&base_text)
             } else {
                 tools::render_actions(&base_text, &pending)
@@ -257,7 +266,7 @@ impl Turn {
             // The turn told us it speaks the XML dialect by writing it. That is a
             // fact about the model, recorded where the classification happens, so
             // a lesson exists for the same turn that caused it.
-            if style == tools::ToolCallStyle::GlmXml && !stats.degraded {
+            if style == ToolCallStyle::GlmXml && !stats.degraded {
                 if let Ok(conn) = gw.conn.lock() {
                     let _ = crate::playbook::store::record(
                         &conn,

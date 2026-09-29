@@ -1,0 +1,63 @@
+// Every backend command name in one place. The wrappers elsewhere import
+// these instead of repeating the string, so a rename in Rust is a one-line
+// change here.
+
+export const CMD_GW_LIST_PROV = "gw_list_providers";
+export const CMD_GW_PROV_MODS = "gw_provider_models";
+export const CMD_GW_CHAT_MODS = "gw_chat_models";
+export const CMD_GW_SET_MOD = "gw_set_model_enabled";
+export const CMD_GW_CONN = "gw_connect";
+export const CMD_GW_DISC = "gw_disconnect";
+export const CMD_GW_SYNC = "gw_sync_providers";
+export const CMD_GW_LOGO = "gw_logo";
+export const CMD_GW_ROUTE = "gw_set_routing";
+export const CMD_SESS_CREATE = "sess_create_session";
+export const CMD_SESS_LIST = "sess_list_sessions";
+export const CMD_SESS_DEL = "sess_delete_session";
+export const CMD_SESS_SAVE = "sess_save_session";
+export const CMD_SESS_PERM = "sess_set_permission";
+export const CMD_SESS_MOD = "sess_set_model";
+export const CMD_SESS_WEB = "sess_set_web_search";
+export const CMD_SESS_EXP = "sess_export_json";
+export const CMD_SESS_MSGS = "sess_list_messages";
+export const CMD_SESS_EVENTS = "sess_list_events";
+export const CMD_SESS_LOCAL = "sess_run_local";
+export const CMD_SESS_VOTE = "sess_set_vote";
+export const CMD_SESS_SUP = "sess_supersede_from";
+export const CMD_SESS_CLEAN = "sess_clean_dangling";
+export const CMD_SESS_APPR = "sess_resolve_approval";
+export const CMD_SESS_IMPORT = "sess_browser_import";
+export const CMD_SESS_EXT_IN = "sess_ext_install";
+export const CMD_SESS_EXT_UN = "sess_ext_uninstall";
+export const CMD_SESS_EXT_ST = "sess_ext_status";
+export const CMD_SESS_STREAM = "sess_chat_stream";
+export const CMD_TERM_STATUS = "term_shell_status";
+export const CMD_TERM_SET = "term_shell_set";
+export const CMD_TERM_CLEAR = "term_shell_clear";
+export const CMD_SANDBOX_CFG = "sandbox_config";
+export const CMD_SANDBOX_SET = "sandbox_set_config";
+export const CMD_SANDBOX_RUNS = "sandbox_runs";
+export const CMD_SANDBOX_SELFTEST = "sandbox_selftest";
+export const CMD_GOOGLE_STATUS = "google_status";
+export const CMD_GOOGLE_CONN_URL = "google_connect_url";
+export const CMD_GOOGLE_DISC = "google_disconnect";
+export const CMD_GITHUB_STATUS = "github_status";
+export const CMD_GITHUB_CONN = "github_connect";
+export const CMD_GITHUB_DISC = "github_disconnect";
+export const CMD_OUTLOOK_STATUS = "outlook_status";
+export const CMD_OUTLOOK_CONN = "outlook_connect";
+export const CMD_OUTLOOK_DISC = "outlook_disconnect";
+export const CMD_SPOT_STATUS = "spotify_status";
+export const CMD_SPOT_URL = "spotify_connect_url";
+export const CMD_SPOT_DISC = "spotify_disconnect";
+export const CMD_CONN_SAVE_TOK = "conn_save_token";
+export const CMD_CONN_HAS_TOK = "conn_has_token";
+export const CMD_CONN_HAS_CLI = "conn_has_client";
+export const CMD_CONN_REMOVE = "conn_remove_token";
+export const CMD_CONN_SAVE_CLI = "conn_save_client";
+export const CMD_CONN_SAVE_SEC = "conn_save_secret";
+export const CMD_CONN_CLEAR_CLI = "conn_clear_client";
+export const CMD_CONN_CLEAR_SEC = "conn_clear_secret";
+export const CMD_CONN_CATALOG = "connector_catalog";
+
+export const DEF_PERM = "ask";

@@ -33,6 +33,19 @@ use super::schema::{Msg, NewMsg};
 use super::sink;
 use super::store;
 
+/// What a cut-off reply means for the rest of the step.
+enum Truncation {
+    /// Not truncated; carry on.
+    None,
+    /// Truncated past the limit with work still pending. The step continues, but
+    /// the next request is already over budget.
+    Overflow,
+    /// Ask the model to finish the sentence and take another step.
+    Retry,
+    /// The turn is over.
+    Finish,
+}
+
 /// Everything a single turn mutates. The loop reads and writes these across
 /// iterations; nothing else crosses a step boundary.
 pub struct Turn {
@@ -254,6 +267,59 @@ impl Turn {
         )
     }
 
+    /// Decide what to do about a reply the model could not finish.
+    ///
+    /// A model told to carry on and answering the same thing has nothing left to
+    /// say — asking again only buys another copy of the same words, which is how
+    /// one answer ends up in the chat three times over. So a repeat counts
+    /// against the limit, and the notice is only sent when the model really was
+    /// cut off: telling a model that had finished that it was cut off would be a
+    /// worse lie than saying nothing.
+    fn handle_truncation(
+        &mut self,
+        gw: &Gateway,
+        asst: &Msg,
+        sink: &dyn sink::ChatSink,
+        stats: &router::StreamStats,
+        done: bool,
+        said_again: bool,
+    ) -> Truncation {
+        if !stats.truncated {
+            return Truncation::None;
+        }
+
+        self.trunc_conts += 1;
+
+        if self.trunc_conts > MAX_TRUNC_CONTS || said_again {
+            if !done {
+                return Truncation::Overflow;
+            }
+
+            if !said_again {
+                sink.emit(StreamEvent::Notice {
+                    msg: "the model's reply was cut off at its output limit twice — \
+                          partial work above is saved; send 'continue' to resume"
+                        .into(),
+                });
+            }
+
+            if let Ok(conn) = gw.conn.lock() {
+                let _ = store::mark_final(&conn, &asst.id);
+            }
+
+            self.finished = true;
+            return Truncation::Finish;
+        }
+
+        self.nudge = Some(TRUNC_CONT.into());
+
+        if done {
+            Truncation::Retry
+        } else {
+            Truncation::None
+        }
+    }
+
     /// Run the loop to completion. `perm`, `web`, `allow_hosts`, and
     /// `turn_budget` are fixed for the whole turn, so they arrive as
     /// parameters; everything the loop itself changes is on `self`.
@@ -342,42 +408,14 @@ impl Turn {
                 self.persist_assistant(gw, session_id, &text, &model_id, &stats, calls_json)?;
 
             let mut trunc_overflow = false;
-            if stats.truncated {
-                self.trunc_conts += 1;
+            match self.handle_truncation(gw, &asst, sink, &stats, done, said_again) {
+                Truncation::Finish => break,
+                Truncation::Retry => continue,
+                Truncation::Overflow => trunc_overflow = true,
+                Truncation::None => {}
+            }
 
-                // A model told to carry on and answering the same thing has
-                // nothing left to say. Asking again only buys another copy of the
-                // same words, which is how one answer ends up in the chat three
-                // times over.
-                if self.trunc_conts > MAX_TRUNC_CONTS || said_again {
-                    if done {
-                        // A model that just repeated itself was not cut off — it had
-                        // nothing left to say. Blaming a limit it never hit would be
-                        // a worse lie than saying nothing.
-                        if !said_again {
-                            sink.emit(StreamEvent::Notice {
-                                msg: "the model's reply was cut off at its output limit twice — \
-                              partial work above is saved; send 'continue' to resume"
-                                    .into(),
-                            });
-                        }
-
-                        if let Ok(conn) = gw.conn.lock() {
-                            let _ = store::mark_final(&conn, &asst.id);
-                        }
-
-                        self.finished = true;
-                        break;
-                    }
-                    trunc_overflow = true;
-                } else {
-                    self.nudge = Some(TRUNC_CONT.into());
-
-                    if done {
-                        continue;
-                    }
-                }
-            } else if done {
+            if !stats.truncated && done {
                 // Asked of what the model actually wrote, not of the text the
                 // transcript shows: a fragment too broken to run is cut out of the
                 // answer, and the model still has to be told to say it again.

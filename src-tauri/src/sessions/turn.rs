@@ -13,7 +13,7 @@ use tauri::ipc::Channel;
 use tauri::Manager;
 
 use crate::gateway::router;
-use crate::gateway::schema::{StreamEvent, WireMsg};
+use crate::gateway::schema::{ChatReq, StreamEvent, WireMsg};
 use crate::gateway::Gateway;
 use crate::prompt::project;
 use crate::tools;
@@ -79,6 +79,32 @@ impl Turn {
         }
     }
 
+    /// Build the request for one step: project the transcript, resolve a model
+    /// if the session pinned none, and spend any pending nudge as a user
+    /// message. Taking the nudge here is what makes it single-use — a nudge
+    /// queued but not delivered would otherwise ride along forever.
+    fn build_request(&mut self, gw: &Gateway, session_id: &str) -> Result<ChatReq, String> {
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+        let mut p = project(&conn, session_id, &gw.library_dir)?;
+        if p.model_id.is_none() {
+            p.model_id = Some(auto_model(&conn)?);
+        }
+
+        let mut r = p.chat_req();
+        blocks::attach_shots(&mut r.msgs);
+
+        if let Some(n) = self.nudge.take() {
+            r.msgs.push(WireMsg {
+                role: "user".into(),
+                content: n,
+                ..Default::default()
+            });
+        }
+
+        r.prefix_hash = Some(p.prefix_hash);
+        Ok(r)
+    }
+
     /// Run the loop to completion. `perm`, `web`, `allow_hosts`, and
     /// `turn_budget` are fixed for the whole turn, so they arrive as
     /// parameters; everything the loop itself changes is on `self`.
@@ -96,27 +122,7 @@ impl Turn {
         turn_budget: i64,
     ) -> Result<(), String> {
         for _step in 0..MAX_STEPS {
-            let req = {
-                let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-                let mut p = project(&conn, session_id, &gw.library_dir)?;
-                if p.model_id.is_none() {
-                    p.model_id = Some(auto_model(&conn)?);
-                }
-
-                let mut r = p.chat_req();
-                blocks::attach_shots(&mut r.msgs);
-
-                if let Some(n) = self.nudge.take() {
-                    r.msgs.push(WireMsg {
-                        role: "user".into(),
-                        content: n,
-                        ..Default::default()
-                    });
-                }
-
-                r.prefix_hash = Some(p.prefix_hash);
-                r
-            };
+            let req = self.build_request(gw, session_id)?;
 
             // Checked before the call, not after: at Stop the turn is over and the
             // model never gets to spend what is left of the budget.

@@ -1,6 +1,7 @@
 // Assembling tokens into a tree, and deciding which blocks are the work log
 // rather than the answer. `WORK_TAGS` is the single source of truth for that
 // split, so the panel and the renderer cannot disagree about it.
+import { Char, classifyAt, isSpaceAt } from "./scan";
 import type { Token } from "./tokenize";
 
 export type InlineNode = {
@@ -55,7 +56,29 @@ export function buildTree(toks: Token[]): XmlTree {
     buf = "";
     if (v.length === 0) return;
 
-    const isList = (l: string) => /^(?:[-•*]|\d+\.)\s+/.test(l);
+    // A bullet or a number followed by a space. Read rather than matched: it
+    // runs for every line of every block, and it is the only place the tree
+    // builder decides that prose is a list.
+    const isList = (l: string): boolean => {
+      const c = l.charCodeAt(0);
+
+      if (c === 0x2d || c === 0x2a || c === 0x2022) {
+        return isSpaceAt(l, 1);
+      }
+
+      let k = 0;
+      while (k < l.length) {
+        const d = classifyAt(l, k);
+        if (d & Char.Digit) {
+          k++;
+          continue;
+        }
+        break;
+      }
+      if (k === 0 || l.charCodeAt(k) !== 0x2e) return false;
+
+      return isSpaceAt(l, k + 1);
+    };
     let group: string[] = [];
 
     const pushGroup = () => {

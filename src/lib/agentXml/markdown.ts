@@ -3,73 +3,235 @@
 // rebuilt line by line. Inline formatting is in `inline.ts`.
 import { inlineOutside } from "./inline";
 import { scanTagEnd } from "./tokenize";
-import { isSpaceAt, isTagNameStartAt } from "./scan";
+import {
+  Char,
+  classifyAt,
+  isSpaceAt,
+  isTagNameCharAt,
+  isTagNameStartAt,
+} from "./scan";
 
 // Component tags whose bodies can span lines. Tables and headings are
 // prose-level and never counted; inline tags never span lines.
-const PROSE_BODY = "thinking|plan|step|warning|error";
-const PAYLOAD_BODY =
-  "action|approval|diff|terminal|sandbox|email-draft|browser-action|memory-ref|codeblock";
-const DEPTH_TAGS = `${PROSE_BODY}|${PAYLOAD_BODY}`;
-// Attribute-safe: quoted `>` (common in terminal commands) must not end the tag.
-const TAG_ATTRS = `(?:"[^"]*"|'[^']*'|[^<>"'])*`;
+/**
+ * Tags whose body can span lines, and the ones among them the model writes as
+ * prose. A plan step is something the user reads, so its markdown is normalized
+ * like any other prose; a terminal or a diff stays raw on purpose, because a
+ * shell script's `#` is a comment and not a heading.
+ */
+const PROSE_TAGS = new Set(["thinking", "plan", "step", "warning", "error"]);
 
-const DEPTH_RE = new RegExp(`</?(?:${DEPTH_TAGS})\\b${TAG_ATTRS}/?>`, "g");
+const PAYLOAD_TAGS = new Set([
+  "action",
+  "approval",
+  "diff",
+  "terminal",
+  "sandbox",
+  "email-draft",
+  "browser-action",
+  "memory-ref",
+  "codeblock",
+]);
+
+const SPANNING_TAGS = new Set([...PROSE_TAGS, ...PAYLOAD_TAGS]);
+
+/** One tag found in a line. */
+type Span = { name: string; close: boolean; self: boolean; end: number };
+
+/**
+ * Every spanning tag in `line`, in order.
+ *
+ * A single pass with the same quote-aware scan the tokenizer uses, so a `>`
+ * inside a quoted attribute — `command="ls > f"` — cannot end the tag early
+ * and leave the rest of the line to be read as markup. The previous version
+ * spelled this as one alternation; it is a scanner because it has to agree
+ * with the tokenizer about where a tag ends, and two different answers to that
+ * question is how a line ends up half-raw and half-formatted.
+ */
+function scanSpans(line: string): Span[] {
+  const out: Span[] = [];
+  let i = 0;
+
+  while (i < line.length) {
+    if (line.charCodeAt(i) !== 0x3c) {
+      i++;
+      continue;
+    }
+
+    const scan = scanTagEnd(line, i + 1);
+    if (scan.kind === "unterminated") {
+      i++;
+      continue;
+    }
+
+    let k = i + 1;
+    const close = line.charCodeAt(k) === 0x2f;
+    if (close) k++;
+
+    const nameStart = k;
+    while (k < scan.end && isTagNameCharAt(line, k)) k++;
+    const name = line.slice(nameStart, k).toLowerCase();
+
+    let after = k;
+    while (after < scan.end && isSpaceAt(line, after)) after++;
+    const self = line.charCodeAt(scan.end - 1) === 0x2f;
+
+    if (name.length > 0 && SPANNING_TAGS.has(name)) {
+      out.push({ name, close, self, end: scan.end + 1 });
+    }
+
+    i = scan.end + 1;
+  }
+
+  return out;
+}
 
 function depthDelta(line: string): number {
   let d = 0;
-  let m: RegExpExecArray | null;
-  DEPTH_RE.lastIndex = 0;
-  while ((m = DEPTH_RE.exec(line)) !== null) {
-    const t = m[0];
-    if (t.startsWith("</")) d -= 1;
-    else if (!t.endsWith("/>")) d += 1;
+  for (const s of scanSpans(line)) {
+    if (s.close) d -= 1;
+    else if (!s.self) d += 1;
   }
   return d;
 }
 
-// Which of these bodies the model writes as prose, as opposed to payload. A
-// plan step or a thought is something the user reads, so its markdown has to
-// be normalized like any other prose or it reaches them as the characters the
-// model typed. A terminal or a diff stays raw on purpose: a shell script's
-// `#` is a comment, not a heading.
-const PROSE_TAGS = new Set(PROSE_BODY.split("|"));
-
 function trackTags(stack: string[], line: string): string[] {
   const next = [...stack];
-  let m: RegExpExecArray | null;
-  DEPTH_RE.lastIndex = 0;
-  while ((m = DEPTH_RE.exec(line)) !== null) {
-    const t = m[0];
-    if (t.startsWith("</")) {
+  for (const s of scanSpans(line)) {
+    if (s.close) {
       next.pop();
-    } else if (!t.endsWith("/>")) {
-      next.push(t.slice(1).split(/[\s/>]/, 1)[0]);
+    } else if (!s.self) {
+      next.push(s.name);
     }
   }
   return next;
 }
 
-// Complete single-line payload blocks (`<action>{...}</action>`) are shielded
-// so prose normalization never rewrites their bodies (backticks in commands
-// would otherwise break arg parsing and hide the step hint). Prose bodies are
-// deliberately not shielded: they are the text the user is meant to read.
-const SINGLE_RE = new RegExp(
-  `<(${PAYLOAD_BODY})\\b${TAG_ATTRS}>.*?</\\1>`,
-  "g",
-);
+/**
+ * Replace every complete single-line payload block with an opaque placeholder,
+ * so prose normalization never rewrites its body — a backtick in a command
+ * would otherwise break the arg parsing on the way back out, and a `#` in a
+ * diff would turn into a heading.
+ *
+ * Prose bodies are deliberately left alone: those are the text the user is
+ * meant to read, and it has to be normalized.
+ *
+ * A block is only shielded when its own closing tag is on the same line. A
+ * payload that runs to the next line is handled by the depth tracker instead,
+ * which has already put the following lines inside the body.
+ */
+/** The language on a code-fence opener, or `null` if the line is not one. */
+function readFence(line: string): string | null {
+  if (
+    line.charCodeAt(0) !== 0x60 ||
+    line.charCodeAt(1) !== 0x60 ||
+    line.charCodeAt(2) !== 0x60
+  ) {
+    return null;
+  }
+
+  let k = 3;
+  const start = k;
+  while (k < line.length) {
+    const cls = classifyAt(line, k);
+    if (cls & (Char.TagName | Char.Digit | Char.AttrName)) {
+      k++;
+      continue;
+    }
+    break;
+  }
+  const lang = line.slice(start, k);
+
+  // Nothing but spaces may follow, or this is prose that happens to start
+  // with three backticks.
+  while (k < line.length) {
+    if (isSpaceAt(line, k) && line.charCodeAt(k) !== 0x0a) {
+      k++;
+      continue;
+    }
+    return null;
+  }
+
+  return lang;
+}
 
 function shieldLine(line: string): {
   text: string;
   restore: (s: string) => string;
 } {
   const saved: string[] = [];
-  const text = line.replace(
-    SINGLE_RE,
-    (m) => `\u0000${saved.push(m) - 1}\u0000`,
-  );
-  const restore = (s: string) => restorePlaceholders(s, saved);
-  return { text, restore };
+  let out = "";
+  let copied = 0;
+  let i = 0;
+
+  while (i < line.length) {
+    if (line.charCodeAt(i) !== 0x3c) {
+      i++;
+      continue;
+    }
+
+    const scan = scanTagEnd(line, i + 1);
+    if (scan.kind === "unterminated") {
+      i++;
+      continue;
+    }
+
+    const open = readTagName(line, i + 1, scan.end);
+    if (
+      open === null ||
+      open.close ||
+      open.self ||
+      !PAYLOAD_TAGS.has(open.name)
+    ) {
+      i = scan.end + 1;
+      continue;
+    }
+
+    const closeTag = `</${open.name}>`;
+    const bodyEnd = line.indexOf(closeTag, scan.end + 1);
+
+    if (bodyEnd === -1) {
+      i = scan.end + 1;
+      continue;
+    }
+
+    const stop = bodyEnd + closeTag.length;
+    out +=
+      line.slice(copied, i) +
+      `\u0000${saved.push(line.slice(i, stop)) - 1}\u0000`;
+    i = stop;
+    copied = stop;
+  }
+
+  if (copied === 0) return { text: line, restore: (s) => s };
+
+  out += line.slice(copied);
+
+  return { text: out, restore: (s) => restorePlaceholders(s, saved) };
+}
+
+/** The tag name in `line[from..to]`, with its close/self flags, or `null`. */
+function readTagName(
+  line: string,
+  from: number,
+  to: number,
+): { name: string; close: boolean; self: boolean } | null {
+  let k = from;
+  const close = line.charCodeAt(k) === 0x2f;
+  if (close) k++;
+
+  const start = k;
+  while (k < to && isTagNameCharAt(line, k)) k++;
+  if (k === start) return null;
+
+  let after = k;
+  while (after < to && isSpaceAt(line, after)) after++;
+
+  return {
+    name: line.slice(start, k).toLowerCase(),
+    close,
+    self: line.charCodeAt(to - 1) === 0x2f,
+  };
 }
 
 /**
@@ -445,11 +607,11 @@ export function normalizeMd(
       continue;
     }
 
-    const fence = lines[k].match(/^```([a-zA-Z0-9_-]*)[^\S\n]*$/);
+    const fence = readFence(lines[k]);
     if (fence !== null) {
       if (!inFence) {
         inFence = true;
-        fenceLang = fence[1];
+        fenceLang = fence;
         fenceBody.length = 0;
       } else {
         inFence = false;

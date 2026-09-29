@@ -72,6 +72,10 @@ impl Turn {
                 if self.empty_retries < 1 {
                     self.empty_retries += 1;
                     self.nudge = Some(EMPTY_CONT.into());
+                    // Whitespace arrived and is being thrown away, so it is
+                    // never persisted. Nothing downstream will clear it, and
+                    // the retry streams onto whatever is still in the buffer.
+                    sink.emit(StreamEvent::Reset);
                     continue;
                 }
 
@@ -108,6 +112,17 @@ impl Turn {
             let model_id = stats.model_id.clone();
             let (asst, said_again) =
                 self.persist_assistant(gw, session_id, &text, &model_id, &stats, calls_json)?;
+
+            // The step boundary, and it belongs to the persist rather than to
+            // the work that follows it. `Step` is what tells the frontend its
+            // text buffer is spent, and this is the instant that becomes true.
+            //
+            // Emitted further down, it only covered the paths that run tools.
+            // A nudge, a truncation retry or a reflection all `continue` past
+            // that point, so the buffer was never cleared and the next step
+            // streamed on top of a reply that was already a row — the same
+            // words shown twice, once from the row and once from the buffer.
+            sink.emit(StreamEvent::Step);
 
             let mut trunc_overflow = false;
             match self.handle_truncation(gw, &asst, sink, &stats, done, said_again) {
@@ -253,8 +268,6 @@ impl Turn {
                 self.finished = true;
                 break;
             }
-
-            sink.emit(StreamEvent::Step);
 
             let mut edits: Vec<(usize, usize, String)> = vec![];
             let mut append_blocks: Vec<String> = vec![];

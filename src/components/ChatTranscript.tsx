@@ -337,7 +337,10 @@ export default function ChatTranscript({
 
               let blocks;
               try {
-                blocks = parseCached(m.content);
+                // A live turn's text is still arriving, so the parser holds
+                // back a tag that has not finished coming. A written message
+                // is final and anything unterminated in it is prose.
+                blocks = parseCached(m.content, { final: !isLive });
               } catch {
                 continue;
               }
@@ -454,7 +457,7 @@ export default function ChatTranscript({
           for (const m of prior) {
             let blocks;
             try {
-              blocks = parseCached(m.content);
+              blocks = parseCached(m.content, { final: true });
             } catch {
               continue;
             }

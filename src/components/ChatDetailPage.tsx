@@ -5,16 +5,19 @@ import ChatTranscript from "./ChatTranscript";
 import { useChatModels } from "../hooks/useChatModels";
 import { slashRun } from "../lib/ipc";
 import { attachStore } from "../stores/attachments";
-import { sessionStore, useSessions } from "../stores/sessions";
+import { isWorking, sessionStore, useSessions } from "../stores/sessions";
 
 type Props = { sessionId: string; onOpenAgent?: (id: string) => void };
 
 export default function ChatDetailPage({ sessionId, onOpenAgent }: Props) {
-  const { sessions, turns } = useSessions();
+  const st = useSessions();
+  const { sessions } = st;
   const [draft, setDraft] = useState("");
 
-  const turn = turns[sessionId];
-  const running = turn !== undefined && turn.err === null;
+  // The store decides what "busy" means, so the composer and the transcript
+  // cannot disagree about it. A parent waiting on sub-agents is busy even
+  // though its own turn is over, and the stop button has to be there for it.
+  const running = isWorking(st, sessionId);
 
   const { models } = useChatModels();
   const session = sessions.find((s) => s.id === sessionId);
@@ -31,7 +34,9 @@ export default function ChatDetailPage({ sessionId, onOpenAgent }: Props) {
           value={draft}
           onChange={setDraft}
           model={model}
-          onModelChange={(m) => sessionStore.setModel(sessionId, m?.modelId ?? null)}
+          onModelChange={(m) =>
+            sessionStore.setModel(sessionId, m?.modelId ?? null)
+          }
           permission={session?.permission ?? "ask"}
           onPermissionChange={(p) => sessionStore.setPermission(sessionId, p)}
           webSearch={session?.web_search ?? false}
@@ -55,21 +60,22 @@ export default function ChatDetailPage({ sessionId, onOpenAgent }: Props) {
             // rather than as a note: it survives a reload and the model is
             // never told about it.
             if (name === "usage") {
-              void sessionStore
-                .runLocal(sessionId, name, arg)
-                .catch((err) => {
-                  sessionStore.addNote(sessionId, {
-                    kind: "text",
-                    text: String(err),
-                  });
+              void sessionStore.runLocal(sessionId, name, arg).catch((err) => {
+                sessionStore.addNote(sessionId, {
+                  kind: "text",
+                  text: String(err),
                 });
+              });
               return;
             }
 
             void slashRun(name, sessionId, arg)
               .then((out) => {
                 if (out.text !== null) {
-                  sessionStore.addNote(sessionId, { kind: "text", text: out.text });
+                  sessionStore.addNote(sessionId, {
+                    kind: "text",
+                    text: out.text,
+                  });
                   return;
                 }
 
@@ -80,7 +86,10 @@ export default function ChatDetailPage({ sessionId, onOpenAgent }: Props) {
                 }
               })
               .catch((err) => {
-                sessionStore.addNote(sessionId, { kind: "text", text: String(err) });
+                sessionStore.addNote(sessionId, {
+                  kind: "text",
+                  text: String(err),
+                });
               });
           }}
         />

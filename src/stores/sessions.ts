@@ -2,6 +2,7 @@ import { Channel } from "@tauri-apps/api/core";
 import { useSyncExternalStore } from "react";
 
 import {
+  agentKill,
   agentList,
   sessCancelChat,
   sessChatStream,
@@ -87,16 +88,59 @@ type State = {
   notes: Record<string, Note[]>;
 };
 
-// A parent's turn ending is not the end of the job: it promised to report when
-// the children finish, and the children are what knows they have not.
+/**
+ * Whether this chat is doing work, from any source.
+ *
+ * This is the only place the answer is worked out. The composer, the
+ * transcript, and the session list all need it, and when each derived it
+ * separately they drifted: the composer knew about a turn but not about
+ * sub-agents, so the stop button vanished the moment a parent fanned out and
+ * went quiet waiting for the children it had promised to report for.
+ *
+ * Three terms, because there are three ways to be busy:
+ *
+ *  - the session has a turn in flight and it has not failed;
+ *  - the session is a parent with children still running, which outlives its
+ *    own turn because it promised to report when they finish;
+ *  - the session *is* a sub-agent. Its turn ends before its summary is
+ *    written, so `turns` goes quiet a moment before the work does. The run
+ *    record is the backend's own account of that, and it stays `running` until
+ *    the child has actually settled.
+ */
 export function isWorking(state: State, id: string): boolean {
-  if (state.turns[id] !== undefined) {
+  const turn = state.turns[id];
+  if (turn !== undefined && turn.err === null) {
     return true;
   }
 
   const row = state.sessions.find((s) => s.id === id);
+  if (row !== undefined && row.running_agents > 0) {
+    return true;
+  }
 
-  return row !== undefined && row.running_agents > 0;
+  return isSubAgentRunning(state, id);
+}
+
+/**
+ * Whether `id` is a sub-agent whose own run has not settled.
+ *
+ * Separate from `isWorking` because the two answer different questions. "Is
+ * this chat busy?" includes waiting on children, and the composer wants that so
+ * the stop button is there. "Is this answer still being written?" does not: a
+ * parent waiting on children has nothing left to write, and must not be shown
+ * as though it were still typing. A sub-agent is the case where they differ in
+ * the other direction — its turn ends before its summary is written.
+ */
+export function isSubAgentRunning(state: State, id: string): boolean {
+  const run = state.agentRuns[id];
+  return run !== undefined && run.state === "running";
+}
+
+/** The children of `parentId` that are still running, for stopping them. */
+function runningChildren(state: State, parentId: string): AgentRun[] {
+  return Object.values(state.agentRuns).filter(
+    (r) => r.parentId === parentId && r.state === "running",
+  );
 }
 
 class SessionStore {
@@ -397,21 +441,20 @@ class SessionStore {
       void this.loadMsgs(sessionId);
       // turn_end lives on a sub-agent bus with no replay; a missed one left
       // the header ticking while the DB said finished. Reconcile from state.
-      void Promise.all([
-        this.loadAgents(sessionId),
-        this.loadSessions(),
-      ]).then(() => {
-        const st = this.state;
-        const runs = Object.values(st.agentRuns).filter(
-          (r) => r.parentId === sessionId,
-        );
-        const row = st.sessions.find((s) => s.id === sessionId);
-        const agentsIdle =
-          runs.length === 0 || runs.every((r) => r.state !== "running");
-        if (agentsIdle && (row === undefined || row.running_agents === 0)) {
-          this.clearTurn(sessionId);
-        }
-      });
+      void Promise.all([this.loadAgents(sessionId), this.loadSessions()]).then(
+        () => {
+          const st = this.state;
+          const runs = Object.values(st.agentRuns).filter(
+            (r) => r.parentId === sessionId,
+          );
+          const row = st.sessions.find((s) => s.id === sessionId);
+          const agentsIdle =
+            runs.length === 0 || runs.every((r) => r.state !== "running");
+          if (agentsIdle && (row === undefined || row.running_agents === 0)) {
+            this.clearTurn(sessionId);
+          }
+        },
+      );
       return;
     }
 
@@ -499,8 +542,7 @@ class SessionStore {
       // The bubble shows the files the moment the message goes, not when the
       // turn ends and the written row comes back. The chips came off the
       // input for this message; the message owns them now.
-      attachments:
-        attachments.length > 0 ? JSON.stringify(attachments) : null,
+      attachments: attachments.length > 0 ? JSON.stringify(attachments) : null,
       created_at: "",
     };
 
@@ -601,13 +643,29 @@ class SessionStore {
     await this.send(sessionId, content, files ?? []);
   }
 
+  /**
+   * Stop everything this chat is doing.
+   *
+   * The children go first, and not as a detail. A parent that fanned out has
+   * usually finished its own turn by the time the user reaches for stop — it
+   * said it would report when the children came back. Cancelling the parent
+   * there does nothing at all, because there is no parent turn left to cancel,
+   * and the children keep running with no way to stop them from the composer.
+   */
   async stop(sessionId: string) {
+    for (const child of runningChildren(this.state, sessionId)) {
+      try {
+        await agentKill(child.id);
+      } catch {}
+    }
+
     try {
       await sessCancelChat(sessionId);
     } catch {}
 
     this.clearTurn(sessionId);
     this.set({ stopped: { ...this.state.stopped, [sessionId]: true } });
+    await this.loadAgents(sessionId);
     await this.loadMsgs(sessionId);
   }
 

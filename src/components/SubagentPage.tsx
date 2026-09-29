@@ -19,10 +19,12 @@ const VERDICT: Record<string, string> = {
 };
 
 export default function SubagentPage({ agentId, parentId, onBack }: Props) {
-  const { agentRuns, turns } = useSessions();
-  const run = agentRuns[agentId] ?? null;
+  const st = useSessions();
+  const { turns } = st;
+  const run = st.agentRuns[agentId] ?? null;
   const waiting = turns[agentId]?.approval ?? null;
   const [checked, setChecked] = useState(false);
+  const live = run?.state === "running";
 
   useEffect(() => {
     void sessionStore.loadMsgs(agentId);
@@ -43,6 +45,21 @@ export default function SubagentPage({ agentId, parentId, onBack }: Props) {
       sessionStore.unwatch(agentId);
     };
   }, [agentId, parentId]);
+
+  // The child's state is only refreshed on `agent-done`, which is the right
+  // trigger for the finished case and the wrong one for the running case: the
+  // window between the child's turn ending and its run settling is exactly
+  // when the page has to keep saying "still working", and nothing arrives to
+  // say so. Polling only while it is live costs nothing once it is not.
+  useEffect(() => {
+    if (!live) return;
+
+    const id = window.setInterval(() => {
+      void sessionStore.loadAgents(parentId);
+    }, 1000);
+
+    return () => window.clearInterval(id);
+  }, [live, parentId]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">

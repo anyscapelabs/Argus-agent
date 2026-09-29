@@ -19,8 +19,19 @@ import ToolActivity, {
   type ToolStep,
 } from "./agent/ToolActivity";
 import { parseDbTime } from "../lib/relativeTime";
-import { sessionStore, useSessions, type Turn } from "../stores/sessions";
-import { learningRecordCorrection, type Attachment, type MsgRow, type ToolEvent, type UsageWindow } from "../lib/ipc";
+import {
+  isSubAgentRunning,
+  sessionStore,
+  useSessions,
+  type Turn,
+} from "../stores/sessions";
+import {
+  learningRecordCorrection,
+  type Attachment,
+  type MsgRow,
+  type ToolEvent,
+  type UsageWindow,
+} from "../lib/ipc";
 import { toast } from "../stores/toast";
 
 const SCROLL_LINE = 40;
@@ -142,10 +153,18 @@ export default function ChatTranscript({
     list.push(ev);
     eventMap.set(ev.message_id, list);
   }
-  const running = turn !== undefined && turn.err === null;
-  // The turn can be over while the work is not. A parent that fanned out and
-  // said it would report when the children finish has not finished saying it.
-  const waiting = running
+  // Two different questions, and conflating them is what caused both the
+  // missing stop button and the sub-agent that looked finished mid-answer.
+  //
+  // `answering` is whether this chat is still producing text. A sub-agent
+  // counts: its turn ends before its run settles, and in that gap the turn is
+  // gone while the summary is still being written, so the animation stopped and
+  // the vote row appeared over an answer that was not finished.
+  const answering = turn !== undefined && turn.err === null;
+  const running = answering || isSubAgentRunning(st, sessionId);
+  // Children still running, shown as the waiting line under a parent that has
+  // already handed out the work.
+  const waiting = answering
     ? 0
     : (st.sessions.find((s) => s.id === sessionId)?.running_agents ?? 0);
   const wasStopped = stopped[sessionId] === true && !running;
@@ -361,7 +380,13 @@ export default function ChatTranscript({
                   const idx = stepIdx++;
                   steps.push(
                     isLive
-                      ? actionStep(b, idx, true, turn?.term[idx] ?? "", turn?.termCode[idx])
+                      ? actionStep(
+                          b,
+                          idx,
+                          true,
+                          turn?.term[idx] ?? "",
+                          turn?.termCode[idx],
+                        )
                       : actionStep(b, idx, false),
                   );
                 } else if (b.tag === "terminal") {
@@ -466,7 +491,9 @@ export default function ChatTranscript({
             // only record of what was spawned and how it went, so a message
             // carrying one is kept whole — reduced to paragraphs it vanished,
             // taking the user's way back into the work with it.
-            if (blocks.some((b) => b.tag === "agent" || b.tag === "agent-done")) {
+            if (
+              blocks.some((b) => b.tag === "agent" || b.tag === "agent-done")
+            ) {
               cardParts.push(m.content);
               continue;
             }
@@ -491,18 +518,24 @@ export default function ChatTranscript({
               : last?.content;
 
           const startMs =
-            parseDbTime(prior[0]?.created_at) ?? parseDbTime(group.usr?.created_at);
+            parseDbTime(prior[0]?.created_at) ??
+            parseDbTime(group.usr?.created_at);
           const endMs = live
             ? Date.now()
             : (parseDbTime(last?.created_at) ?? null);
           const workLabel = formatWorked(startMs, endMs);
 
           return (
-            <div key={group.usr?.id ?? `g-${gi}`} className="flex flex-col gap-3">
+            <div
+              key={group.usr?.id ?? `g-${gi}`}
+              className="flex flex-col gap-3"
+            >
               {group.usr !== null && (
                 <>
                   {userLabel !== undefined && (
-                    <div className="text-xs text-text-tertiary">{userLabel}</div>
+                    <div className="text-xs text-text-tertiary">
+                      {userLabel}
+                    </div>
                   )}
                   <UserBubble
                     files={parseFiles(group.usr)}
@@ -523,7 +556,11 @@ export default function ChatTranscript({
               )}
               {showSummary ? (
                 <>
-                  <ToolActivity label={workLabel} steps={workSteps} live={false} />
+                  <ToolActivity
+                    label={workLabel}
+                    steps={workSteps}
+                    live={false}
+                  />
                   <AgentBubble
                     onOpenAgent={onOpenAgent}
                     text={summaryText}
@@ -542,8 +579,14 @@ export default function ChatTranscript({
                     onEdit={async (edited) => {
                       if (last === undefined) return;
 
-                      await learningRecordCorrection(sessionId, last.id, edited);
-                      toast.success("Correction saved — Argus will learn from it");
+                      await learningRecordCorrection(
+                        sessionId,
+                        last.id,
+                        edited,
+                      );
+                      toast.success(
+                        "Correction saved — Argus will learn from it",
+                      );
                     }}
                     onRetry={
                       readOnly || group.usr === null

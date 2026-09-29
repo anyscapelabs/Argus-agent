@@ -628,14 +628,21 @@ export function normalizeMd(
       continue;
     }
 
-    // A line with no tag end is raw for that line only. Latching a flag
-    // here suppressed markdown for the rest of the message after one stray `<`.
+    // A line whose `<` has not found its `>` yet is passed through raw, for
+    // that line only.
     //
-    // On a live turn it is not raw at all: the `<` may be the start of a tag
-    // that has not finished arriving, so the line is held and re-examined when
-    // the next chunk lands. Treating it as prose on the way past is what left
-    // a heading showing as literal `#` text whenever a command somewhere above
-    // it contained a bare `<`.
+    // It is tempting to hold the line back on a live turn until the tag
+    // closes. Do not: a `<` with a letter after it is extremely common in
+    // ordinary prose ("use <b> for bold", "the route is a -> b"), and holding
+    // cost the rest of the message every time one appeared — a model writing
+    // `a < b` early in an answer left everything after it unrendered until the
+    // turn ended, which is what made the chat look like it had stopped parsing
+    // and then fixed itself on reload.
+    //
+    // Passing the line through is safe because the whole buffer is re-read on
+    // the next delta. The line is examined again with more of the message
+    // behind it, formats correctly if the tag turns out to have closed, and
+    // costs at worst a brief flash of raw text on the one line mid-tag.
     const line = lines[k];
     const lt = line.indexOf("<");
 
@@ -644,7 +651,6 @@ export function normalizeMd(
       scanTagEnd(line, lt + 1).kind === "unterminated" &&
       isTagLike(line, lt)
     ) {
-      if (!final) break;
       out.push(line);
       k++;
       continue;

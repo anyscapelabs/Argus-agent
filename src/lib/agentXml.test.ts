@@ -208,6 +208,31 @@ describe("streaming holds back an unterminated tag", () => {
     expect(prose).toContain("<1000 lines");
   });
 
+  it("does not hide the message behind a < that never closes", () => {
+    // The worst case, and the one that made a chat look like it had stopped
+    // parsing: a `<` with a letter after it and no `>` for the rest of the
+    // reply. Only the last line of a streaming message can still grow, so a
+    // lone `<` on an earlier line is prose and must not hold anything back.
+    const msg =
+      "Compare with <h and read on.\n\n# Later heading\n\nThe closing sentence.";
+    const t = parse(msg, { final: false });
+    const text = t.map((b) => b.children.map((c) => c.value).join("")).join(" ");
+
+    expect(text).toContain("The closing sentence.");
+    expect(t.some((b) => b.tag === "h2")).toBe(true);
+  });
+
+  it("keeps every line of a live message except a mid-tag last line", () => {
+    // A tag still arriving on the final line is held; nothing before it is.
+    const msg = "# Title\n\nprose\n\n<terminal id=\"a1\" command=\"ls";
+    const t = parse(msg, { final: false });
+    const text = t.map((b) => b.children.map((c) => c.value).join("")).join(" ");
+
+    expect(text).toContain("Title");
+    expect(text).toContain("prose");
+    expect(text).not.toContain("<terminal");
+  });
+
   it("does not hang on a stray < with no partner", () => {
     const toks = tokenize("2 < 3 and never closes", { final: false });
     const prose = toks

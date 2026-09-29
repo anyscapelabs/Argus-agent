@@ -14,6 +14,7 @@ import {
   isAttrNameCharAt,
   isSpaceAt,
   isTagNameCharAt,
+  indexOfNewline,
   isTagNameStartAt,
   MAX_TAG_LEN,
   skipSpaces,
@@ -333,12 +334,15 @@ export function tokenize(buf: string, opts: TokenizeOpts = {}): Token[] {
   };
 
   /**
-   * Give up on text from `at` to the end of the buffer without emitting it.
-   * Used for a tag that is still arriving, so a half-arrived `<terminal` is
-   * held rather than shown as markup. The next call sees a longer buffer, the
-   * tag closes, and it is emitted then.
+   * Hold back a tag that is still arriving, without losing what came before it.
+   *
+   * Everything in front of `at` is complete — that is the whole reason the
+   * hold is safe — so it is emitted as text now. Only the fragment from `at`
+   * onwards is withheld; the next call sees a longer buffer, the tag closes,
+   * and it is emitted then.
    */
   const hold = (at: number) => {
+    flush(at);
     start = at;
   };
 
@@ -364,11 +368,23 @@ export function tokenize(buf: string, opts: TokenizeOpts = {}): Token[] {
 
     if (scan.kind === "unterminated") {
       // The frontier. On a finished document there is nothing more coming, so
-      // an unterminated tag is prose and belongs in the text. On a stream it is
-      // a tag whose closing `>` has not arrived yet, and showing the fragment
+      // an unterminated tag is prose and belongs in the text. On a stream it may
+      // be a tag whose closing `>` has not arrived yet, and showing the fragment
       // is what put `<terminal id="a1" command="cd ~ && ls` in the chat as
-      // literal text. Hold it; the next parse of the longer buffer releases it.
-      if (opts.final === false && isTagNameStartAt(buf, i + 1)) {
+      // literal text.
+      //
+      // Hold it only when it could still change. A tag never spans a line, so
+      // while a message is streaming every line but the last is already final
+      // and nothing in front of a newline is ever going to grow. An
+      // unterminated tag with a line break after it is prose that will stay
+      // prose, and holding it hides everything after it for good — which is
+      // what made a single `a < b` early in an answer blank the rest of the
+      // chat until the turn ended and it all came back on reload.
+      if (
+        opts.final === false &&
+        isTagNameStartAt(buf, i + 1) &&
+        indexOfNewline(buf, i, buf.length) === -1
+      ) {
         hold(i);
         return toks;
       }

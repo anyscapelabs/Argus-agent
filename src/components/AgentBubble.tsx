@@ -58,6 +58,9 @@ type Props = {
   /// finished saying it. The bubble keeps the thinking animation and drops the
   /// vote row, because these actions belong to an answer that is complete.
   waitingSubagents?: boolean;
+  /// Whether `text` is finished. False while it is still streaming, which is
+  /// the only case where an unterminated tag is held back rather than shown.
+  final?: boolean;
 };
 
 const HEADING_CLS: Record<string, string> = {
@@ -474,10 +477,16 @@ export default function AgentBubble({
   attachments,
   onOpenAgent,
   waitingSubagents,
+  final = true,
 }: Props) {
+  // `final` is false only while this text is still arriving. A tag that has
+  // not finished coming is held back until it has, rather than being rendered
+  // as raw markup — which is how a half-arrived `<terminal …>` ended up in the
+  // chat as literal text. A finished message is final, so anything
+  // unterminated in it is prose and shows as prose.
   const tree: XmlTree | null = useMemo(
-    () => (text !== undefined ? parse(text) : null),
-    [text],
+    () => (text !== undefined ? parse(text, { final }) : null),
+    [text, final],
   );
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);

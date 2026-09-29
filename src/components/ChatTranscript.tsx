@@ -325,6 +325,12 @@ export default function ChatTranscript({
             assistants.push(a);
           }
           const live = running && gi === groups.length - 1;
+          // Narrower than `live`, and deliberately so. `live` also covers a sub-agent
+          // between its turn ending and its run settling, where the text is already
+          // written and is not going to change — holding a fragment back there would
+          // hide content that will never be followed by more. Only a turn that is
+          // actually still arriving gets the streaming treatment.
+          const streaming = answering && gi === groups.length - 1;
           const sessionHasEvents = eventMap.size > 0;
           const buildWorkSteps = (
             msgs: MsgRow[],
@@ -463,9 +469,13 @@ export default function ChatTranscript({
             );
           }
 
+          // `streaming`, not `live`: a live row only exists while a turn is
+          // actually producing text. A sub-agent that is settling has no live
+          // row, and treating its last stored message as still-arriving would
+          // hold back a fragment that nothing is ever going to follow.
           const workSteps = buildWorkSteps(
             last ? [...prior, last] : prior,
-            live && last ? new Set([last.id]) : new Set<string>(),
+            streaming && last ? new Set([last.id]) : new Set<string>(),
           );
           const showSummary = !live && workSteps.length > 0;
           // The parent's turn ended when it handed the work out, so nothing in
@@ -614,6 +624,7 @@ export default function ChatTranscript({
                     onOpenAgent={onOpenAgent}
                     text={allText}
                     caret
+                    final={!streaming}
                     hideToolActivity
                     showThinking={(turn?.text ?? "").length === 0}
                     liveTerm={{

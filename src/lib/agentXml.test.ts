@@ -82,7 +82,8 @@ describe("markdown inside a prose tag", () => {
   });
 });
 
-describe("a sub-agent's card", () => {  it("survives a turn that carried one", () => {
+describe("a sub-agent's card", () => {
+  it("survives a turn that carried one", () => {
     const out = simple(
       '<agent id="a1" name="scout" state="running">go</agent>\nfound it',
     );
@@ -91,7 +92,9 @@ describe("a sub-agent's card", () => {  it("survives a turn that carried one", (
   });
 
   it("carries the report through to the next turn", () => {
-    const out = simple('<agent-done id="a1" name="scout">all clear</agent-done>');
+    const out = simple(
+      '<agent-done id="a1" name="scout">all clear</agent-done>',
+    );
 
     expect(out[0].tag).toBe("agent-done");
     expect(out[0].text).toContain("all clear");
@@ -119,8 +122,9 @@ describe("numeric entities round-trip terminal commands", () => {
     const out = parse('before\n<terminal cmd="ls\n# Heading\n**bold**');
 
     expect(out.some((b) => b.tag === "h2" || b.tag === "h3")).toBe(true);
-    expect(out.map((b) => b.children.map((c) => c.value).join("")).join(" "))
-      .toContain("<bold>bold</bold>");
+    expect(
+      out.map((b) => b.children.map((c) => c.value).join("")).join(" "),
+    ).toContain("<bold>bold</bold>");
   });
 
   it("a warning keeps inline markup for the banner to render", () => {
@@ -165,8 +169,12 @@ describe("streaming holds back an unterminated tag", () => {
     const full =
       '<terminal id="a1" command="cd ~" status="ok" duration_ms="0">exit 0</terminal>';
     const toks = tokenize(full, { final: false });
-    expect(toks.some((t) => t.kind === "open" && t.tag === "terminal")).toBe(true);
-    expect(toks.some((t) => t.kind === "close" && t.tag === "terminal")).toBe(true);
+    expect(toks.some((t) => t.kind === "open" && t.tag === "terminal")).toBe(
+      true,
+    );
+    expect(toks.some((t) => t.kind === "close" && t.tag === "terminal")).toBe(
+      true,
+    );
   });
 
   it("releases the held tag when the closing bracket arrives", () => {
@@ -176,7 +184,9 @@ describe("streaming holds back an unterminated tag", () => {
     const complete = tokenize('<terminal id="a1" command="ls">out</terminal>', {
       final: false,
     });
-    expect(complete.some((t) => t.kind === "open" && t.tag === "terminal")).toBe(true);
+    expect(
+      complete.some((t) => t.kind === "open" && t.tag === "terminal"),
+    ).toBe(true);
   });
 
   it("treats an unterminated tag as prose once the message is final", () => {
@@ -240,7 +250,9 @@ describe("ATX headings", () => {
 describe("inline formatting", () => {
   it("bolds, italics and strikes", () => {
     expect(normalizeMd("a **bold** b")).toBe("a <bold>bold</bold> b");
-    expect(normalizeMd("a ~~gone~~ b")).toBe("a <strikethrough>gone</strikethrough> b");
+    expect(normalizeMd("a ~~gone~~ b")).toBe(
+      "a <strikethrough>gone</strikethrough> b",
+    );
   });
 
   it("leaves an unclosed marker alone", () => {
@@ -248,15 +260,21 @@ describe("inline formatting", () => {
   });
 
   it("does not italicise snake_case", () => {
-    expect(normalizeMd("call snake_case_name now")).toBe("call snake_case_name now");
+    expect(normalizeMd("call snake_case_name now")).toBe(
+      "call snake_case_name now",
+    );
   });
 
   it("renders a code span literally", () => {
-    expect(normalizeMd("use `a **b** c` here")).toBe("use <code>a **b** c</code> here");
+    expect(normalizeMd("use `a **b** c` here")).toBe(
+      "use <code>a **b** c</code> here",
+    );
   });
 
   it("only links an http destination", () => {
-    expect(normalizeMd("[t](https://x.com)")).toBe('<link href="https://x.com">t</link>');
+    expect(normalizeMd("[t](https://x.com)")).toBe(
+      '<link href="https://x.com">t</link>',
+    );
     expect(normalizeMd("[t](javascript:alert(1))")).toBe("<link>t</link>");
   });
 });
@@ -273,11 +291,73 @@ describe("tables", () => {
     // Mid-stream the header row is still a paragraph; the next chunk makes it
     // a table. Rendering it early would flash a table that is not one yet.
     expect(normalizeMd("| A | B |", { final: false })).toBe("| A | B |");
-    expect(normalizeMd("| A | B |\n|---|---|", { final: false })).toContain("<table>");
+    expect(normalizeMd("| A | B |\n|---|---|", { final: false })).toContain(
+      "<table>",
+    );
   });
 
   it("keeps an escaped pipe inside a cell", () => {
     const out = normalizeMd("| A | B |\n|---|---|\n| a \\| b | 2 |");
     expect(out).toContain("<td>a | b</td>");
+  });
+});
+
+// The two shapes that were reported as broken, kept as whole messages so a
+// regression in one part of the pipeline shows up as a bad render rather than
+// as a passing unit test.
+
+const REPORT = `All folder inspection, READMEs, git metadata, and sizes are gathered — the audit is complete. Here is the report.
+
+# Code Projects Audit (read-only — nothing was moved or modified)
+
+## 1. What each folder is, and its state
+
+| Folder | What it is | Git? | Size |
+|---|---|---|---|
+| ~/ai-tutor | AI tutoring platform. Bun monorepo. | Yes — remote | 409M |
+
+The clip has from <1000 lines, from zero. The route is a -> b, and x && y.
+
+### 2. What to do next
+
+Nothing was modified. Run \`cd ~/ai-tutor\` to start.`;
+
+const rendered = (t: ReturnType<typeof parse>): string =>
+  t.map((b) => b.children.map((c) => c.value).join("")).join(" ");
+
+describe("a report like a real audit", () => {
+  it("renders headings and the table, and keeps a bare < as prose", () => {
+    const t = parse(REPORT);
+    const kinds = t.map((b) => b.tag);
+
+    expect(kinds).toContain("table");
+    expect(kinds.filter((k) => k === "h2").length).toBe(2);
+    expect(kinds).toContain("h3");
+
+    const text = rendered(t);
+    // The heading markers are markup now, not text.
+    expect(text).not.toContain("# Code Projects");
+    expect(text).not.toContain("## 1. What each");
+    // A comparison inside prose is still a comparison.
+    expect(text).toContain("<1000 lines");
+  });
+
+  it("shows no raw markdown at any point while it streams in", () => {
+    for (let n = 1; n <= REPORT.length; n += 7) {
+      const text = rendered(parse(REPORT.slice(0, n), { final: false }));
+
+      if (
+        text.includes("<table") ||
+        text.includes("<h2") ||
+        text.includes("<h3")
+      ) {
+        continue;
+      }
+
+      // A line that has not been recognised as a table or heading yet must
+      // still not read as a half-rendered one.
+      expect(/^#{1,3} /m.test(text)).toBe(false);
+      expect(text).not.toContain("|---");
+    }
   });
 });

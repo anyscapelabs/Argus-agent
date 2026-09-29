@@ -69,3 +69,26 @@ zip = "8.6.0"
 perf = "warn"
 complexity = "warn"
 suspicious = "warn"
+
+# Not a style group. The gateway hands out `Mutex<Connection>` as the
+# single-writer handle, and a guard held across an `.await` parks the lock
+# for the whole suspension — every other task that wants the database waits
+# on a thread that is itself waiting. The compiler cannot see it, so it is
+# worth naming here.
+await_holding_lock = "warn"
+
+# Release tuning. The defaults are opt-level 3 with no LTO and 16 codegen
+# units, which leaves most of the cross-crate calls in the parser, the
+# gateway and the turn loop as out-of-line calls. Fat LTO and a single codegen
+# unit is the usual recommendation for a Tauri app whose hot path is a Rust
+# core rather than a webview, and it is what makes `cargo run --release` a
+# fair number to measure against.
+#
+# `panic = "abort"` is deliberately NOT set. It would be a little faster and a
+# little smaller, and it changes behaviour on a bug that should be impossible
+# anyway — an unwind through Tauri means a panic the user can see and the app
+# can report, which is worth more than the frames.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true

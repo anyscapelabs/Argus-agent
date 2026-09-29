@@ -136,13 +136,6 @@ export function isSubAgentRunning(state: State, id: string): boolean {
   return run !== undefined && run.state === "running";
 }
 
-/** The children of `parentId` that are still running, for stopping them. */
-function runningChildren(state: State, parentId: string): AgentRun[] {
-  return Object.values(state.agentRuns).filter(
-    (r) => r.parentId === parentId && r.state === "running",
-  );
-}
-
 class SessionStore {
   private state: State = {
     sessions: [],
@@ -653,11 +646,21 @@ class SessionStore {
    * and the children keep running with no way to stop them from the composer.
    */
   async stop(sessionId: string) {
-    for (const child of runningChildren(this.state, sessionId)) {
-      try {
-        await agentKill(child.id);
-      } catch {}
-    }
+    // Ask the backend which children are running rather than reading the
+    // store. `agentRuns` is refreshed on `agent-done` and on a wake, and a
+    // parent that has just fanned out is in neither — so the cached list is
+    // exactly empty at the moment the stop button most needs it. A stop that
+    // silently killed nothing is worse than one that was never shown.
+    try {
+      const children = await agentList(sessionId);
+
+      for (const child of children) {
+        if (child.state !== "running") continue;
+        try {
+          await agentKill(child.id);
+        } catch {}
+      }
+    } catch {}
 
     try {
       await sessCancelChat(sessionId);
@@ -666,6 +669,7 @@ class SessionStore {
     this.clearTurn(sessionId);
     this.set({ stopped: { ...this.state.stopped, [sessionId]: true } });
     await this.loadAgents(sessionId);
+    await this.loadSessions();
     await this.loadMsgs(sessionId);
   }
 

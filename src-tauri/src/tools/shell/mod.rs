@@ -30,7 +30,7 @@ pub const DEFAULT_OUT_CAP: usize = 8 * 1024 * 1024;
 
 pub fn needs_elevation(cmd: &str) -> bool {
     matches!(
-        cmd.trim_start().split_whitespace().next().unwrap_or(""),
+        cmd.split_whitespace().next().unwrap_or(""),
         "sudo" | "su" | "doas"
     )
 }
@@ -338,9 +338,9 @@ impl Child {
             Self::Async(c) => {
                 tokio::select! {
                     res = c.wait() => {
-                        return WaitOut::Done(res.map(|st| st.code().map_or(-1, |n| n as i64)).unwrap_or(-1));
+                        WaitOut::Done(res.map(|st| st.code().map_or(-1, |n| n as i64)).unwrap_or(-1))
                     }
-                    _ = &mut cancel => return WaitOut::Cancelled,
+                    _ = &mut cancel => WaitOut::Cancelled,
                 }
             }
             #[cfg(target_os = "windows")]

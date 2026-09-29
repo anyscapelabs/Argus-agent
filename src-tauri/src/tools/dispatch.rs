@@ -233,12 +233,12 @@ pub async fn exec<R: tauri::Runtime>(
                 ),
             );
 
-            return Ok(format!(
+            Ok(format!(
                 "sub-agent {} is running as \"{}\". Do not wait for it and do not \
                  start the same work again. Its card is in this chat; its answer \
                  arrives here when it finishes.",
                 run.id, run.name
-            ));
+            ))
         }
         "agent.list" => {
             let sid = notepad::current_session().ok_or("no conversation to list sub-agents of")?;

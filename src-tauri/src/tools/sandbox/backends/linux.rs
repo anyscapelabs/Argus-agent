@@ -96,7 +96,7 @@ fn syscall_number(name: &str) -> Option<i64> {
         _ => return None,
     };
 
-    Some(n as i64)
+    Some(n)
 }
 
 #[cfg(target_os = "linux")]

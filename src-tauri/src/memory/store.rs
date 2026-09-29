@@ -524,7 +524,7 @@ fn hits_to_past(
 
     order
         .into_iter()
-        .filter_map(|sid| {
+        .map(|sid| {
             let title: String = conn
                 .query_row(
                     "SELECT title FROM sessions WHERE id = ?1",
@@ -542,13 +542,13 @@ fn hits_to_past(
 
             let score = scores.get(&sid).copied().unwrap_or(0.0);
             let snippets = by_sid.remove(&sid).unwrap_or_default();
-            Some(PastSession {
+            PastSession {
                 session_id: sid,
                 title,
                 updated_at,
                 score,
                 snippets,
-            })
+            }
         })
         .collect()
 }

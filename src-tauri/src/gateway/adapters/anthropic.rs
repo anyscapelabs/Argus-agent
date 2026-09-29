@@ -191,20 +191,18 @@ pub async fn stream(
                 };
 
                 match v["type"].as_str() {
-                    Some("content_block_start") => {
-                        if v["content_block"]["type"] == "tool_use" {
-                            acc.push((
-                                v["content_block"]["id"]
-                                    .as_str()
-                                    .unwrap_or_default()
-                                    .to_string(),
-                                v["content_block"]["name"]
-                                    .as_str()
-                                    .unwrap_or_default()
-                                    .to_string(),
-                                String::new(),
-                            ));
-                        }
+                    Some("content_block_start") if v["content_block"]["type"] == "tool_use" => {
+                        acc.push((
+                            v["content_block"]["id"]
+                                .as_str()
+                                .unwrap_or_default()
+                                .to_string(),
+                            v["content_block"]["name"]
+                                .as_str()
+                                .unwrap_or_default()
+                                .to_string(),
+                            String::new(),
+                        ));
                     }
                     Some("content_block_delta") => {
                         if v["delta"]["type"] == "input_json_delta" {

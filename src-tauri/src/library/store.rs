@@ -350,7 +350,7 @@ pub fn preview(
     id: &str,
     max_chars: usize,
 ) -> Result<LibPreview, String> {
-    let item = get(conn, dir, &id)?;
+    let item = get(conn, dir, id)?;
     let text = fs::read(abs_path(dir, &item.path))
         .ok()
         .and_then(|b| super::extract::text(&b, &item.ext));

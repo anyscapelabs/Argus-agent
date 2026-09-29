@@ -52,6 +52,12 @@ pub struct Turn {
     pub turn_actions: Vec<(String, bool)>,
 }
 
+impl Default for Turn {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Turn {
     pub fn new() -> Self {
         Self {
@@ -596,7 +602,7 @@ impl Turn {
                             gw,
                             &exec.tool,
                             &exec.args,
-                            &perm,
+                            perm,
                             web,
                             allow,
                             sink.term_chan().map(|c| (c, idx as u32)),
@@ -772,7 +778,7 @@ impl Turn {
                         crate::tools::sandbox::Profile::Restricted.as_str(),
                         &crate::tools::sandbox::origin_label(
                             self.turn_origin.as_ref(),
-                            &allow_hosts,
+                            allow_hosts,
                         ),
                         status,
                         &body,

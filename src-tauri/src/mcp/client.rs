@@ -115,20 +115,15 @@ impl Client {
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
 
-            loop {
-                match lines.next_line().await {
-                    Ok(Some(line)) => {
-                        let mut g = t2.lock().unwrap_or_else(|p| p.into_inner());
-                        g.push_str(&line);
-                        g.push('\n');
-                        let len = g.len();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let mut g = t2.lock().unwrap_or_else(|p| p.into_inner());
+                g.push_str(&line);
+                g.push('\n');
+                let len = g.len();
 
-                        if len > ERR_TAIL {
-                            let cut = len - ERR_TAIL;
-                            *g = g.split_off(cut);
-                        }
-                    }
-                    _ => break,
+                if len > ERR_TAIL {
+                    let cut = len - ERR_TAIL;
+                    *g = g.split_off(cut);
                 }
             }
         });

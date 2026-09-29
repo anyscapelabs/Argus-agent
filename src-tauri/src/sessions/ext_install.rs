@@ -139,20 +139,15 @@ fn chrome_running() -> bool {
 }
 
 fn chrome_bin() -> Option<&'static str> {
-    for bin in ["google-chrome", "chromium"] {
-        if std::process::Command::new(bin)
+    ["google-chrome", "chromium"].into_iter().find(|bin| {
+        std::process::Command::new(bin)
             .arg("--version")
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
             .map(|s| s.success())
             .unwrap_or(false)
-        {
-            return Some(bin);
-        }
-    }
-
-    None
+    })
 }
 
 fn launch_chrome(ext_dir: &Path) {

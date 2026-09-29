@@ -375,9 +375,7 @@ pub async fn send<R: tauri::Runtime>(
             .unwrap_or(false)
     };
 
-    if needs {
-        if compressor::compact(gw, session_id).await.is_err() {}
-    }
+    if needs && compressor::compact(gw, session_id).await.is_err() {}
 
     let untitled = {
         let conn = gw.conn.lock().map_err(|err| err.to_string())?;
@@ -408,10 +406,7 @@ pub async fn send<R: tauri::Runtime>(
 
         tauri::async_runtime::spawn(async move {
             let gw = app.state::<Gateway>();
-            if reflect::generate_title(gw.inner(), &sid, &user_text)
-                .await
-                .is_err()
-            {}
+            let _ = reflect::generate_title(gw.inner(), &sid, &user_text).await;
             let _ = app.emit("sessions-changed", ());
         });
     }

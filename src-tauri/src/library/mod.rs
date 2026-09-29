@@ -3,7 +3,7 @@ pub mod extract;
 pub mod schema;
 pub mod store;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tauri::State;
 
@@ -132,6 +132,6 @@ pub fn library_create_doc(
     Ok(item)
 }
 
-pub fn default_dir(app_data: &PathBuf) -> PathBuf {
+pub fn default_dir(app_data: &Path) -> PathBuf {
     app_data.join("library")
 }

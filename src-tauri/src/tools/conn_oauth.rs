@@ -256,7 +256,7 @@ fn rows(args: &Value, key: &str) -> Result<Value, String> {
     Ok(v)
 }
 
-fn gcal_id<'a>(args: &'a Value) -> &'a str {
+fn gcal_id(args: &Value) -> &str {
     let id = opt(args, "calendar_id");
 
     if id.trim().is_empty() {

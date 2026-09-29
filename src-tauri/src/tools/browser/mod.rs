@@ -4,7 +4,7 @@ pub mod guard;
 pub use guard::*;
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Mutex, OnceLock,
@@ -328,7 +328,7 @@ pub(crate) async fn note_shown(args: &Value, gen: u64) {
     }
 }
 
-async fn launch(root: &PathBuf, name: &str) -> Result<Sess, String> {
+async fn launch(root: &Path, name: &str) -> Result<Sess, String> {
     let dir = root.join(sanitize(name));
     std::fs::create_dir_all(&dir).map_err(|err| format!("profile dir failed: {err}"))?;
 
@@ -392,7 +392,7 @@ async fn sess(name: &str) -> Result<tokio::sync::MutexGuard<'static, SessMap>, S
         let mut map = pool().sess.lock().await;
         // Another task may have launched while we did; keep the live one and
         // drop the spare (dropping its Browser closes it).
-        if !map.get(name).is_some_and(|e| e.last_used.elapsed() < IDLE) {
+        if map.get(name).is_none_or(|e| e.last_used.elapsed() >= IDLE) {
             map.remove(name);
             map.insert(name.into(), s);
         }

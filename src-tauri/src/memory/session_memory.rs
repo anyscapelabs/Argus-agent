@@ -130,10 +130,10 @@ fn distances(graph: &DiGraph<String, ()>, seeds: &[NodeIndex]) -> HashMap<NodeIn
             .neighbors_directed(n, petgraph::Direction::Outgoing)
             .chain(graph.neighbors_directed(n, petgraph::Direction::Incoming))
         {
-            if !dist.contains_key(&m) {
-                dist.insert(m, d + 1);
+            dist.entry(m).or_insert_with_key(|&m| {
                 queue.push_back(m);
-            }
+                d + 1
+            });
         }
     }
     dist
@@ -352,13 +352,9 @@ pub fn session_memory_from_turn(
     } else {
         format!("tools: {}", seen.join(", "))
     };
-    let importance = if !ok {
-        1
-    } else if seen.is_empty() {
-        1
-    } else {
-        2
-    };
+    // A turn that did nothing, or failed, is a footnote. Only a successful
+    // turn that used tools earns importance.
+    let importance = if ok && !seen.is_empty() { 2 } else { 1 };
     NewSessionMemory {
         session_id: String::new(),
         task,

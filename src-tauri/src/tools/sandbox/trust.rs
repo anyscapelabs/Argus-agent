@@ -121,7 +121,7 @@ pub fn origin_of_tool(tool: &str, args_json: &str) -> Option<Origin> {
 
         if cmd.split_whitespace().any(|w| w == "clone")
             && cmd.contains("git")
-            && first_url(&cmd) != ""
+            && !first_url(&cmd).is_empty()
         {
             return Some(Origin::GitClone(first_url(&cmd)));
         }

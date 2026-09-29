@@ -476,9 +476,8 @@ pub fn normalize_actions(raw: &str) -> String {
             // that body is the answer, and dropping the tail with the tag is
             // how a whole reply used to disappear. With no `>` there is nothing
             // to tell the tag from the text after it, so nothing is kept.
-            match tag_end(tail) {
-                Some(i) => out.push_str(&tail[i + 1..]),
-                None => {}
+            if let Some(i) = tag_end(tail) {
+                out.push_str(&tail[i + 1..]);
             }
 
             return strip_protocol(&out);

@@ -194,7 +194,7 @@ fn delete_row(conn: &Connection, name: &str) -> Result<(), String> {
 pub fn sync(conn: &Connection, dir: &Path) -> Result<usize, String> {
     let mut seen: HashSet<String> = HashSet::new();
 
-    if let Err(_) = fs::create_dir_all(dir) {
+    if fs::create_dir_all(dir).is_err() {
         return Ok(0);
     }
 
@@ -210,12 +210,7 @@ pub fn sync(conn: &Connection, dir: &Path) -> Result<usize, String> {
         };
 
         if path.is_dir() {
-            if !skill_md(
-                &dir,
-                path.file_name().and_then(|x| x.to_str()).unwrap_or(""),
-            )
-            .exists()
-            {
+            if !skill_md(dir, path.file_name().and_then(|x| x.to_str()).unwrap_or("")).exists() {
                 continue;
             }
 

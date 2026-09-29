@@ -298,7 +298,7 @@ fn odf(bytes: &[u8]) -> Option<String> {
     let xml = entry(bytes, "content.xml")?;
     let text = tags(&xml, "text:p");
 
-    (!text.trim().is_empty()).then(|| text)
+    (!text.trim().is_empty()).then_some(text)
 }
 
 fn pdf(bytes: &[u8]) -> Option<String> {

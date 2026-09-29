@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex as StdMutex, OnceLock};
 use std::time::Duration;
@@ -35,7 +35,7 @@ pub fn connected() -> bool {
     g.as_ref().map(|t| !t.is_closed()).unwrap_or(false)
 }
 
-fn socket_path(dir: &PathBuf) -> PathBuf {
+fn socket_path(dir: &Path) -> PathBuf {
     dir.join("native.sock")
 }
 
@@ -44,7 +44,7 @@ pub fn start_listener(data_dir: PathBuf) {
     let _ = std::fs::remove_file(&path);
 
     if let Some(dir) = path.parent() {
-        let _ = std::fs::set_permissions(&dir, std::os::unix::fs::PermissionsExt::from_mode(0o700));
+        let _ = std::fs::set_permissions(dir, std::os::unix::fs::PermissionsExt::from_mode(0o700));
     }
 
     tauri::async_runtime::spawn(async move {

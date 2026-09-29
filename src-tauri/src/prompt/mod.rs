@@ -293,7 +293,7 @@ pub fn project(
         .ok();
 
     let mut system = stable.clone();
-    if let Ok(learned) = crate::learning::prompt_context(&conn) {
+    if let Ok(learned) = crate::learning::prompt_context(conn) {
         if !learned.trim().is_empty() {
             system.push_str("\n\n");
             system.push_str(&learned);
@@ -330,7 +330,7 @@ pub fn project(
     // playbook is advice for whoever has been here before; a child has not,
     // and handing it the parent's lessons spends its window on a history it
     // was not present for.
-    if let Ok(playbook) = crate::playbook::prompt_context(&conn, model_id.as_deref()) {
+    if let Ok(playbook) = crate::playbook::prompt_context(conn, model_id.as_deref()) {
         if !child && !playbook.trim().is_empty() {
             system.push_str("\n\n");
             system.push_str(&playbook);
@@ -393,16 +393,17 @@ pub fn project(
     })
 }
 
-fn to_wire(
-    rows: &[(
-        String,
-        String,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-    )],
-    resolve: &dyn Fn(&Attachment) -> Option<String>,
-) -> Vec<WireMsg> {
+/// One message row as the database hands it over: role, content, tool calls,
+/// tool call id, attachments.
+type WireRow = (
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
+fn to_wire(rows: &[WireRow], resolve: &dyn Fn(&Attachment) -> Option<String>) -> Vec<WireMsg> {
     rows.iter()
         .map(|(role, content, calls, call_id, att)| {
             let calls = calls

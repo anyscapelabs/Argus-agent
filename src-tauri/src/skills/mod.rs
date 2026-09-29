@@ -1,7 +1,7 @@
 pub mod schema;
 pub mod store;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tauri::State;
 
@@ -74,6 +74,6 @@ pub fn skill_read_file(
     store::read_file(&gw.skills_dir, &name, &file)
 }
 
-pub fn default_dir(app_data: &PathBuf) -> PathBuf {
+pub fn default_dir(app_data: &Path) -> PathBuf {
     app_data.join("skills")
 }

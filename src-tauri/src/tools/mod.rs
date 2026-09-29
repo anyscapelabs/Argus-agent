@@ -191,6 +191,28 @@ pub struct Action {
     pub end: usize,
 }
 
+// A text-channel call with `{}` is only breakage when the tool takes
+// arguments. Several tools document `{}` as their whole invocation —
+// browser.read, browser.close — so the empty-args guard asks the catalog
+// instead of rejecting them all.
+pub(crate) fn takes_no_args(name: &str) -> bool {
+    TOOLS
+        .iter()
+        .chain(WEB_TOOLS.iter())
+        .chain(browser::META.iter())
+        .chain(notepad::META.iter())
+        .chain(profile::META.iter())
+        .chain(fs::read::META.iter())
+        .chain(library::META.iter())
+        .chain(connector::META.iter())
+        .chain(conn_oauth::META.iter())
+        .filter(|t| t.name == name)
+        .any(|t| {
+            serde_json::from_str::<serde_json::Map<String, Value>>(t.args)
+                .is_ok_and(|m| m.is_empty())
+        })
+}
+
 // How a model speaks tools. One mechanism for all models; only this differs.
 // Native models call through the API and any text syntax is discarded.
 // GlmXml models were fine-tuned on an XML template that contradicts the API

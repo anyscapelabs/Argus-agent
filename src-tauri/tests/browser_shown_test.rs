@@ -11,13 +11,18 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
+use tauri::Manager;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 static SERIAL: OnceLock<StdMutex<()>> = OnceLock::new();
 static SANDBOX: OnceLock<PathBuf> = OnceLock::new();
 
 fn serial() -> std::sync::MutexGuard<'static, ()> {
-    SERIAL.get_or_init(|| StdMutex::new(())).lock().unwrap()
+    // The guard only enforces order; a previous failure must not mask the next test.
+    SERIAL
+        .get_or_init(|| StdMutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn sandbox() -> PathBuf {
@@ -162,7 +167,6 @@ async fn start_mock_llm(
 }
 
 struct Harness {
-    gw: argus_lib::gateway::Gateway,
     tmp: PathBuf,
     session_id: String,
     llm_requests: Arc<StdMutex<Vec<serde_json::Value>>>,
@@ -217,8 +221,10 @@ async fn setup(
         &ModelEntry {
             id: model.into(),
             display_name: "Mock Test".into(),
-            family: None,
-            capabilities: None,
+            family: Some("glm".into()),
+            // The mock emits legacy GLM text actions, so register the template dialect.
+            // Unknown capabilities default to Native, whose text calls are discarded.
+            capabilities: Some(r#"{"tool_call_style":"glm-xml"}"#.into()),
             suggested_tier: None,
         },
     )
@@ -266,10 +272,12 @@ async fn setup(
         .id
     };
     let app = tauri::test::mock_app();
+    // Completion tasks reach Gateway through the app handle, so manage the
+    // same instance instead of keeping a second copy beside the harness.
+    app.manage(gw);
     let handle = app.handle().clone();
     let chan = tauri::ipc::Channel::new(move |_| Ok(()));
     Harness {
-        gw,
         tmp,
         session_id,
         llm_requests,
@@ -281,8 +289,9 @@ async fn setup(
 
 impl Harness {
     async fn send(&self, user_text: &str) -> Result<(), String> {
+        let gw = self.handle.state::<argus_lib::gateway::Gateway>();
         argus_lib::sessions::chat::send(
-            &self.gw,
+            gw.inner(),
             &self.handle,
             &self.session_id,
             user_text,
@@ -294,7 +303,8 @@ impl Harness {
     }
 
     fn msgs(&self) -> Vec<argus_lib::sessions::schema::Msg> {
-        let conn = self.gw.conn.lock().unwrap();
+        let gw = self.handle.state::<argus_lib::gateway::Gateway>();
+        let conn = gw.conn.lock().unwrap();
         argus_lib::sessions::store::list_msgs(&conn, &self.session_id).unwrap()
     }
 

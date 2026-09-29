@@ -67,8 +67,9 @@ pub fn build_executions_styled(
         // An empty object from the text channel is breakage, not a call: no
         // provider validated it, and running it only mints `arguments: "{}"`
         // history the model then imitates. Fail loudly so the model re-sends
-        // with arguments instead of executing nothing.
-        if args_is_empty_object(&a.args) {
+        // with arguments instead of executing nothing. Zero-arg tools are the
+        // exception: `{}` is their documented invocation.
+        if args_is_empty_object(&a.args) && !super::takes_no_args(&a.tool) {
             let mut e = ToolExecution::from_action(&a, idx);
             idx += 1;
             e.fail(format!(

@@ -63,6 +63,18 @@ fn normalized_calls_leave_no_wrapper_debris() {
     assert!(!out.contains("tool_call"), "{out}");
 }
 
+// Zero-arg tools document `{}` as their invocation, so the text channel must
+// run them. `browser.read` takes no arguments; rejecting it would silently
+// drop every same-turn read.
+#[test]
+fn empty_text_args_run_for_zero_arg_tools() {
+    let execs = build_executions(r#"<action tool="browser.read">{}</action>"#, &[], 0);
+
+    assert_eq!(execs.len(), 1);
+    assert_eq!(execs[0].tool, "browser.read");
+    assert_eq!(execs[0].status, ToolStatus::Created);
+}
+
 // History handed to the model carries no executable markup.
 #[test]
 fn history_text_carries_no_actions() {

@@ -107,7 +107,7 @@ fn origin_of_tool_spots_untrusted_sources() {
 fn record_block_escapes_and_labels() {
     let blk = record_block("echo <hi>", "restricted", "web fetch", "ok", "out & done");
     assert!(blk.contains("<sandbox"));
-    assert!(blk.contains("command=\"echo &lt;hi>\""));
+    assert!(blk.contains("command=\"echo &lt;hi&gt;\""));
     assert!(blk.contains("profile=\"restricted\""));
     assert!(blk.contains("origin=\"web fetch\""));
     assert!(blk.contains("out &amp; done"));

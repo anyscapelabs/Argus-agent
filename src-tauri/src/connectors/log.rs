@@ -13,24 +13,7 @@ CREATE INDEX IF NOT EXISTS idx_connector_logs_service ON connector_logs(service)
 const KEEP: i64 = 1000;
 
 fn redact(s: &str) -> String {
-    let mut out = s.to_string();
-
-    for mark in ["?key=", "&key=", "?token=", "&token=", "client_secret="] {
-        let mut from = 0;
-
-        while let Some(i) = out[from..].find(mark) {
-            let start = from + i + mark.len();
-            let end = out[start..]
-                .find(['&', ' ', '"', '\''])
-                .map(|e| start + e)
-                .unwrap_or(out.len());
-
-            out.replace_range(start..end, "..redacted..");
-            from = start + 12;
-        }
-    }
-
-    out
+    crate::tools::redact_secrets(s)
 }
 
 fn db() -> Option<Connection> {

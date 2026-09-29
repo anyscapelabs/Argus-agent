@@ -213,6 +213,36 @@ pub(crate) fn takes_no_args(name: &str) -> bool {
         })
 }
 
+// One redaction for every secret shape. The browser guard knew token patterns
+// (`sk-`, `ghp_`, …) and the connector log knew parameter names (`?key=`,
+// `client_secret=`); a credential matching only one list passed the other.
+// Both passes run here so no caller can pick the wrong half.
+pub fn redact_secrets(s: &str) -> String {
+    let patterned = match browser::guard::secret_re() {
+        Some(re) => re.replace_all(s, "[redacted]").into_owned(),
+        None => s.to_string(),
+    };
+
+    let mut out = patterned;
+
+    for mark in ["?key=", "&key=", "?token=", "&token=", "client_secret="] {
+        let mut from = 0;
+
+        while let Some(i) = out[from..].find(mark) {
+            let start = from + i + mark.len();
+            let end = out[start..]
+                .find(['&', ' ', '"', '\''])
+                .map(|e| start + e)
+                .unwrap_or(out.len());
+
+            out.replace_range(start..end, "..redacted..");
+            from = start + 12;
+        }
+    }
+
+    out
+}
+
 // How a model speaks tools. One mechanism for all models; only this differs.
 // Native models call through the API and any text syntax is discarded.
 // GlmXml models were fine-tuned on an XML template that contradicts the API

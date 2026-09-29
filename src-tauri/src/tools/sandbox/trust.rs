@@ -130,12 +130,6 @@ pub fn origin_of_tool(tool: &str, args_json: &str) -> Option<Origin> {
     None
 }
 
-fn esc_attr(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('"', "&quot;")
-        .replace('<', "&lt;")
-}
-
 pub fn origin_label(origin: Option<&Origin>, allow_hosts: &[String]) -> String {
     match origin {
         Some(o) => badge(o, allow_hosts).origin,
@@ -146,12 +140,15 @@ pub fn origin_label(origin: Option<&Origin>, allow_hosts: &[String]) -> String {
 pub fn record_block(command: &str, profile: &str, origin: &str, status: &str, out: &str) -> String {
     let body = out.replace('&', "&amp;").replace('<', "&lt;");
 
+    // One escaper for every attribute value: the sandbox copy omitted `>`
+    // and newlines, so a value could break out of its quotes.
+    let esc = crate::sessions::blocks::esc_attr;
     format!(
         "<sandbox command=\"{}\" profile=\"{}\" origin=\"{}\" status=\"{}\">{}</sandbox>",
-        esc_attr(command),
-        esc_attr(profile),
-        esc_attr(origin),
-        esc_attr(status),
+        esc(command),
+        esc(profile),
+        esc(origin),
+        esc(status),
         body.trim()
     )
 }

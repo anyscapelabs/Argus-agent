@@ -16,7 +16,7 @@ const LABEL_PAT: &str = "sign in|sign-in|signin|log in|log-in|login|checkout|pay
 
 const SECRET_PAT: &str = r"sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{12,}|xox[bap]-[A-Za-z0-9-]{10,}|Bearer\s+[A-Za-z0-9._-]{16,}|[a-f0-9]{32,}";
 
-fn secret_re() -> Option<regex::Regex> {
+pub(crate) fn secret_re() -> Option<regex::Regex> {
     static RE: OnceLock<Option<regex::Regex>> = OnceLock::new();
     // Literal pattern: a compile failure here is a code bug, cached once.
     RE.get_or_init(|| regex::Regex::new(SECRET_PAT).ok())
@@ -37,10 +37,7 @@ pub fn url_guard(url: &str) -> Result<(), String> {
 }
 
 pub fn redact(s: &str) -> String {
-    match secret_re() {
-        Some(re) => re.replace_all(s, "[redacted]").into_owned(),
-        None => s.into(),
-    }
+    super::super::redact_secrets(s)
 }
 
 pub fn sensitive_note(url: &str, out: String) -> String {

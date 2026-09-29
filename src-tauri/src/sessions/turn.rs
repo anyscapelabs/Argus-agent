@@ -182,6 +182,46 @@ impl Turn {
         style
     }
 
+    /// Note the two things worth remembering about a step. Both are recorded
+    /// where the classification happens, so a lesson exists for the same turn
+    /// that caused it.
+    ///
+    /// A turn that wrote its tool call as XML text has told us which dialect it
+    /// speaks. A degraded turn means the provider refused the tool schemas — the
+    /// turn still worked via the in-band format, so that is infrastructure, not
+    /// a model failure, and is recorded against the host.
+    fn record_observations(
+        &self,
+        gw: &Gateway,
+        session_id: &str,
+        style: ToolCallStyle,
+        stats: &router::StreamStats,
+    ) {
+        if style == ToolCallStyle::GlmXml && !stats.degraded {
+            if let Ok(conn) = gw.conn.lock() {
+                let _ = crate::playbook::store::record(
+                    &conn,
+                    crate::playbook::Kind::StyleXml,
+                    &stats.model_id,
+                    Some(session_id),
+                    "wrote a tool call as XML text",
+                );
+            }
+        }
+
+        if stats.degraded {
+            if let Ok(conn) = gw.conn.lock() {
+                let _ = crate::playbook::store::record(
+                    &conn,
+                    crate::playbook::Kind::Degraded,
+                    &crate::sessions::ext_install::host_id(),
+                    Some(session_id),
+                    &stats.provider_id,
+                );
+            }
+        }
+    }
+
     /// Run the loop to completion. `perm`, `web`, `allow_hosts`, and
     /// `turn_budget` are fixed for the whole turn, so they arrive as
     /// parameters; everything the loop itself changes is on `self`.
@@ -263,34 +303,7 @@ impl Turn {
                 serde_json::to_string(&stats.tool_calls).ok()
             };
 
-            // The turn told us it speaks the XML dialect by writing it. That is a
-            // fact about the model, recorded where the classification happens, so
-            // a lesson exists for the same turn that caused it.
-            if style == ToolCallStyle::GlmXml && !stats.degraded {
-                if let Ok(conn) = gw.conn.lock() {
-                    let _ = crate::playbook::store::record(
-                        &conn,
-                        crate::playbook::Kind::StyleXml,
-                        &stats.model_id,
-                        Some(session_id),
-                        "wrote a tool call as XML text",
-                    );
-                }
-            }
-
-            // The provider refused the tool schemas. The turn still worked, via
-            // the in-band format, so this is infrastructure, not a model failure.
-            if stats.degraded {
-                if let Ok(conn) = gw.conn.lock() {
-                    let _ = crate::playbook::store::record(
-                        &conn,
-                        crate::playbook::Kind::Degraded,
-                        &crate::sessions::ext_install::host_id(),
-                        Some(session_id),
-                        &stats.provider_id,
-                    );
-                }
-            }
+            self.record_observations(gw, session_id, style, &stats);
 
             let model_id = stats.model_id.clone();
             let (asst, said_again) = {

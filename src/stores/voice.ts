@@ -1,19 +1,23 @@
 import { create } from "zustand";
 
-import { voiceCancel, voiceStatus, voiceTranscribe } from "../lib/ipc";
+import { voiceCancel, voiceTranscribe } from "../lib/ipc";
 import { encodeWav, MAX_SECS, Recorder, TARGET_RATE } from "../lib/recorder";
+import { toast } from "./toast";
 
-type Phase = "idle" | "listening" | "working" | "error";
+type Phase = "idle" | "listening" | "working";
+
+// Three phases and no error phase: the model ships in the installer, so the
+// mic either records or it does not, and there is nothing to report in the
+// box. Both failure sentences — a device the OS refused, a clip that held no
+// words — go to a toast, where the rest of the app says them.
 
 type VoiceState = {
   phase: Phase;
   level: number;
   elapsed: number;
-  err: string | null;
   start: () => Promise<void>;
   stop: () => Promise<string | null>;
   cancel: () => void;
-  reset: () => void;
 };
 
 // Held outside the store because they are resources, not state: a React render
@@ -46,36 +50,15 @@ function micWhy(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-async function ensureModel(): Promise<void> {
-  const status = await voiceStatus();
-
-  if (status.installed) {
-    return;
-  }
-
-  throw new Error("The voice model is missing. Reinstall Argus, or pick another in Settings.");
-}
-
 export const useVoice = create<VoiceState>()((set, get) => ({
   phase: "idle",
   level: 0,
   elapsed: 0,
-  err: null,
 
   start: async () => {
     if (get().phase !== "idle") return;
 
-    set({ err: null, level: 0, elapsed: 0 });
-
-    // The model shipped inside the app, so there is nothing to fetch here and
-    // nothing to wait for. This only fires if the install is broken, and it
-    // fails closed rather than starting a download nobody asked for.
-    try {
-      await ensureModel();
-    } catch (e) {
-      set({ phase: "error", err: e instanceof Error ? e.message : String(e) });
-      return;
-    }
+    set({ level: 0, elapsed: 0 });
 
     const rec = new Recorder();
 
@@ -83,7 +66,7 @@ export const useVoice = create<VoiceState>()((set, get) => ({
       await rec.start((level) => set({ level }));
     } catch (e) {
       rec.cancel();
-      set({ phase: "error", err: micWhy(e) });
+      toast.error(micWhy(e));
       return;
     }
 
@@ -127,7 +110,8 @@ export const useVoice = create<VoiceState>()((set, get) => ({
       set({ phase: "idle" });
       return text.trim().length > 0 ? text : null;
     } catch (e) {
-      set({ phase: "error", err: e instanceof Error ? e.message : String(e) });
+      set({ phase: "idle" });
+      toast.error(e instanceof Error ? e.message : String(e));
       return null;
     }
   },
@@ -142,6 +126,4 @@ export const useVoice = create<VoiceState>()((set, get) => ({
     void voiceCancel();
     set({ phase: "idle", level: 0, elapsed: 0 });
   },
-
-  reset: () => set({ phase: "idle", err: null }),
 }));

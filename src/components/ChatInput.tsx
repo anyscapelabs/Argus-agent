@@ -317,12 +317,6 @@ export default function ChatInput({
         )}
       </div>
 
-      {voice.err !== null && (
-        <p role="status" className="mt-1 text-xs text-text-secondary">
-          {voice.err}
-        </p>
-      )}
-
       <div className="mt-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Dropdown
@@ -428,7 +422,6 @@ export default function ChatInput({
                 return;
               }
 
-              voice.reset();
               await voice.start();
             }}
             className={

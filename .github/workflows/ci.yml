@@ -1,0 +1,110 @@
+# Lint and test on every push and pull request.
+#
+# The gate is deliberately the same set of commands the repo documents in
+# `docs/developer-guide/contributing.md`, so a green run here means the same
+# thing as a green run on your machine. `-D warnings` on clippy is not
+# decoration: `.claude/rules/rust.md` makes zero warnings the invariant, and a
+# warning nobody sees is a warning nobody fixes.
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# A new push to the same branch makes the in-flight run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: lint, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Tauri links webkit2gtk on Linux, so `cargo check` alone needs these.
+      # Without them the first build step fails with a linker error that looks
+      # nothing like a missing system package.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            patchelf \
+            pkg-config \
+            xdg-utils
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Cache frontend dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      # The version is declared in four files and a stale one produces a
+      # release whose tag disagrees with its binary. Cheap to check, and the
+      # failure it prevents is a bad download nobody notices until later.
+      - name: Check the version is consistent
+        run: |
+          set -euo pipefail
+          pkg=$(node -p "require('./package.json').version")
+          tauri=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          cargo=$(sed -n 's/^version = "\(.*\)"$/\1/p' src-tauri/Cargo.toml | head -1)
+          echo "package.json=$pkg tauri.conf.json=$tauri Cargo.toml=$cargo"
+          test "$pkg" = "$tauri" || { echo "::error::version mismatch: tauri.conf.json is $tauri, package.json is $pkg"; exit 1; }
+          test "$pkg" = "$cargo" || { echo "::error::version mismatch: Cargo.toml is $cargo, package.json is $pkg"; exit 1; }
+          # Shields.io escapes a dash as a double dash inside a badge label, so
+          # `0.2.0-alpha.1` renders as `0.2.0--alpha.1`.
+          badge=${pkg//-/--}
+          grep -q "version-$badge" README.md || { echo "::error::README badge is stale: expected version-$badge"; exit 1; }
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+
+      # `--no-fail-fast` so one broken binary does not hide the other 71.
+      # `browser_shown_test::profile_isolation_for_shown_watermark` polls a
+      # process-global for 5s and is load-sensitive; on a busy runner it is the
+      # first thing to fail, and it passes in isolation. If it goes red here,
+      # re-run before believing it.
+      - name: Test the backend
+        run: cargo test --manifest-path src-tauri/Cargo.toml --no-fail-fast
+
+      - name: Typecheck the frontend
+        run: npx tsc --noEmit
+
+      - name: Test the frontend
+        run: bun test
+
+      - name: Build the frontend
+        run: bun run build

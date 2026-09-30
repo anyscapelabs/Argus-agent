@@ -248,7 +248,15 @@ pub fn run() {
             mcp::outlook::outlook_disconnect,
             mcp::spotify::spotify_status,
             mcp::spotify::spotify_connect_url,
-            mcp::spotify::spotify_disconnect
+            mcp::spotify::spotify_disconnect,
+            voice::voice_config,
+            voice::voice_set_config,
+            voice::voice_models,
+            voice::voice_status,
+            voice::voice_download_model,
+            voice::voice_delete_model,
+            voice::voice_transcribe,
+            voice::voice_cancel
         ])
         .run(tauri::generate_context!());
 }

@@ -75,27 +75,42 @@ pub enum Verdict {
     Empty,
 }
 
-/// Run every gate. Order matters: the cheap size checks come first so a runaway
-/// clip never reaches the expensive ones.
+/// Run every gate. `precheck` first, then the decode, then `postcheck` — the
+/// two halves are split so a runaway clip is refused before it costs a model
+/// load and a decode.
 pub fn check(samples: &[i16], text: &str) -> Verdict {
+    if let Some(v) = precheck(samples) {
+        return v;
+    }
+
+    postcheck(text).unwrap_or(Verdict::Keep)
+}
+
+/// The gates that only need the audio. Cheap enough to run first.
+pub fn precheck(samples: &[i16]) -> Option<Verdict> {
     if wav::duration_ms(samples) > MAX_SECS * 1000 {
-        return Verdict::TooLong;
+        return Some(Verdict::TooLong);
     }
 
     if samples.is_empty() || wav::peak(samples) < SILENCE_FLOOR {
-        return Verdict::Silent;
+        return Some(Verdict::Silent);
     }
 
+    None
+}
+
+/// The gates that need the transcript, so they can only run after the decode.
+pub fn postcheck(text: &str) -> Option<Verdict> {
     let norm = normalize(text);
     if norm.is_empty() {
-        return Verdict::Empty;
+        return Some(Verdict::Empty);
     }
 
     if ARTIFACTS.contains(&norm.as_str()) || loops(text) {
-        return Verdict::Artifact;
+        return Some(Verdict::Artifact);
     }
 
-    Verdict::Keep
+    None
 }
 
 pub fn verdict_msg(v: Verdict) -> &'static str {

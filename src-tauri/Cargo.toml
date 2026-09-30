@@ -41,8 +41,25 @@ tauri-plugin-notification = "2"
 zip = "8.6.0"
 pdf-extract = "0.12.1"
 tauri-plugin-dialog = "2.8.0"
+whisper-rs = "0.16"
+
+# whisper-rs declares default = [], so a bare dependency is plain CPU with no
+# BLAS at all — the single biggest lever on decode time, and larger than the
+# model choice. Features are additive, so each platform asks for its own.
+#
+#   macOS   Metal ships with the OS. Nothing to install, and it is the whole
+#           reason a 60s clip is seconds rather than a coffee break.
+#   Linux   OpenMP links libgomp, which gcc already provides. OpenBLAS would be
+#           faster still but it is a system package nobody has by default, and
+#           a build that needs `apt install` is not a build that ships.
+#   Windows left plain for now: the acceleration features there need a Visual
+#           Studio or vcpkg toolchain this repo does not set up, and shipping a
+#           flag that has never been compiled is worse than shipping none.
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { version = "0.16", features = ["metal"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+whisper-rs = { version = "0.16", features = ["openmp"] }
 landlock = "0.4"
 seccompiler = "0.5"
 

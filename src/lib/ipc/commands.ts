@@ -59,5 +59,13 @@ export const CMD_CONN_SAVE_SEC = "conn_save_secret";
 export const CMD_CONN_CLEAR_CLI = "conn_clear_client";
 export const CMD_CONN_CLEAR_SEC = "conn_clear_secret";
 export const CMD_CONN_CATALOG = "connector_catalog";
+export const CMD_VOICE_CFG = "voice_config";
+export const CMD_VOICE_SET_CFG = "voice_set_config";
+export const CMD_VOICE_MODELS = "voice_models";
+export const CMD_VOICE_STATUS = "voice_status";
+export const CMD_VOICE_DOWNLOAD = "voice_download_model";
+export const CMD_VOICE_DELETE = "voice_delete_model";
+export const CMD_VOICE_TRANSCRIBE = "voice_transcribe";
+export const CMD_VOICE_CANCEL = "voice_cancel";
 
 export const DEF_PERM = "ask";

@@ -15,6 +15,7 @@ import { RiAttachment2 } from "react-icons/ri";
 
 import { useChatModels } from "../hooks/useChatModels";
 import { slashList, type ChatModel, type SlashCmd } from "../lib/ipc";
+import { menuTakesEnter, SLASH_CALL, SLASH_MENU } from "../lib/slashKey";
 import { attachStore, useAttachments } from "../stores/attachments";
 import AttachChips from "./AttachChips";
 import Dropdown, { type DropdownItem } from "./Dropdown";
@@ -23,9 +24,6 @@ import SlashMenu from "./SlashMenu";
 
 const COLLAPSED_HEIGHT = 40;
 const MAX_HEIGHT = 240;
-
-/// A whole line that is a command: the name, then anything after it.
-const SLASH_CALL = /^\/([a-z0-9]+)(?:\s+([\s\S]*))?$/i;
 
 type ChatInputProps = {
   value: string;
@@ -133,13 +131,11 @@ export default function ChatInput({
   // A `/` only opens the menu at the start of the line and with no newline
   // after it. That is what stops `src/lib` and a pasted path from being read
   // as a command.
-  const asSlash = /^\/([a-z0-9]*)$/i.exec(value);
+  const asSlash = SLASH_MENU.exec(value);
   const asCall = SLASH_CALL.exec(value);
   const showMenu = asSlash !== null && !running;
   const query = asSlash?.[1] ?? "";
-  // What the menu would complete to. Empty means it has nothing, and Enter is
-  // then an ordinary send rather than a keystroke that goes nowhere.
-  const hit = cmds.find((c) => c.name.startsWith(query));
+  const hit = menuTakesEnter(value, cmds);
 
   const addItems: DropdownItem[] = [
     {
@@ -276,7 +272,7 @@ export default function ChatInput({
           onKeyDown={(event) => {
             // The menu takes Enter and Tab while it has something to complete,
             // and it stops them at the document, so this only sees the rest.
-            if (event.key !== "Enter" || event.shiftKey || hit !== undefined) {
+            if (event.key !== "Enter" || event.shiftKey || hit) {
               return;
             }
 

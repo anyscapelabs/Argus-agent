@@ -64,18 +64,39 @@ pub struct StreamStats {
     pub degraded: bool,
 }
 
-fn key_for(prov: &Provider) -> Result<Option<String>, String> {
-    match store::secret_get(&prov.id) {
+/// Turn a keyring read into the key to send, given what the provider is.
+///
+/// Split out from the keyring call so the decision is testable without a
+/// secret-service, which is the whole point: the local case has to be
+/// decidable when the keyring cannot be reached at all.
+pub fn decide_key(
+    prov: &Provider,
+    got: Result<Option<String>, String>,
+) -> Result<Option<String>, String> {
+    // Local first. Ollama and friends have no key to store, so an unavailable
+    // keyring — no secret-service on a headless Linux box or a CI runner,
+    // kwallet not started — must not stop a provider that never needed one.
+    // Reading the keyring first made a local model unreachable on exactly the
+    // machines most likely to run one.
+    if adapters::is_local(&prov.base_url) {
+        return Ok(got.unwrap_or(None));
+    }
+
+    match got {
         Err(_) => Err(format!(
             "could not read the stored key for {} — reconnect it in Providers settings",
             prov.name
         )),
-        Ok(None) if !adapters::is_local(&prov.base_url) => Err(format!(
+        Ok(None) => Err(format!(
             "no API key stored for {} — reconnect it in Providers settings",
             prov.name
         )),
         Ok(t) => Ok(t),
     }
+}
+
+fn key_for(prov: &Provider) -> Result<Option<String>, String> {
+    decide_key(prov, store::secret_get(&prov.id))
 }
 
 fn resolve(gw: &Gateway, req: &ChatReq) -> Result<Resolved, String> {

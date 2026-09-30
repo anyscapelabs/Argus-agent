@@ -17,6 +17,7 @@ import {
   type SettingsTab,
   type TabIcon,
 } from "./settings/tabs";
+import ScrollBox from "./ScrollBox";
 import SessionList, { type Session } from "./SessionList";
 
 const TABS: { label: string; view: View; Icon: typeof RiBrainLine }[] = [
@@ -141,102 +142,105 @@ export default function Sidebar({
             </button>
           )}
         </div>
-        {inSettings ? (
-          <>
-            <div className="px-3 pb-3 pt-5">
-              <h2 className="px-1 text-[15px] font-normal text-text-primary">
-                Settings
-              </h2>
-              <label className="relative mt-4 block">
-                <IoSearchOutline
-                  size={15}
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary"
-                />
-                <input
-                  value={settingsQuery}
-                  onChange={(event) => setSettingsQuery(event.target.value)}
-                  placeholder="Search settings"
-                  aria-label="Search settings"
-                  className="h-9 w-full rounded-lg border border-border-primary bg-bg-secondary pl-9 pr-3 text-sm text-text-primary placeholder:text-text-tertiary outline-none transition focus:border-text-tertiary"
-                />
-              </label>
-            </div>
-            <nav className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pb-4">
-              {Object.entries(settingsGroups).map(([group, items]) => (
-                <section key={group}>
-                  <h3 className="px-2 pb-1.5 text-xs text-text-tertiary">
-                    {group}
-                  </h3>
-                  <div className="flex flex-col gap-0.5">
-                    {items.map(({ tab, label, Icon }) => (
-                      <SidebarRow
-                        key={tab}
-                        label={label}
-                        Icon={Icon}
-                        active={tab === settingsTab}
-                        onClick={() => onSettingsTab(tab)}
-                      />
-                    ))}
-                  </div>
-                </section>
-              ))}
-              {Object.keys(settingsGroups).length === 0 && (
-                <p className="px-3 py-4 text-sm text-text-tertiary">
-                  No settings found
-                </p>
-              )}
-            </nav>
-          </>
-        ) : (
-          <>
-          <button
-            type="button"
-            onClick={onNewAgent}
-            className={
-              "mx-2 mt-1 flex items-center gap-2 rounded-md px-2 py-1 " +
-              "transition-colors focus:outline-none " +
-              `${
-                activeView === "new-agent"
-                  ? "bg-bg-hover-primary text-text-primary"
-                  : "text-text-secondary hover:bg-bg-hover-primary"
-              }`
-            }
-          >
-            <RiAiAgentLine
-              size={16}
-              className={
-                activeView === "new-agent"
-                  ? "text-text-primary"
-                  : "text-text-secondary"
-              }
-            />
-            <span className="text-sm font-medium">New Agent</span>
-          </button>
-          <nav className="flex flex-col gap-0.5 px-2">
-            {TABS.map(({ label, view, Icon }) => {
-              const isActive = activeView === view;
-
-              return (
-                <SidebarRow
-                  key={label}
-                  label={label}
-                  Icon={Icon}
-                  active={isActive}
-                  onClick={() => onNavigate(view)}
-                />
-              );
-            })}
-          </nav>
-          <SessionList
-            onSelect={onSelectSession}
-            activeSessionId={activeSessionId}
-            sessions={sessions}
-            onArchive={onArchive}
-            onExport={onExport}
-            onDelete={onDelete}
-          />
-          </>
+        {inSettings && (
+          <div className="px-3 pb-3 pt-5">
+            <h2 className="px-1 text-[15px] font-normal text-text-primary">
+              Settings
+            </h2>
+            <label className="relative mt-4 block">
+              <IoSearchOutline
+                size={15}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary"
+              />
+              <input
+                value={settingsQuery}
+                onChange={(event) => setSettingsQuery(event.target.value)}
+                placeholder="Search settings"
+                aria-label="Search settings"
+                className="h-9 w-full rounded-lg border border-border-primary bg-bg-secondary pl-9 pr-3 text-sm text-text-primary placeholder:text-text-tertiary outline-none transition focus:border-text-tertiary"
+              />
+            </label>
+          </div>
         )}
+
+        <ScrollBox className="min-h-0 flex-1">
+            {inSettings ? (
+              <nav className="flex flex-col gap-4 px-2 pb-4">
+                {Object.entries(settingsGroups).map(([group, items]) => (
+                  <section key={group}>
+                    <h3 className="px-2 pb-1.5 text-xs text-text-tertiary">
+                      {group}
+                    </h3>
+                    <div className="flex flex-col gap-0.5">
+                      {items.map(({ tab, label, Icon }) => (
+                        <SidebarRow
+                          key={tab}
+                          label={label}
+                          Icon={Icon}
+                          active={tab === settingsTab}
+                          onClick={() => onSettingsTab(tab)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                ))}
+                {Object.keys(settingsGroups).length === 0 && (
+                  <p className="px-3 py-4 text-sm text-text-tertiary">
+                    No settings found
+                  </p>
+                )}
+            </nav>
+          ) : (
+            <div className="flex flex-col pb-4">
+              <button
+                type="button"
+                onClick={onNewAgent}
+                className={
+                  "mx-2 mt-1 flex items-center gap-2 rounded-md px-2 py-1 " +
+                  "transition-colors focus:outline-none " +
+                  `${
+                    activeView === "new-agent"
+                      ? "bg-bg-hover-primary text-text-primary"
+                      : "text-text-secondary hover:bg-bg-hover-primary"
+                  }`
+                }
+              >
+                <RiAiAgentLine
+                  size={16}
+                  className={
+                    activeView === "new-agent"
+                      ? "text-text-primary"
+                      : "text-text-secondary"
+                  }
+                />
+                <span className="text-sm font-medium">New Agent</span>
+              </button>
+              <nav className="flex flex-col gap-0.5 px-2">
+                {TABS.map(({ label, view, Icon }) => {
+                  const isActive = activeView === view;
+
+                  return (
+                    <SidebarRow
+                      key={label}
+                      label={label}
+                      Icon={Icon}
+                      active={isActive}
+                      onClick={() => onNavigate(view)}
+                    />
+                  );
+                })}
+              </nav>
+              <SessionList
+                onSelect={onSelectSession}
+                activeSessionId={activeSessionId}
+                sessions={sessions}
+                onArchive={onArchive}
+                onExport={onExport}
+                onDelete={onDelete}
+            />
+            </div>
+          )}
+        </ScrollBox>
       </div>
     </aside>
   );

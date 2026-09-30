@@ -207,6 +207,18 @@ export default function ChatInput({
     pendingCaret.current = null;
   }, [value]);
 
+  // Nothing else ends a take, so leaving the page mid-sentence would hold the
+  // microphone open for good. Guarded on the phase because StrictMode remounts
+  // this on every dev render, and that is not a reason to stop recording.
+  useEffect(
+    () => () => {
+      if (useVoice.getState().phase === "listening") {
+        useVoice.getState().cancel();
+      }
+    },
+    [],
+  );
+
   // The menu can tell the line is already the whole command, which the
   // textarea cannot: it never sees the keystroke the menu took.
   const run = (cmd: SlashCmd) => {

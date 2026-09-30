@@ -8,6 +8,7 @@ import {
   CMD_VOICE_CFG,
   CMD_VOICE_DELETE,
   CMD_VOICE_DOWNLOAD,
+  CMD_VOICE_LISTENING,
   CMD_VOICE_MODELS,
   CMD_VOICE_SET_CFG,
   CMD_VOICE_STATUS,
@@ -80,4 +81,11 @@ export function voiceTranscribe(wavB64: string): Promise<string> {
 
 export function voiceCancel(): Promise<void> {
   return invoke<void>(CMD_VOICE_CANCEL);
+}
+
+// Opens or closes the webview's microphone grant. The webview has no
+// permission of its own on Linux, so this is what actually lets the recording
+// start -- and it is scoped to one take, not to the session.
+export function voiceListening(listening: boolean): Promise<void> {
+  return invoke<void>(CMD_VOICE_LISTENING, { listening });
 }

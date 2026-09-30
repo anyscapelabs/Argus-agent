@@ -4,6 +4,7 @@ pub mod wav;
 pub mod whisper;
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -16,6 +17,27 @@ use download::Event;
 
 const KV_MODEL: &str = "voice.stt_model";
 const KV_LANG: &str = "voice.language";
+
+static LISTENING: AtomicBool = AtomicBool::new(false);
+
+/// Whether the webview may have the microphone right now.
+///
+/// The webview holds no permission of its own. wry only connects WebKitGTK's
+/// `permission-request` signal when a handler is supplied, and without one the
+/// request lands on a default prompt that a Tauri window has no way to draw --
+/// so `getUserMedia` comes back `NotAllowedError` and the user is told Argus
+/// lacks a permission it never applied for.
+///
+/// Keying the grant to the record button opens the mic for the seconds it is
+/// in use and no longer, so nothing in the webview can open it by itself.
+pub fn mic_granted() -> bool {
+    LISTENING.load(Ordering::Relaxed)
+}
+
+#[tauri::command]
+pub fn voice_listening(listening: bool) {
+    LISTENING.store(listening, Ordering::Relaxed);
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -176,23 +198,33 @@ pub fn voice_set_config(gw: tauri::State<'_, Gateway>, cfg: Config) -> Result<()
 }
 
 #[tauri::command]
-pub fn voice_models(app: tauri::AppHandle, gw: tauri::State<'_, Gateway>) -> Result<Vec<ModelRow>, String> {
+pub fn voice_models(
+    app: tauri::AppHandle,
+    gw: tauri::State<'_, Gateway>,
+) -> Result<Vec<ModelRow>, String> {
     let dir = download::models_dir(&app_data(&app)?);
     let conn = gw.conn.lock().map_err(|err| err.to_string())?;
 
-    Ok(rows(&dir, bundled_dir(&app).as_deref(), &config_from(&conn)?))
+    Ok(rows(
+        &dir,
+        bundled_dir(&app).as_deref(),
+        &config_from(&conn)?,
+    ))
 }
 
 #[tauri::command]
-pub fn voice_status(app: tauri::AppHandle, gw: tauri::State<'_, Gateway>) -> Result<Status, String> {
+pub fn voice_status(
+    app: tauri::AppHandle,
+    gw: tauri::State<'_, Gateway>,
+) -> Result<Status, String> {
     let dir = download::models_dir(&app_data(&app)?);
     let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     let cfg = config_from(&conn)?;
 
     let bundled = bundled_dir(&app);
-    let is_bundled = bundled.as_ref().and_then(|b| {
-        download::model_for(&cfg.stt_model).map(|i| b.join(i.file).is_file())
-    });
+    let is_bundled = bundled
+        .as_ref()
+        .and_then(|b| download::model_for(&cfg.stt_model).map(|i| b.join(i.file).is_file()));
 
     let vad_installed = bundled
         .as_ref()
@@ -226,8 +258,8 @@ pub async fn voice_download_model(
 ) -> Result<(), String> {
     let dir = download::models_dir(&app_data(&app)?);
 
-    let info = download::model_for(&key)
-        .ok_or_else(|| format!("there is no voice model called {key}"))?;
+    let info =
+        download::model_for(&key).ok_or_else(|| format!("there is no voice model called {key}"))?;
 
     // Already on disk inside the app. Re-fetching it would spend 57 MB to
     // replace a file the installer owns and the user cannot edit.
@@ -243,7 +275,12 @@ pub async fn voice_download_model(
     whisper::evict();
 
     let jobs = [
-        (download::WHISPER_REPO, info.file, dir.join(info.file), key.clone()),
+        (
+            download::WHISPER_REPO,
+            info.file,
+            dir.join(info.file),
+            key.clone(),
+        ),
         (
             download::VAD_REPO,
             download::VAD_FILE,
@@ -284,21 +321,27 @@ pub async fn voice_download_model(
 
     let conn = gw.conn.lock().map_err(|err| err.to_string())?;
 
-    set_config(&conn, &Config {
-        stt_model: key,
-        language: config_from(&conn)?.language,
-    })
+    set_config(
+        &conn,
+        &Config {
+            stt_model: key,
+            language: config_from(&conn)?.language,
+        },
+    )
 }
 
 #[tauri::command]
 pub fn voice_delete_model(app: tauri::AppHandle, key: String) -> Result<(), String> {
-    let info = download::model_for(&key)
-        .ok_or_else(|| format!("there is no voice model called {key}"))?;
+    let info =
+        download::model_for(&key).ok_or_else(|| format!("there is no voice model called {key}"))?;
 
     // It came with the app. It is also the only reason the mic works with no
     // network at all, so deleting it would trade a convenience for nothing.
     if bundled_dir(&app).is_some_and(|b| b.join(info.file).is_file()) {
-        return Err(format!("{} is the model Argus ships with, so it stays.", info.label));
+        return Err(format!(
+            "{} is the model Argus ships with, so it stays.",
+            info.label
+        ));
     }
 
     let path = download::models_dir(&app_data(&app)?).join(info.file);

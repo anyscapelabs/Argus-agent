@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { voiceCancel, voiceTranscribe } from "../lib/ipc";
+import { voiceCancel, voiceListening, voiceTranscribe } from "../lib/ipc";
 import { encodeWav, MAX_SECS, Recorder, TARGET_RATE } from "../lib/recorder";
 import { toast } from "./toast";
 
@@ -50,6 +50,12 @@ function micWhy(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+// Every path out of a recording goes through here, so the grant is never left
+// open by a take that ended early, was cancelled, or failed to start.
+function closeMic(): void {
+  void voiceListening(false);
+}
+
 export const useVoice = create<VoiceState>()((set, get) => ({
   phase: "idle",
   level: 0,
@@ -60,12 +66,17 @@ export const useVoice = create<VoiceState>()((set, get) => ({
 
     set({ level: 0, elapsed: 0 });
 
+    // Opened before the recorder, or the grant is still closed when the
+    // webview asks for it.
+    await voiceListening(true);
+
     const rec = new Recorder();
 
     try {
       await rec.start((level) => set({ level }));
     } catch (e) {
       rec.cancel();
+      closeMic();
       toast.error(micWhy(e));
       return;
     }
@@ -98,6 +109,7 @@ export const useVoice = create<VoiceState>()((set, get) => ({
     clearTicker();
     const { pcm } = recorder.take();
     recorder = null;
+    closeMic();
     set({ phase: "working", level: 0, elapsed: 0 });
 
     if (pcm.length === 0) {
@@ -120,6 +132,7 @@ export const useVoice = create<VoiceState>()((set, get) => ({
     clearTicker();
     recorder?.cancel();
     recorder = null;
+    closeMic();
 
     // A decode already running keeps going in the native engine; this is what
     // actually stops it rather than throwing the result away.

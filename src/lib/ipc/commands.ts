@@ -67,5 +67,6 @@ export const CMD_VOICE_DOWNLOAD = "voice_download_model";
 export const CMD_VOICE_DELETE = "voice_delete_model";
 export const CMD_VOICE_TRANSCRIBE = "voice_transcribe";
 export const CMD_VOICE_CANCEL = "voice_cancel";
+export const CMD_VOICE_LISTENING = "voice_listening";
 
 export const DEF_PERM = "ask";

@@ -18,6 +18,7 @@ pub mod voice;
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
+use tauri::webview::{PermissionKind, PermissionResponse};
 use tauri::Manager;
 
 use gateway::{store, Gateway};
@@ -43,6 +44,18 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        // The microphone is the one permission Argus grants itself, and only
+        // while a recording is in flight. `Deny` rather than `Default` for
+        // everything else: `Default` hands the request back to a WebKitGTK
+        // prompt this window cannot show, which is the same stall as having no
+        // handler at all, just slower to find out.
+        .on_permission_request(|_, kind| {
+            if kind == PermissionKind::Microphone && voice::mic_granted() {
+                PermissionResponse::Allow
+            } else {
+                PermissionResponse::Deny
+            }
+        })
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
@@ -256,7 +269,8 @@ pub fn run() {
             voice::voice_download_model,
             voice::voice_delete_model,
             voice::voice_transcribe,
-            voice::voice_cancel
+            voice::voice_cancel,
+            voice::voice_listening
         ])
         .run(tauri::generate_context!());
 }

@@ -116,6 +116,12 @@ fn app_data(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 /// for is fetched in Settings, but the one that came with the installer is
 /// already on disk, and a build that forgot it is the only case that reaches
 /// for a download.
+///
+/// The `voice/` here has to match the mapping in `bundle.resources`. The array
+/// form of that key preserves the source layout and lands the model at
+/// `$RESOURCE/resources/voice/`, while the map form flattens it to
+/// `$RESOURCE/voice/` -- and only one of those is the same in dev and in a
+/// bundle, so only one of them can be looked up unconditionally.
 fn bundled_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
     let dir = app.path().resource_dir().ok()?.join("voice");
 

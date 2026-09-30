@@ -6,6 +6,7 @@ import { sessionStore, type PendingApproval } from "../../stores/sessions";
 import { useWorkTimer } from "../../stores/workTimer";
 
 import type { BlockNode } from "../../lib/agentXml";
+import { currentStepLabel } from "../../lib/stepLabel";
 import EmailDraftCard from "./EmailDraftCard";
 
 function argsOf(blk: BlockNode): Record<string, unknown> {
@@ -255,14 +256,14 @@ type Props = {
   liveStartedAt?: number | null;
 };
 
-function titleFor(steps: ToolStep[], live: boolean): string {
+/// Only for finished work. While a turn is live the header names the step
+/// instead, so there is no live wording to pick here.
+function titleFor(steps: ToolStep[]): string {
   const groups = new Set(steps.map((s) => s.group));
 
-  if (groups.size === 1 && groups.has("browser"))
-    return live ? "Using Chrome" : "Used Chrome";
-  if (groups.size === 1 && groups.has("terminal"))
-    return live ? "Running command" : "Ran command";
-  return live ? "Working" : "Used tools";
+  if (groups.size === 1 && groups.has("browser")) return "Used Chrome";
+  if (groups.size === 1 && groups.has("terminal")) return "Ran command";
+  return "Used tools";
 }
 
 function headerIcon(steps: ToolStep[]) {
@@ -396,13 +397,18 @@ export default function ToolActivity({
   const approvalStep = approval
     ? steps.findIndex((s) => s.approvalIdx === approval.idx)
     : -1;
-  const [open, setOpen] = useState(live || approvalStep !== -1);
+  // Closed by default: the header already names the work in flight, so the
+  // step list is detail rather than the headline. An approval is the one thing
+  // that must never sit behind a click, since Run and Deny live in the list.
+  const [open, setOpen] = useState(approvalStep !== -1);
   const now = useWorkTimer((s) => s.now);
   const mountedAt = useRef(Date.now());
 
   useEffect(() => {
-    setOpen(live || approvalStep !== -1);
-  }, [live, approvalStep]);
+    if (approvalStep !== -1) {
+      setOpen(true);
+    }
+  }, [approvalStep]);
 
   useEffect(() => {
     if (!live) {
@@ -419,8 +425,8 @@ export default function ToolActivity({
   const header =
     label ??
     (live
-      ? `Working… ${formatDuration(now - (liveStartedAt ?? mountedAt.current))}`
-      : titleFor(steps, live));
+      ? `${currentStepLabel(steps) || "Working"} · ${formatDuration(now - (liveStartedAt ?? mountedAt.current))}`
+      : titleFor(steps));
 
   const decide = (allow: boolean) => {
     if (sessionId !== undefined && approval) {

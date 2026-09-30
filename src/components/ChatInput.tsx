@@ -3,14 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
 import { FiChevronDown } from "react-icons/fi";
 import { HiArrowUp, HiPlus, HiStop } from "react-icons/hi";
-import {
-  LuFolderOpen,
-  LuGlobe,
-  LuLibrary,
-  LuMic,
-  LuPlug,
-  LuShieldCheck,
-} from "react-icons/lu";
+import { LuGlobe, LuLibrary, LuMic, LuShieldCheck } from "react-icons/lu";
 import { RiAttachment2 } from "react-icons/ri";
 
 import { useChatModels } from "../hooks/useChatModels";
@@ -156,18 +149,6 @@ export default function ChatInput({
       Icon: LuLibrary,
       stayOpen: true,
       onClick: () => setBrowsing(true),
-    },
-    {
-      label: "Add project",
-      Icon: LuFolderOpen,
-      hasSubmenu: true,
-      onClick: () => {},
-    },
-    {
-      label: "Connector",
-      Icon: LuPlug,
-      hasSubmenu: true,
-      onClick: () => {},
     },
     {
       label: "Web search",

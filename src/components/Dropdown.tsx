@@ -5,7 +5,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { FiCheck, FiChevronRight } from "react-icons/fi";
+import { FiCheck } from "react-icons/fi";
 
 export type DropdownItem = {
   label: string;
@@ -13,7 +13,6 @@ export type DropdownItem = {
   onClick?: () => void;
   disabled?: boolean;
   danger?: boolean;
-  hasSubmenu?: boolean;
   toggleable?: boolean;
   /// Opens a panel in place of the list rather than closing the menu.
   stayOpen?: boolean;
@@ -195,12 +194,6 @@ export default function Dropdown({
                         <Icon size={16} className="shrink-0" />
                       )}
                       <span className="flex-1 truncate">{it.label}</span>
-                      {it.hasSubmenu === true && (
-                        <FiChevronRight
-                          size={14}
-                          className="shrink-0 text-text-secondary"
-                        />
-                      )}
                       {isActive && (
                         <FiCheck size={14} className="shrink-0 text-blue-400" />
                       )}

@@ -13,6 +13,7 @@ pub mod sessions;
 pub mod skills;
 pub mod slash;
 pub mod tools;
+pub mod voice;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;

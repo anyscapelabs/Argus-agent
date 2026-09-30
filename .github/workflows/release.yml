@@ -1,0 +1,199 @@
+# Build a signed bundle for every platform and attach it to a GitHub Release.
+#
+# Triggered by pushing a version tag, not by a release being published:
+#
+#   git tag v0.2.0-alpha.1 && git push origin v0.2.0-alpha.1
+#
+# The tag is the version. Nothing reads it from anywhere else.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  # For re-running a build without re-pushing a tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to build, e.g. v0.2.0-alpha.1
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  prerelease:
+    # GitHub's prerelease flag is the only thing that tells a tester whether
+    # they are looking at something you stand behind. A `-alpha` suffix has to
+    # become a prerelease badge, not a normal release that happens to have a
+    # funny tag.
+    runs-on: ubuntu-latest
+    outputs:
+      prerelease: ${{ steps.check.outputs.prerelease }}
+    steps:
+      - id: check
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          tag="$TAG"
+          case "$tag" in
+            v[0-9]*-[0-9]*) prerelease=true ;;
+            *) prerelease=false ;;
+          esac
+          echo "tag=$tag prerelease=$prerelease"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prerelease
+    permissions:
+      contents: write
+    strategy:
+      # One platform failing should not hide the artifacts the others produced.
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            bundles: ""
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            bundles: ""
+          - platform: ubuntu-22.04
+            target: ""
+            bundles: "--bundles deb,appimage"
+          - platform: windows-latest
+            target: ""
+            bundles: ""
+
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 60
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+    steps:
+      # `persist-credentials: false` because this job has `contents: write`
+      # and the third-party actions below should not inherit a token that can
+      # push tags. tauri-action authenticates with GITHUB_TOKEN itself.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            patchelf \
+            pkg-config \
+            xdg-utils
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: latest
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      # Ad-hoc signing. Apple Silicon refuses to run an unsigned binary at all,
+      # so something has to be there — but `-` is not a Developer ID and it
+      # establishes no trust. macOS testers still have to allow the app in
+      # Privacy & Security. See docs/developer-guide/releasing.md for what
+      # changes when the real certificate arrives.
+      - name: Ad-hoc sign on macOS
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+        run: echo "signing with an ad-hoc identity"
+
+      # The self-signed certificate is generated here rather than stored as a
+      # secret, because it carries no trust either way: a secret would only buy
+      # a key that SmartScreen does not believe. What this does buy is the whole
+      # signing path — thumbprint, signtool, timestamping — so swapping in a real
+      # certificate later is a change to this step and nothing else.
+      - name: Create a self-signed code-signing certificate
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $cert = New-SelfSignedCertificate `
+            -Type CodeSigningCert `
+            -Subject "CN=Argus" `
+            -CertStoreLocation "Cert:\CurrentUser\My" `
+            -NotAfter (Get-Date).AddYears(3)
+          "thumbprint=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "Created certificate $($cert.Thumbprint)"
+
+      # A file rather than inline JSON on the command line. PowerShell quoting
+      # inside a YAML string inside a matrix expansion is a reliable way to ship
+      # a workflow that fails only on Windows.
+      - name: Write the Windows signing config
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $config = @{
+            bundle = @{
+              windows = @{
+                certificateThumbprint = $env:thumbprint
+                digestAlgorithm = "sha256"
+                timestampUrl = "http://timestamp.digicert.com"
+              }
+            }
+          }
+          $config | ConvertTo-Json -Depth 5 | Out-File -FilePath src-tauri/tauri.signing.json -Encoding utf8
+          Get-Content src-tauri/tauri.signing.json
+
+      - name: Build and publish
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ env.TAG }}
+          releaseName: Argus ${{ env.TAG }}
+          releaseBody: |
+            ## Argus ${{ env.TAG }}
+
+            A pre-release build. It works, but it is not finished — expect rough
+            edges and check [docs/getting-started/quickstart.md](https://github.com/${{ github.repository }}/blob/master/docs/getting-started/quickstart.md) before reporting anything odd.
+
+            ### Install
+
+            This build is signed with a self-signed certificate, which proves
+            nothing to your operating system. You will get a warning. This is
+            expected, and it is not a reason to distrust the download:
+
+            - **macOS** — open the DMG, drag Argus to Applications, then on first
+              launch go to **System Settings → Privacy & Security** and click
+              **Open Anyway**.
+            - **Windows** — run the installer, then click **More info** →
+              **Run anyway** in the SmartScreen prompt.
+
+            The Windows build is also unsigned on first run if your browser
+            strips the mark-of-the-web. Right-click the installer →
+            Properties → **Unblock** before launching it.
+
+            Chrome extension: the browser tools need it installed separately from
+            [extension/](https://github.com/${{ github.repository }}/tree/master/extension).
+            Load it via `chrome://extensions` → Developer mode → Load unpacked.
+          releaseDraft: false
+          prerelease: ${{ needs.prerelease.outputs.prerelease == 'true' }}
+          # `targets: "all"` in tauri.conf.json would also build .rpm, which
+          # needs rpmbuild on the runner and roughly doubles the Linux build.
+          # AppImage alone runs anywhere; .deb is there for convenience.
+          args: >-
+            ${{ matrix.target && format('--target {0} ', matrix.target) }}${{ matrix.bundles }}

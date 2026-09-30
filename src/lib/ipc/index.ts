@@ -24,4 +24,3 @@ export * from "./skills";
 export * from "./slash";
 export * from "./stream";
 export * from "./terminal";
-export * from "./voice";

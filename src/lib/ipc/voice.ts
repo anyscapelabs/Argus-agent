@@ -30,12 +30,14 @@ export type ModelInfo = {
 export type ModelRow = ModelInfo & {
   installed: boolean;
   active: boolean;
+  bundled: boolean;
 };
 
 export type VoiceStatus = {
   ready: boolean;
   model: string;
   installed: boolean;
+  bundled: boolean;
   vadInstalled: boolean;
   engineLoaded: boolean;
 };

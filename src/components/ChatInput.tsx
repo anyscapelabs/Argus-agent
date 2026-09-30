@@ -317,12 +317,9 @@ export default function ChatInput({
         )}
       </div>
 
-      {(voice.err !== null || voice.note !== null) && (
-        <p
-          role="status"
-          className="mt-1 text-xs text-text-secondary"
-        >
-          {voice.err ?? voice.note}
+      {voice.err !== null && (
+        <p role="status" className="mt-1 text-xs text-text-secondary">
+          {voice.err}
         </p>
       )}
 

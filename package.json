@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "voice:fetch": "node scripts/fetch-voice-model.mjs",
+    "dev": "bun run voice:fetch && vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",

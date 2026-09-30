@@ -172,7 +172,7 @@ fn set_vad(params: &mut FullParams<'_, '_>, path: &Path) -> Result<(), String> {
     vad.set_min_silence_duration(100);
     vad.set_speech_pad(30);
 
-    params.set_vad_model_path(Some(&[raw]));
+    params.set_vad_model_path(Some(raw));
     params.set_vad_params(vad);
     params.enable_vad(true);
 

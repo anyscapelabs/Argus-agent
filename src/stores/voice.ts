@@ -1,13 +1,6 @@
-import { Channel } from "@tauri-apps/api/core";
 import { create } from "zustand";
 
-import {
-  voiceCancel,
-  voiceDownloadModel,
-  voiceStatus,
-  voiceTranscribe,
-  type DownloadEvent,
-} from "../lib/ipc";
+import { voiceCancel, voiceStatus, voiceTranscribe } from "../lib/ipc";
 import { encodeWav, MAX_SECS, Recorder, TARGET_RATE } from "../lib/recorder";
 
 type Phase = "idle" | "listening" | "working" | "error";
@@ -17,7 +10,6 @@ type VoiceState = {
   level: number;
   elapsed: number;
   err: string | null;
-  note: string | null;
   start: () => Promise<void>;
   stop: () => Promise<string | null>;
   cancel: () => void;
@@ -54,20 +46,14 @@ function micWhy(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-async function ensureModel(note: (text: string) => void): Promise<void> {
+async function ensureModel(): Promise<void> {
   const status = await voiceStatus();
+
   if (status.installed) {
     return;
   }
 
-  const chan = new Channel<DownloadEvent>();
-  chan.onmessage = (e: DownloadEvent) => {
-    if (e.type === "progress" && e.total > 0) {
-      note(`Getting the voice model — ${Math.round((e.got / e.total) * 100)}%`);
-    }
-  };
-
-  await voiceDownloadModel(status.model, chan);
+  throw new Error("The voice model is missing. Reinstall Argus, or pick another in Settings.");
 }
 
 export const useVoice = create<VoiceState>()((set, get) => ({
@@ -75,18 +61,17 @@ export const useVoice = create<VoiceState>()((set, get) => ({
   level: 0,
   elapsed: 0,
   err: null,
-  note: null,
 
   start: async () => {
     if (get().phase !== "idle") return;
 
-    set({ err: null, note: null, level: 0, elapsed: 0 });
+    set({ err: null, level: 0, elapsed: 0 });
 
-    // The model is fetched here rather than asked for in Settings: dictation
-    // that needs a trip somewhere else before it works is dictation nobody
-    // turns on.
+    // The model shipped inside the app, so there is nothing to fetch here and
+    // nothing to wait for. This only fires if the install is broken, and it
+    // fails closed rather than starting a download nobody asked for.
     try {
-      await ensureModel((text) => set({ note: text }));
+      await ensureModel();
     } catch (e) {
       set({ phase: "error", err: e instanceof Error ? e.message : String(e) });
       return;
@@ -104,7 +89,7 @@ export const useVoice = create<VoiceState>()((set, get) => ({
 
     recorder = rec;
     const startedAt = Date.now();
-    set({ phase: "listening", note: null });
+    set({ phase: "listening" });
 
     ticker = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startedAt) / 1000);
@@ -158,5 +143,5 @@ export const useVoice = create<VoiceState>()((set, get) => ({
     set({ phase: "idle", level: 0, elapsed: 0 });
   },
 
-  reset: () => set({ phase: "idle", err: null, note: null }),
+  reset: () => set({ phase: "idle", err: null }),
 }));

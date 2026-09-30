@@ -35,3 +35,7 @@ src-tauri/.env
 
 # Private agent rulebook — never commit
 agents.md
+
+# Speech model bundled into the app. 57 MB of binary does not belong in every
+# clone; `bun run voice:fetch` puts it here and checks its sha256 first.
+src-tauri/resources/voice/

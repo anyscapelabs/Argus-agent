@@ -38,6 +38,7 @@ pub struct ModelRow {
     pub info: &'static download::ModelInfo,
     pub installed: bool,
     pub active: bool,
+    pub bundled: bool,
 }
 
 #[derive(Serialize)]
@@ -45,6 +46,7 @@ pub struct Status {
     pub ready: bool,
     pub model: String,
     pub installed: bool,
+    pub bundled: bool,
     pub vad_installed: bool,
     pub engine_loaded: bool,
 }
@@ -55,16 +57,14 @@ pub struct Status {
 /// refuses a silent or runaway clip for free, and only something that passed
 /// is worth a model load. Errors here are the user-facing sentences from
 /// `verdict_msg`, so the frontend has nothing to phrase.
-pub fn run(dir: &Path, key: &str, wav_b64: &str) -> Result<String, String> {
+pub fn run(model: &Path, vad: Option<&Path>, wav_b64: &str) -> Result<String, String> {
     let samples = wav::decode_b64(wav_b64)?;
 
     if let Some(v) = filter::precheck(&samples) {
         return Err(filter::verdict_msg(v).to_string());
     }
 
-    let model = download::model_path(dir, key)?;
-    let vad = download::vad_path(dir);
-    let text = whisper::transcribe(&model, Some(&vad), &samples)?;
+    let text = whisper::transcribe(model, vad, &samples)?;
 
     match filter::postcheck(&text) {
         Some(v) => Err(filter::verdict_msg(v).to_string()),
@@ -90,19 +90,69 @@ pub fn set_config(conn: &Connection, cfg: &Config) -> Result<(), String> {
     store::kv_set(conn, KV_LANG, &cfg.language)
 }
 
-pub fn rows(dir: &Path, cfg: &Config) -> Vec<ModelRow> {
+pub fn rows(dir: &Path, bundled_dir: Option<&Path>, cfg: &Config) -> Vec<ModelRow> {
     download::MODELS
         .iter()
-        .map(|info| ModelRow {
-            info,
-            installed: dir.join(info.file).is_file(),
-            active: info.key == cfg.stt_model,
+        .map(|info| {
+            let bundled = bundled_dir.is_some_and(|b| b.join(info.file).is_file());
+
+            ModelRow {
+                info,
+                installed: bundled || dir.join(info.file).is_file(),
+                active: info.key == cfg.stt_model,
+                bundled,
+            }
         })
         .collect()
 }
 
 fn app_data(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path().app_data_dir().map_err(|err| err.to_string())
+}
+
+/// The copy that shipped inside the app.
+///
+/// Clicking the mic has to start recording. Every model the user did not ask
+/// for is fetched in Settings, but the one that came with the installer is
+/// already on disk, and a build that forgot it is the only case that reaches
+/// for a download.
+fn bundled_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let dir = app.path().resource_dir().ok()?.join("voice");
+
+    dir.is_dir().then_some(dir)
+}
+
+/// Prefer the bundled model; fall back to the user's directory.
+fn resolve(app: &tauri::AppHandle, key: &str) -> Result<(PathBuf, Option<PathBuf>), String> {
+    let dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
+    let user_dir = download::models_dir(&dir);
+
+    let bundled = bundled_dir(app);
+    let model = bundled
+        .as_ref()
+        .and_then(|b| download::model_for(key).map(|i| b.join(i.file)))
+        .filter(|p| p.is_file())
+        .or_else(|| {
+            let p = download::model_path(&user_dir, key).ok()?;
+            p.is_file().then_some(p)
+        })
+        .ok_or_else(|| {
+            format!(
+                "The {} voice model is missing. Reinstall Argus, or pick another in Settings.",
+                download::model_for(key).map_or(key.as_str(), |i| i.label)
+            )
+        })?;
+
+    let vad = bundled
+        .as_ref()
+        .map(|b| b.join(download::VAD_FILE))
+        .filter(|p| p.is_file())
+        .or_else(|| {
+            let p = download::vad_path(&user_dir);
+            p.is_file().then_some(p)
+        });
+
+    Ok((model, vad))
 }
 
 #[tauri::command]
@@ -124,7 +174,7 @@ pub fn voice_models(app: tauri::AppHandle, gw: tauri::State<'_, Gateway>) -> Res
     let dir = download::models_dir(&app_data(&app)?);
     let conn = gw.conn.lock().map_err(|err| err.to_string())?;
 
-    Ok(rows(&dir, &config_from(&conn)?))
+    Ok(rows(&dir, bundled_dir(&app).as_deref(), &config_from(&conn)?))
 }
 
 #[tauri::command]
@@ -133,13 +183,20 @@ pub fn voice_status(app: tauri::AppHandle, gw: tauri::State<'_, Gateway>) -> Res
     let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     let cfg = config_from(&conn)?;
 
-    let installed = download::has(&dir, &cfg.stt_model);
+    let bundled = bundled_dir(&app);
+    let is_bundled = bundled.as_ref().and_then(|b| {
+        download::model_for(&cfg.stt_model).map(|i| b.join(i.file).is_file())
+    });
 
     Ok(Status {
-        ready: installed,
+        ready: is_bundled.unwrap_or_else(|| download::has(&dir, &cfg.stt_model)),
         model: cfg.stt_model,
-        installed,
-        vad_installed: download::vad_path(&dir).is_file(),
+        installed: is_bundled.unwrap_or_else(|| download::has(&dir, &cfg.stt_model)),
+        bundled: is_bundled.unwrap_or(false),
+        vad_installed: bundled
+            .as_ref()
+            .is_some_and(|b| b.join(download::VAD_FILE).is_file())
+            || download::vad_path(&dir).is_file(),
         engine_loaded: whisper::loaded_model().is_some(),
     })
 }
@@ -162,7 +219,13 @@ pub async fn voice_download_model(
     let info = download::model_for(&key)
         .ok_or_else(|| format!("there is no voice model called {key}"))?;
 
-    let client = crate::gateway::http_client()?;
+    // Already on disk inside the app. Re-fetching it would spend 57 MB to
+    // replace a file the installer owns and the user cannot edit.
+    if bundled_dir(&app).is_some_and(|b| b.join(info.file).is_file()) {
+        return Err(format!("{} already ships with Argus.", info.label));
+    }
+
+    let client = crate::gateway::http_client().map_err(|err| err.to_string())?;
     let mut failures = Vec::new();
 
     // The engine may hold this very file open. Windows cannot rename onto an
@@ -219,11 +282,20 @@ pub async fn voice_download_model(
 
 #[tauri::command]
 pub fn voice_delete_model(app: tauri::AppHandle, key: String) -> Result<(), String> {
-    let dir = download::models_dir(&app_data(&app)?);
     let info = download::model_for(&key)
         .ok_or_else(|| format!("there is no voice model called {key}"))?;
 
-    let path = dir.join(info.file);
+    // It came with the app. It is also the only reason the mic works with no
+    // network at all, so deleting it would trade a convenience for nothing.
+    if bundled_dir(&app).is_some_and(|b| b.join(info.file).is_file()) {
+        return Err(format!("{} is the model Argus ships with, so it stays.", info.label));
+    }
+
+    let path = download::models_dir(&app_data(&app)?).join(info.file);
+
+    if !path.is_file() {
+        return Ok(());
+    }
 
     // Same ordering as the download: the context has to let go of the file
     // before it is removed.
@@ -240,7 +312,6 @@ pub async fn voice_transcribe(
     gw: tauri::State<'_, Gateway>,
     wav_b64: String,
 ) -> Result<String, String> {
-    let dir = download::models_dir(&app_data(&app)?);
     let key = {
         // Scoped so the connection lock is gone before the await below. A
         // guard held across a suspension parks the database for every other
@@ -249,7 +320,9 @@ pub async fn voice_transcribe(
         config_from(&conn)?.stt_model
     };
 
-    tauri::async_runtime::spawn_blocking(move || run(&dir, &key, &wav_b64))
+    let (model, vad) = resolve(&app, &key)?;
+
+    tauri::async_runtime::spawn_blocking(move || run(&model, vad.as_deref(), &wav_b64))
         .await
         .map_err(|err| format!("the transcription thread stopped: {err}"))?
 }

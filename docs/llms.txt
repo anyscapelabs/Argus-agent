@@ -10,5 +10,6 @@
 - [Architecture](developer-guide/architecture.md): repo map, agent loop, prompt assembly, SQLite schema.
 - [Adding connectors](developer-guide/adding-connectors.md): vault, flows, event logging, frontend cards.
 - [Contributing](developer-guide/contributing.md): build/test/format commands and code rules.
+- [Releasing](developer-guide/releasing.md): version scheme, tag-triggered release pipeline, signing, what CI enforces.
 - [Environment](reference/environment.md): every ARGUS_* variable.
 - [Troubleshooting](help/troubleshooting.md): X11, AT-SPI, keyring, OAuth, Notion, Discord fixes.

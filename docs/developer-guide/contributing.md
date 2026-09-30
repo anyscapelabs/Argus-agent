@@ -12,6 +12,17 @@ cargo check        # fast backend check
 cargo test         # full backend suite (src-tauri/)
 ```
 
+## Before you push
+
+CI runs on every push to `master` and every pull request, and it runs the same
+commands listed above — plus `clippy --all-targets -- -D warnings` and
+`bun test`. Zero clippy warnings is the rule, not a suggestion, so the fastest
+way to a green build is to run the gate locally first.
+
+Use `cargo test --no-fail-fast`. One failing test binary otherwise stops the
+run and hides the other 71. See [Releasing](releasing.md) for the one test that
+is load-sensitive and will fail spuriously on a busy machine.
+
 ## Rules
 
 - Production code carries no debug output (`console.*`, `println!`, `eprintln!`, `dbg!`) — those belong in tests.

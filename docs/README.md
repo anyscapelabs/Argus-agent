@@ -13,6 +13,7 @@
 | How it works under the hood | [Architecture](developer-guide/architecture.md) |
 | Add a connector | [Adding connectors](developer-guide/adding-connectors.md) |
 | Contribute | [Contributing](developer-guide/contributing.md) |
+| Cut a release | [Releasing](developer-guide/releasing.md) |
 | Env vars | [Environment reference](reference/environment.md) |
 | Something broke | [Troubleshooting](help/troubleshooting.md) |
 

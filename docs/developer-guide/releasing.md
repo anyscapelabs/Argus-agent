@@ -84,11 +84,37 @@ request:
 - `cargo fmt --check`
 - `cargo clippy --all-targets --all-features -- -D warnings` — zero warnings is
   the invariant from `.claude/rules/rust.md`, so it is enforced as an error
-- `cargo test --no-fail-fast`
+- `xvfb-run -a cargo test --no-fail-fast`
 - `tsc --noEmit`, `bun test`, `bun run build`
 
 `--no-fail-fast` is there because one failing test binary otherwise hides the
 other 71.
+
+### Why the tests run under Xvfb
+
+The app launches a real headful Chromium on purpose, so a user can watch what
+the agent is doing and take over. A CI runner has no X server, so Chrome exits
+with `Missing X server or $DISPLAY` — and because the browser tests serialise on
+a shared mutex, that one failure used to report as a dozen unrelated
+`PoisonError`s, hiding the actual cause.
+
+`xvfb-run` gives the runner a virtual display, so the test exercises the same
+headful path the app ships. Do **not** "fix" this by switching the app to
+headless in tests: that would test a configuration nobody runs.
+
+`.with_head()` in `tools/browser/mod.rs` reads backwards — in
+`chromiumoxide` it sets `HeadlessMode::False`, i.e. *with a head*, not *head
+less*. It is correct here.
+
+### When the keyring is missing
+
+Several tests drive a mock provider on `127.0.0.1`, which stores no key. That
+works only because `router::decide_key` resolves a local provider **without
+requiring the keyring to be reachable** — a runner has no secret-service, and a
+headless Linux box may have neither it nor kwallet. This is not test-only: it
+was a real bug where Ollama was unreachable on exactly the machines most likely
+to run Ollama. `router_test::a_local_provider_works_without_a_reachable_keyring`
+pins it.
 
 ### The one test that lies
 

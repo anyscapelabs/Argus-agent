@@ -32,6 +32,15 @@ jobs:
       # Tauri links webkit2gtk on Linux, so `cargo check` alone needs these.
       # Without them the first build step fails with a linker error that looks
       # nothing like a missing system package.
+      #
+      # `xvfb` is for the browser tests, and it is not optional: the app
+      # launches a real headful Chromium on purpose (`.with_head()` is
+      # `HeadlessMode::False` — confusingly named) so a user can watch and
+      # intervene in what the agent is doing. A runner has no X server, so
+      # Chrome dies with "Missing X server or $DISPLAY" and takes every other
+      # test in those binaries down with it. A virtual display lets the test
+      # exercise the same headful path the app uses, instead of quietly
+      # testing a headless configuration nobody ships.
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -42,7 +51,8 @@ jobs:
             libssl-dev \
             patchelf \
             pkg-config \
-            xdg-utils
+            xdg-utils \
+            xvfb
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -92,13 +102,14 @@ jobs:
       - name: Clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
 
-      # `--no-fail-fast` so one broken binary does not hide the other 71.
+      # `--no-fail-fast` so one broken binary does not hide the other 71, and
+      # `xvfb-run` because the browser tests launch a real headful Chromium.
       # `browser_shown_test::profile_isolation_for_shown_watermark` polls a
       # process-global for 5s and is load-sensitive; on a busy runner it is the
       # first thing to fail, and it passes in isolation. If it goes red here,
       # re-run before believing it.
       - name: Test the backend
-        run: cargo test --manifest-path src-tauri/Cargo.toml --no-fail-fast
+        run: xvfb-run -a cargo test --manifest-path src-tauri/Cargo.toml --no-fail-fast
 
       - name: Typecheck the frontend
         run: npx tsc --noEmit

@@ -12,7 +12,11 @@ static SERIAL: OnceLock<StdMutex<()>> = OnceLock::new();
 static SANDBOX: OnceLock<PathBuf> = OnceLock::new();
 
 fn serial() -> std::sync::MutexGuard<'static, ()> {
-    SERIAL.get_or_init(|| StdMutex::new(())).lock().unwrap()
+    // The guard only enforces order; a previous failure must not mask the next test.
+    SERIAL
+        .get_or_init(|| StdMutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn sandbox() -> PathBuf {

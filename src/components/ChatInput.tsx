@@ -1,15 +1,25 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FiChevronDown } from "react-icons/fi";
 import { HiArrowUp, HiPlus, HiStop } from "react-icons/hi";
-import { LuGlobe, LuLibrary, LuMic, LuShieldCheck } from "react-icons/lu";
+import {
+  LuGlobe,
+  LuLibrary,
+  LuLoaderCircle,
+  LuMic,
+  LuMicOff,
+  LuShieldCheck,
+} from "react-icons/lu";
 import { RiAttachment2 } from "react-icons/ri";
 
 import { useChatModels } from "../hooks/useChatModels";
 import { slashList, type ChatModel, type SlashCmd } from "../lib/ipc";
 import { menuTakesEnter, SLASH_CALL, SLASH_MENU } from "../lib/slashKey";
+import { MAX_SECS } from "../lib/recorder";
+import { insertTranscript } from "../lib/voiceText";
 import { attachStore, useAttachments } from "../stores/attachments";
+import { useVoice } from "../stores/voice";
 import AttachChips from "./AttachChips";
 import Dropdown, { type DropdownItem } from "./Dropdown";
 import LibraryPanel from "./LibraryPanel";
@@ -60,6 +70,11 @@ export default function ChatInput({
   sessionId = null,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const voice = useVoice();
+  // Set when a transcript is spliced in, consumed by the effect below. A
+  // controlled textarea resets its caret to the end on every value change, so
+  // the position is restored here rather than after the next render.
+  const pendingCaret = useRef<number | null>(null);
   const { models, loading } = useChatModels();
   const [picked, setPicked] = useState<ChatModel | null>(null);
   const [browsing, setBrowsing] = useState(false);
@@ -166,6 +181,31 @@ export default function ChatInput({
     onChange(`/${cmd.name} `);
     textareaRef.current?.focus();
   };
+
+  // Dictation lands in the box and stops. It never sends.
+  //
+  // The caret is read here, at insert time, and not saved when the mic was
+  // pressed: a recording takes seconds, and anything typed in between would
+  // otherwise be spliced into the wrong place -- possibly inside a
+  // half-finished word.
+  const place = (transcript: string) => {
+    const el = textareaRef.current;
+    const next = insertTranscript(value, el?.selectionStart ?? value.length, transcript);
+
+    if (next.text === value) return;
+
+    onChange(next.text);
+    pendingCaret.current = next.caret;
+    el?.focus();
+  };
+
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (el === null || pendingCaret.current === null) return;
+
+    el.setSelectionRange(pendingCaret.current, pendingCaret.current);
+    pendingCaret.current = null;
+  }, [value]);
 
   // The menu can tell the line is already the whole command, which the
   // textarea cannot: it never sees the keystroke the menu took.
@@ -277,6 +317,15 @@ export default function ChatInput({
         )}
       </div>
 
+      {(voice.err !== null || voice.note !== null) && (
+        <p
+          role="status"
+          className="mt-1 text-xs text-text-secondary"
+        >
+          {voice.err ?? voice.note}
+        </p>
+      )}
+
       <div className="mt-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Dropdown
@@ -355,13 +404,51 @@ export default function ChatInput({
             )}
           />
 
+          {voice.phase === "listening" && (
+            <span
+              aria-live="off"
+              className="text-xs tabular-nums text-text-secondary"
+            >
+              {MAX_SECS - voice.elapsed}s
+            </span>
+          )}
+
           <button
             type="button"
-            aria-label="Voice input"
-            onClick={() => {}}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-bg-hover-primary hover:text-text-primary"
+            aria-label={
+              voice.phase === "listening" ? "Stop dictation" : "Voice input"
+            }
+            aria-pressed={voice.phase === "listening"}
+            onClick={async () => {
+              if (voice.phase === "listening") {
+                const said = await voice.stop();
+                if (said !== null) place(said);
+                return;
+              }
+
+              if (voice.phase === "working") {
+                voice.cancel();
+                return;
+              }
+
+              voice.reset();
+              await voice.start();
+            }}
+            className={
+              "flex h-8 w-8 shrink-0 items-center justify-center rounded-full " +
+              "transition-colors focus:outline-none focus-visible:bg-bg-hover-primary " +
+              (voice.phase === "listening"
+                ? "bg-text-primary text-bg-primary hover:opacity-90"
+                : "text-text-secondary hover:bg-bg-hover-primary hover:text-text-primary")
+            }
           >
-            <LuMic size={16} />
+            {voice.phase === "listening" ? (
+              <LuMicOff size={16} />
+            ) : voice.phase === "working" ? (
+              <LuLoaderCircle size={16} className="animate-spin" />
+            ) : (
+              <LuMic size={16} />
+            )}
           </button>
 
           <button

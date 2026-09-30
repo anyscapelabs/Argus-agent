@@ -311,7 +311,10 @@ fn the_pre_gate_needs_no_transcript() {
     // The whole point of the split: a runaway clip is refused before it costs
     // a model load, so these cannot look at text at all.
     assert_eq!(filter::precheck(&speech(61_000)), Some(Verdict::TooLong));
-    assert_eq!(filter::precheck(&vec![0_i16; 16_000]), Some(Verdict::Silent));
+    assert_eq!(
+        filter::precheck(&vec![0_i16; 16_000]),
+        Some(Verdict::Silent)
+    );
     assert_eq!(filter::precheck(&speech(1_000)), None);
 }
 

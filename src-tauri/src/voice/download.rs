@@ -110,11 +110,7 @@ fn url_for(repo: &str, file: &str) -> String {
 /// failure. It does not catch a compromised origin, because the hash and the
 /// bytes come from the same host — pinning the digests in this file would
 /// close that, at the cost of a digest bump per model release.
-async fn expected_sha(
-    client: &reqwest::Client,
-    repo: &str,
-    file: &str,
-) -> Result<String, String> {
+async fn expected_sha(client: &reqwest::Client, repo: &str, file: &str) -> Result<String, String> {
     let url = format!("https://huggingface.co/api/models/{repo}/tree/main");
 
     let list: Vec<TreeEntry> = client
@@ -168,7 +164,9 @@ pub async fn fetch(
     let mut stream = resp.bytes_stream();
 
     let part = dest.with_extension("part");
-    let mut out = tokio::fs::File::create(&part).await.map_err(|err| err.to_string())?;
+    let mut out = tokio::fs::File::create(&part)
+        .await
+        .map_err(|err| err.to_string())?;
 
     let mut hasher = Sha256::new();
     let mut got: u64 = 0;

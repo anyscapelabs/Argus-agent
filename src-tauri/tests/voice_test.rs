@@ -303,3 +303,52 @@ fn every_drop_has_something_to_say() {
         assert!(!filter::verdict_msg(v).is_empty(), "{v:?} says nothing");
     }
 }
+
+// --- the split -----------------------------------------------------------
+
+#[test]
+fn the_pre_gate_needs_no_transcript() {
+    // The whole point of the split: a runaway clip is refused before it costs
+    // a model load, so these cannot look at text at all.
+    assert_eq!(filter::precheck(&speech(61_000)), Some(Verdict::TooLong));
+    assert_eq!(filter::precheck(&vec![0_i16; 16_000]), Some(Verdict::Silent));
+    assert_eq!(filter::precheck(&speech(1_000)), None);
+}
+
+#[test]
+fn the_post_gate_needs_no_audio() {
+    assert_eq!(filter::postcheck("Thank you."), Some(Verdict::Artifact));
+    assert_eq!(filter::postcheck("   "), Some(Verdict::Empty));
+    assert_eq!(filter::postcheck("ship it"), None);
+}
+
+#[test]
+fn the_split_does_not_change_what_gets_dropped() {
+    // `check` is the composition of the two halves, so these are the whole
+    // truth table: every case that must survive does, every case that must
+    // not is named rather than left to the reader.
+    let loud = speech(2_000);
+    let quiet = vec![0_i16; 16_000];
+    let long = vec![8_000_i16; 16_000 * 61];
+
+    for (samples, text, want) in [
+        (&loud, "ship it", Verdict::Keep),
+        (&loud, "Thank you.", Verdict::Artifact),
+        (&loud, "", Verdict::Empty),
+        (&quiet, "ship it", Verdict::Silent),
+        (&long, "ship it", Verdict::TooLong),
+        (&loud, "delete the database", Verdict::Keep),
+    ] {
+        assert_eq!(filter::check(samples, text), want, "{text:?}");
+    }
+}
+
+#[test]
+fn the_size_gate_wins_over_the_silence_gate() {
+    // A clip that is both silent and too long is reported as too long, so the
+    // message names the mistake the user can act on.
+    assert_eq!(
+        filter::check(&vec![0; 16_000 * 61], "ship it"),
+        Verdict::TooLong
+    );
+}

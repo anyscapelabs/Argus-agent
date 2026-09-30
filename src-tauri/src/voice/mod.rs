@@ -139,7 +139,7 @@ fn resolve(app: &tauri::AppHandle, key: &str) -> Result<(PathBuf, Option<PathBuf
         .ok_or_else(|| {
             format!(
                 "The {} voice model is missing. Reinstall Argus, or pick another in Settings.",
-                download::model_for(key).map_or(key.as_str(), |i| i.label)
+                download::model_for(key).map_or(key, |i| i.label)
             )
         })?;
 
@@ -188,15 +188,19 @@ pub fn voice_status(app: tauri::AppHandle, gw: tauri::State<'_, Gateway>) -> Res
         download::model_for(&cfg.stt_model).map(|i| b.join(i.file).is_file())
     });
 
+    let vad_installed = bundled
+        .as_ref()
+        .is_some_and(|b| b.join(download::VAD_FILE).is_file())
+        || download::vad_path(&dir).is_file();
+
+    let installed = is_bundled.unwrap_or_else(|| download::has(&dir, &cfg.stt_model));
+
     Ok(Status {
-        ready: is_bundled.unwrap_or_else(|| download::has(&dir, &cfg.stt_model)),
+        ready: installed,
         model: cfg.stt_model,
-        installed: is_bundled.unwrap_or_else(|| download::has(&dir, &cfg.stt_model)),
+        installed,
         bundled: is_bundled.unwrap_or(false),
-        vad_installed: bundled
-            .as_ref()
-            .is_some_and(|b| b.join(download::VAD_FILE).is_file())
-            || download::vad_path(&dir).is_file(),
+        vad_installed,
         engine_loaded: whisper::loaded_model().is_some(),
     })
 }

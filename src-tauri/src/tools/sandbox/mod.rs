@@ -51,6 +51,79 @@ pub fn parse_profile(args: &Value, default: Profile) -> SandboxResult<Profile> {
     }
 }
 
+/// How much each profile confines. Higher is tighter.
+fn rank(p: Profile) -> u8 {
+    match p {
+        Profile::Host => 0,
+        Profile::Project => 1,
+        Profile::Restricted => 2,
+    }
+}
+
+/// Keep the tighter of two profiles.
+///
+/// This is the whole of the model's authority over the sandbox. The user's
+/// setting is a ceiling and the model may drop below it, never climb above it —
+/// otherwise a prompt that says "run this with profile=host" would be the same
+/// thing as the user having chosen Host.
+pub fn tighten(requested: Profile, ceiling: Profile) -> Profile {
+    if rank(requested) >= rank(ceiling) {
+        requested
+    } else {
+        ceiling
+    }
+}
+
+/// The profile a call actually runs under.
+///
+/// The model's `profile` argument is a request, not a decision: it is clamped
+/// to the user's ceiling and to `Restricted` when the content came from
+/// somewhere the user has not vouched for. Asking for `host` is how a prompt
+/// injection would try to escape, so the answer is the ceiling, not an error.
+pub fn effective_profile(
+    args: &Value,
+    ceiling: Profile,
+    origin: Option<&Origin>,
+    allow_hosts: &[String],
+) -> SandboxResult<Profile> {
+    let asked = parse_profile(args, ceiling)?;
+    let mut eff = tighten(asked, ceiling);
+
+    // An empty allowlist is silence, not refusal. Treating "the user never
+    // said" as "nothing is trusted" would confine every `git clone` on a
+    // fresh install, which is a working default the user did not ask to lose.
+    if !allow_hosts.is_empty() {
+        if let Some(o) = origin {
+            if classify(o, allow_hosts) == Trust::Untrusted {
+                eff = tighten(eff, Profile::Restricted);
+            }
+        }
+    }
+
+    Ok(eff)
+}
+
+/// The user's saved default, which is the loosest any call may run at.
+///
+/// Unset reads as `Host`, because that is how a terminal behaved before the
+/// setting was ever consulted, and a user who has not opened the Sandbox page
+/// has not asked to be confined. `Restricted` is one click away and is what
+/// `config()` reports, so the page and the enforcement agree.
+///
+/// A lock failure also lands on `Host`. That is the one place this could hide
+/// a real preference, and it is deliberate: a panic-poisoned database has
+/// stopped the app anyway, and returning `Restricted` there would confine
+/// every command to a scratch directory on the way down.
+pub fn default_profile(gw: &Gateway) -> Profile {
+    let Ok(conn) = gw.conn.lock() else {
+        return Profile::Host;
+    };
+
+    kv_get(&conn, record::KV_DEFAULT_PROFILE)
+        .and_then(|v| Profile::parse(&v))
+        .unwrap_or(Profile::Host)
+}
+
 fn home_dir() -> PathBuf {
     std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
@@ -116,12 +189,26 @@ pub fn denial_hint(isolated: bool, exit: i64, combined: &str, root: &str) -> Opt
     ))
 }
 
-fn allow_hosts(gw: &Gateway) -> Vec<String> {
+pub fn allow_hosts(gw: &Gateway) -> Vec<String> {
     let Ok(conn) = gw.conn.lock() else {
         return Vec::new();
     };
 
     kv_get(&conn, KV_ALLOW_HOSTS)
+        .and_then(|v| serde_json::from_str(&v).ok())
+        .unwrap_or_default()
+}
+
+/// Ports the user allows an isolated profile to reach.
+///
+/// Empty means no network, not every network: a backend that adds no rules
+/// for an empty list leaves the profile's own deny in place.
+pub fn net_allow(gw: &Gateway) -> Vec<u16> {
+    let Ok(conn) = gw.conn.lock() else {
+        return Vec::new();
+    };
+
+    kv_get(&conn, record::KV_NET_ALLOW)
         .and_then(|v| serde_json::from_str(&v).ok())
         .unwrap_or_default()
 }
@@ -178,11 +265,13 @@ pub async fn run(
 
     let project = workdir(req.cwd);
     let tmp = tmp_dir();
+    let ports = net_allow(gw);
 
     let ctx = PolicyCtx {
         project: &project,
         tmp: &tmp,
         home: &home_dir(),
+        net_allow: &ports,
     };
 
     let policy = policy::resolve(req.profile, &ctx);
@@ -368,7 +457,7 @@ pub fn config(gw: &Gateway) -> Result<SandboxConfig, String> {
             .unwrap_or_default(),
         default_profile: kv_get(&conn, record::KV_DEFAULT_PROFILE)
             .and_then(|v| Profile::parse(&v))
-            .unwrap_or(Profile::Restricted),
+            .unwrap_or(Profile::Host),
         net_allow: kv_get(&conn, record::KV_NET_ALLOW)
             .and_then(|v| serde_json::from_str(&v).ok())
             .unwrap_or_else(|| vec![80, 443]),

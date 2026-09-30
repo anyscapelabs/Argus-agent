@@ -16,7 +16,7 @@ const PROFILES: { id: SandboxProfile; label: string; blurb: string }[] = [
   {
     id: "project",
     label: "Project",
-    blurb: "Reads and writes the project. Outbound 80/443 only. 900s, 4 GB.",
+    blurb: "Reads and writes the project. Outbound ports only, as set below. 900s, 4 GB.",
   },
   {
     id: "host",
@@ -36,7 +36,7 @@ function toPorts(text: string): number[] {
 }
 
 export default function SandboxPage() {
-  const [profile, setProfile] = useState<SandboxProfile>("restricted");
+  const [profile, setProfile] = useState<SandboxProfile>("host");
   const [hosts, setHosts] = useState("");
   const [ports, setPorts] = useState("");
   const [busy, setBusy] = useState(false);
@@ -85,7 +85,10 @@ export default function SandboxPage() {
 
   return (
     <Page>
-      <Section label="Default profile" note="Used when a command names none.">
+      <Section
+        label="Default profile"
+        note="The ceiling. A command may ask for something tighter, never looser."
+      >
         <Card>
           <Row
             title="Profile"
@@ -119,7 +122,7 @@ export default function SandboxPage() {
           <Row
             stacked
             title="Trusted hosts"
-            desc="One per line. Clones and fetches from these count as trusted."
+            desc="One per line. Content from any other host runs Restricted. Leave empty to trust all origins."
           >
             <textarea
               value={hosts}

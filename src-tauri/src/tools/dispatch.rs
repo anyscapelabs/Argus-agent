@@ -90,9 +90,17 @@ pub async fn exec<R: tauri::Runtime>(call: ExecIn<'_, R>) -> Result<String, Stri
 
     match name {
         "terminal" | "bash.run" => {
-            let profile = sandbox::parse_profile(&args, sandbox::Profile::Host)
-                .map_err(|err| err.to_string())?;
+            // The user's setting is the ceiling, not a starting suggestion.
+            // This used to pass a hardcoded Host, so the profile chosen in
+            // Settings was stored and never consulted.
             let origin = sandbox::origin_of_tool(name, args_json);
+            let profile = sandbox::effective_profile(
+                &args,
+                sandbox::default_profile(gw),
+                origin.as_ref(),
+                &sandbox::allow_hosts(gw),
+            )
+            .map_err(|err| err.to_string())?;
             let command = args["command"].as_str().ok_or("terminal needs a command")?;
             let elevated = args.get("privilege").and_then(|v| v.as_str()) == Some("admin");
 

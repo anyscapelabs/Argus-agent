@@ -10,8 +10,8 @@ use argus_lib::tools::sandbox::policy::{
     self, EnvPolicy, FsAccess, FsPolicy, FsRule, NetPolicy, PolicyCtx, Profile,
 };
 use argus_lib::tools::sandbox::{
-    classify, denial_hint, origin_of_tool, parse_profile, project_root_check, record_block,
-    trust_of, Origin, Trust,
+    classify, denial_hint, effective_profile, origin_of_tool, parse_profile, project_root_check,
+    record_block, tighten, trust_of, Origin, Trust,
 };
 
 use rusqlite::Connection;
@@ -37,6 +37,7 @@ fn resolved(p: Profile) -> argus_lib::tools::sandbox::Policy {
             project: &project,
             tmp: &tmp,
             home: &home,
+            net_allow: &[80, 443],
         },
     )
 }
@@ -149,6 +150,165 @@ fn parse_profile_defaults_and_refuses_unknown() {
     ));
 }
 
+/// The user's setting is a ceiling the model may not climb above.
+///
+/// This is the bug these pin: dispatch used to pass a hardcoded `Host` as the
+/// fallback, so the profile chosen in Settings was stored, displayed, and never
+/// consulted. An unset preference must also not widen the sandbox.
+#[test]
+fn a_model_cannot_widen_past_the_users_ceiling() {
+    for (ceiling, asked, want) in [
+        (Profile::Restricted, "host", Profile::Restricted),
+        (Profile::Restricted, "project", Profile::Restricted),
+        (Profile::Restricted, "restricted", Profile::Restricted),
+        (Profile::Project, "host", Profile::Project),
+        (Profile::Project, "project", Profile::Project),
+        (Profile::Host, "host", Profile::Host),
+    ] {
+        let args = serde_json::json!({ "profile": asked });
+        assert_eq!(
+            effective_profile(&args, ceiling, None, &[]).unwrap(),
+            want,
+            "ceiling {ceiling:?} asked {asked:?}"
+        );
+    }
+}
+
+/// Tightening below the ceiling is allowed, and is the only thing the model's
+/// argument is good for.
+#[test]
+fn a_model_may_tighten_below_the_ceiling() {
+    let args = serde_json::json!({ "profile": "restricted" });
+
+    assert_eq!(
+        effective_profile(&args, Profile::Host, None, &[]).unwrap(),
+        Profile::Restricted
+    );
+    assert_eq!(
+        tighten(Profile::Restricted, Profile::Project),
+        Profile::Restricted
+    );
+    assert_eq!(
+        tighten(Profile::Project, Profile::Restricted),
+        Profile::Restricted
+    );
+    assert_eq!(tighten(Profile::Host, Profile::Project), Profile::Project);
+}
+
+/// With no argument the call runs at exactly the ceiling, which is the setting
+/// the user actually chose.
+#[test]
+fn no_argument_runs_at_the_users_ceiling() {
+    for ceiling in [Profile::Restricted, Profile::Project, Profile::Host] {
+        let none = serde_json::json!({});
+        assert_eq!(
+            effective_profile(&none, ceiling, None, &[]).unwrap(),
+            ceiling
+        );
+
+        let blank = serde_json::json!({ "profile": "  " });
+        assert_eq!(
+            effective_profile(&blank, ceiling, None, &[]).unwrap(),
+            ceiling
+        );
+    }
+}
+
+/// Content from a host the user has not vouched for runs confined, whatever the
+/// model asked for and whatever the ceiling is.
+#[test]
+fn untrusted_content_is_confined_even_at_a_host_ceiling() {
+    let args = serde_json::json!({ "profile": "host" });
+    let clone = Origin::GitClone("https://evil.test/x.git".into());
+
+    assert_eq!(
+        effective_profile(&args, Profile::Host, Some(&clone), &allow_hosts()).unwrap(),
+        Profile::Restricted
+    );
+
+    let trusted = Origin::GitClone("https://github.com/a/b.git".into());
+    assert_eq!(
+        effective_profile(&args, Profile::Host, Some(&trusted), &allow_hosts()).unwrap(),
+        Profile::Host,
+        "a vouched host may still run at the ceiling"
+    );
+}
+
+/// An empty allowlist is the user having said nothing, not having said no.
+/// Treating it as "nothing is trusted" would confine every clone on a fresh
+/// install, which is a working default nobody asked to lose.
+#[test]
+fn an_empty_allowlist_does_not_confine() {
+    let args = serde_json::json!({ "profile": "host" });
+    let clone = Origin::GitClone("https://github.com/a/b.git".into());
+
+    assert_eq!(
+        effective_profile(&args, Profile::Host, Some(&clone), &[]).unwrap(),
+        Profile::Host
+    );
+}
+
+/// The ports editable in Settings must reach the policy. They were hardcoded to
+/// 80/443 in `resolve`, so editing them changed nothing.
+#[test]
+fn the_project_profile_uses_the_users_allowed_ports() {
+    let (project, tmp, home) = ctx();
+
+    let wide = policy::resolve(
+        Profile::Project,
+        &PolicyCtx {
+            project: &project,
+            tmp: &tmp,
+            home: &home,
+            net_allow: &[80, 443, 5432],
+        },
+    );
+    assert_eq!(wide.net, NetPolicy::Ports(vec![80, 443, 5432]));
+
+    let narrow = policy::resolve(
+        Profile::Project,
+        &PolicyCtx {
+            project: &project,
+            tmp: &tmp,
+            home: &home,
+            net_allow: &[],
+        },
+    );
+    assert_eq!(
+        narrow.net,
+        NetPolicy::Ports(vec![]),
+        "an empty list denies network rather than allowing all of it"
+    );
+
+    // Restricted stays closed whatever the user allows, or the ports setting
+    // would be a way to widen the tightest profile.
+    let restricted = policy::resolve(
+        Profile::Restricted,
+        &PolicyCtx {
+            project: &project,
+            tmp: &tmp,
+            home: &home,
+            net_allow: &[80, 443, 5432],
+        },
+    );
+    assert_eq!(restricted.net, NetPolicy::None);
+
+    let host = policy::resolve(
+        Profile::Host,
+        &PolicyCtx {
+            project: &project,
+            tmp: &tmp,
+            home: &home,
+            net_allow: &[],
+        },
+    );
+    assert_eq!(
+        host.net,
+        NetPolicy::Full,
+        "Host is unrestricted by definition"
+    );
+}
+
 #[test]
 fn host_profile_is_unrestricted() {
     let p = resolved(Profile::Host);
@@ -248,6 +408,7 @@ fn macos_quoting_cannot_escape_the_profile() {
             project: &project,
             tmp: &tmp,
             home: Path::new("/tmp/h"),
+            net_allow: &[80, 443],
         },
     );
 
@@ -274,6 +435,7 @@ fn macos_newlines_do_not_break_the_profile() {
             project: &project,
             tmp: &tmp,
             home: Path::new("/tmp/h"),
+            net_allow: &[80, 443],
         },
     );
 
@@ -495,14 +657,18 @@ fn test_gw() -> Gateway {
     }
 }
 
+// Unset is `Host`, not `Restricted`: a user who never opened the Sandbox page
+// has not asked to be confined, and the value shown before a save is the value
+// that runs.
 #[test]
-fn config_round_trips_and_defaults_fail_closed() {
+fn config_round_trips_and_defaults_to_host() {
     use argus_lib::tools::sandbox::{config, set_config, SandboxConfig};
 
     let gw = test_gw();
 
     let def = config(&gw).unwrap();
-    assert_eq!(def.default_profile, Profile::Restricted);
+    assert_eq!(def.default_profile, Profile::Host);
+    assert_eq!(SandboxConfig::default().default_profile, Profile::Host);
     assert!(def.hosts.is_empty());
     assert_eq!(def.net_allow, vec![80, 443]);
 
@@ -647,4 +813,102 @@ fn confined_denial_names_the_allowed_root() {
     assert!(denial_hint(true, 0, "Permission denied", "/r").is_none());
     assert!(denial_hint(false, 1, "Permission denied", "/r").is_none());
     assert!(denial_hint(true, 1, "all clear", "/r").is_none());
+}
+
+// The wiring itself. `effective_profile` is unit-tested above, which says
+// nothing about whether `dispatch` calls it: the bug was a call site passing a
+// hardcoded `Host`, so the function was correct and the setting was dead. These
+// drive the real `tools::exec`.
+//
+// `Project` without a `cwd` refuses before any process is spawned, which makes
+// the ceiling observable without needing a working Landlock/seatbelt backend or
+// asserting on a confined command's side effects.
+#[tokio::test]
+async fn the_terminal_call_site_reads_the_stored_ceiling() {
+    use argus_lib::tools::sandbox::{set_config, SandboxConfig};
+
+    let gw = test_gw();
+    set_config(
+        &gw,
+        &SandboxConfig {
+            hosts: Vec::new(),
+            default_profile: Profile::Project,
+            net_allow: vec![443],
+        },
+    )
+    .unwrap();
+
+    let app = tauri::test::mock_app().handle().clone();
+    let err = argus_lib::tools::exec(argus_lib::tools::ExecIn {
+        app: &app,
+        gw: &gw,
+        name: "terminal",
+        args_json: r#"{"command":"echo hi"}"#,
+        permission: "never",
+        web: false,
+        approved: true,
+        on_term: None,
+    })
+    .await
+    .expect_err("a Project ceiling with no cwd must refuse");
+
+    assert!(err.contains("needs cwd"), "{err}");
+}
+
+// A model asking for `host` cannot lift a `Project` ceiling. Same refusal, so
+// the request is visibly clamped rather than honoured.
+#[tokio::test]
+async fn the_call_site_clamps_a_model_that_asks_for_host() {
+    use argus_lib::tools::sandbox::{set_config, SandboxConfig};
+
+    let gw = test_gw();
+    set_config(
+        &gw,
+        &SandboxConfig {
+            hosts: Vec::new(),
+            default_profile: Profile::Project,
+            net_allow: vec![443],
+        },
+    )
+    .unwrap();
+
+    let app = tauri::test::mock_app().handle().clone();
+    let err = argus_lib::tools::exec(argus_lib::tools::ExecIn {
+        app: &app,
+        gw: &gw,
+        name: "terminal",
+        args_json: r#"{"command":"echo hi","profile":"host"}"#,
+        permission: "never",
+        web: false,
+        approved: true,
+        on_term: None,
+    })
+    .await
+    .expect_err("profile=host must not lift a Project ceiling");
+
+    assert!(err.contains("needs cwd"), "{err}");
+}
+
+// With nothing stored the ceiling is `Host`, so a bare command runs. This is
+// the regression guard for silently defaulting to `Restricted`: it would fail
+// the same way as the ceiling tests above, which is exactly the confusion.
+#[tokio::test]
+async fn an_unset_ceiling_leaves_the_terminal_unconfined() {
+    let gw = test_gw();
+
+    let app = tauri::test::mock_app().handle().clone();
+    let out = argus_lib::tools::exec(argus_lib::tools::ExecIn {
+        app: &app,
+        gw: &gw,
+        name: "terminal",
+        args_json: r#"{"command":"echo sandbox-ceiling-probe"}"#,
+        permission: "never",
+        web: false,
+        approved: true,
+        on_term: None,
+    })
+    .await
+    .expect("an unset ceiling must not confine");
+
+    assert!(out.contains("sandbox-ceiling-probe"), "{out}");
 }

@@ -18,7 +18,10 @@ impl Default for SandboxConfig {
     fn default() -> Self {
         Self {
             hosts: Vec::new(),
-            default_profile: Profile::Restricted,
+            // Host, not Restricted. A user who has never opened the Sandbox
+            // page has not asked to be confined, and this value is what the
+            // page shows before anything is saved.
+            default_profile: Profile::Host,
             net_allow: vec![80, 443],
         }
     }

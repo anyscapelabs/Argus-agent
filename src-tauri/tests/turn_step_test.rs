@@ -713,3 +713,267 @@ fn the_recorder_replays_the_frontend_buffer_contract() {
     assert_eq!(rec.buffer_at_clear(1), "c");
     assert!(rec.has_reset());
 }
+
+// --- A provider that stops talking -------------------------------------
+//
+// The shared client used to be built with no timeout at all, so a provider
+// that accepted a request and then went silent left the socket open forever.
+// Nothing downstream bounded it: the request never errored, so the router's
+// retry ladder never engaged and the turn simply stopped making progress with
+// no failure to show for it.
+//
+// `gateway::http_client` bounds that with a per-read `read_timeout`. It is the
+// right shape for a stream because it resets on progress — a slow-but-alive
+// reply is never killed, only one that stops talking. A total timeout would be
+// wrong here, since it runs until the body finishes and would cap every long
+// reply.
+//
+// These drive the real `adapters::dispatch_stream` against mock sockets. That
+// is the layer the bound lives on; going through `Turn::run` instead would
+// measure the retry ladder (1+2+4+...+120s), not the stall.
+
+/// Short bounds, so a stall is a one-second wait rather than a two-minute one.
+const TEST_CONNECT: std::time::Duration = std::time::Duration::from_secs(5);
+const TEST_STALL: std::time::Duration = std::time::Duration::from_secs(1);
+
+fn stall_client() -> reqwest::Client {
+    argus_lib::gateway::http_client_with(TEST_CONNECT, TEST_STALL).unwrap()
+}
+
+fn mock_prov(base_url: &str) -> Provider {
+    Provider {
+        id: "stall-prov".into(),
+        name: "mock".into(),
+        compatible: "openai".into(),
+        base_url: base_url.into(),
+        api_key_ref: None,
+        connected: true,
+        free: true,
+        priority: 0,
+        logo_url: None,
+        doc_url: None,
+    }
+}
+
+/// A mock that serves `done` whole replies, then accepts one more connection
+/// and says nothing: no headers, no body, just an open socket. It never
+/// returns an error — the client has to give up on its own.
+fn stalling_provider(done: Vec<String>) -> (String, std::thread::JoinHandle<()>) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    listener.set_nonblocking(true).unwrap();
+
+    let handle = std::thread::spawn(move || {
+        for body in done {
+            let Some(mut stream) = accept(&listener) else {
+                return;
+            };
+
+            stream.set_nonblocking(false).ok();
+            stream.set_read_timeout(Some(READ_TIMEOUT)).ok();
+            drain_request(&mut stream);
+
+            if write_reply(&mut stream, 200, "OK", &body).is_err() {
+                return;
+            }
+        }
+
+        let Some(held) = accept(&listener) else {
+            return;
+        };
+
+        let _ = held.set_read_timeout(None);
+        std::thread::sleep(std::time::Duration::from_secs(20));
+    });
+
+    (base_url, handle)
+}
+
+/// A complete reply, shaped the way the openai adapter expects.
+fn whole_reply(text: &str) -> String {
+    format!(
+        "data: {}\n\ndata: [DONE]\n\n",
+        serde_json::json!({
+            "choices": [{
+                "delta": {"content": text},
+                "finish_reason": "stop",
+            }]
+        })
+    )
+}
+
+/// Sends `chunks` events `gap` apart, then closes. Surviving a total
+/// duration longer than the stall bound is the whole claim: the bound is
+/// per-read, so progress keeps resetting it.
+fn slow_provider(
+    text: String,
+    chunks: usize,
+    gap: std::time::Duration,
+) -> (String, std::thread::JoinHandle<()>) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    listener.set_nonblocking(true).unwrap();
+
+    let handle = std::thread::spawn(move || {
+        let Some(mut stream) = accept(&listener) else {
+            return;
+        };
+
+        stream.set_nonblocking(false).ok();
+        stream.set_read_timeout(Some(READ_TIMEOUT)).ok();
+        drain_request(&mut stream);
+
+        let head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
+                    transfer-encoding: chunked\r\n\r\n";
+
+        if stream.write_all(head.as_bytes()).is_err() {
+            return;
+        }
+
+        let body = whole_reply(&text);
+
+        for i in 0..chunks {
+            if i > 0 {
+                std::thread::sleep(gap);
+            }
+
+            let framed = format!("{:x}\r\n{}\r\n", body.len(), body);
+
+            if stream.write_all(framed.as_bytes()).is_err() {
+                return;
+            }
+
+            let _ = stream.flush();
+        }
+
+        let _ = stream.write_all(b"0\r\n\r\n");
+        let _ = stream.flush();
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    });
+
+    (base_url, handle)
+}
+
+async fn stream_once(
+    client: &reqwest::Client,
+    base_url: &str,
+    collect: &mut Vec<String>,
+) -> Result<(), argus_lib::gateway::adapters::CallError> {
+    let prov = mock_prov(base_url);
+    let msgs = vec![argus_lib::gateway::schema::WireMsg {
+        role: "user".into(),
+        content: "hello".into(),
+        ..Default::default()
+    }];
+
+    argus_lib::gateway::adapters::dispatch_stream(
+        client,
+        &prov,
+        "mock-remote",
+        None,
+        &msgs,
+        &[],
+        &mut |d: &str| {
+            collect.push(d.to_string());
+            Ok(())
+        },
+    )
+    .await
+    .map(|_| ())
+}
+
+/// The regression. Unbounded, this never returns at all.
+#[tokio::test]
+async fn a_provider_that_stops_talking_errors_instead_of_hanging() {
+    let (url, _handle) = stalling_provider(vec![]);
+    let client = stall_client();
+    let mut got = vec![];
+
+    let t0 = std::time::Instant::now();
+    let out = stream_once(&client, &url, &mut got).await;
+    let ms = t0.elapsed().as_millis();
+
+    let err = out.expect_err("a silent provider must not stream forever");
+    assert!(ms < 15_000, "took {ms}ms; the stall bound did not bite");
+    assert!(err.retryable(), "a stall should be worth another attempt");
+
+    // A stall that produced nothing is a different failure from one that died
+    // mid-reply, and the message is what a user reads on a stuck turn.
+    assert!(
+        err.msg.contains("accepted the request then went silent"),
+        "{err:?}"
+    );
+    assert!(got.is_empty(), "nothing should have streamed: {got:?}");
+}
+
+/// The other half. The bound must not fire on a stream that is merely slow —
+/// every gap here is wider than the stall, so a client that timed out on total
+/// elapsed time would break a working provider.
+#[tokio::test]
+async fn a_slow_but_alive_provider_is_not_cut_off() {
+    // Eight chunks, 400ms apart: every gap is under the one-second bound, but
+    // the stream runs for over three seconds, well past it. A total timeout
+    // would cut this off at one second; a per-read bound never does.
+    let (url, _handle) = slow_provider(
+        "still here.".into(),
+        8,
+        std::time::Duration::from_millis(400),
+    );
+    let client = stall_client();
+    let mut got = vec![];
+
+    stream_once(&client, &url, &mut got)
+        .await
+        .expect("a slow stream must survive a per-read stall bound");
+
+    assert!(
+        got.iter().any(|d| d.contains("still here.")),
+        "the slow reply must arrive intact: {got:?}"
+    );
+}
+
+/// A stream that stalls after real content has arrived is the case a total
+/// timeout would also catch, but for the wrong reason: the partial reply is
+/// already on screen and the error has to say the reply was cut off.
+#[tokio::test]
+async fn a_mid_reply_stall_says_the_reply_was_cut_off() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    listener.set_nonblocking(true).unwrap();
+
+    let handle = std::thread::spawn(move || {
+        let Some(mut stream) = accept(&listener) else {
+            return;
+        };
+
+        stream.set_nonblocking(false).ok();
+        stream.set_read_timeout(Some(READ_TIMEOUT)).ok();
+        drain_request(&mut stream);
+
+        let head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
+                    transfer-encoding: chunked\r\n\r\n";
+        let _ = stream.write_all(head.as_bytes());
+
+        let body = whole_reply("half a th");
+        let framed = format!("{:x}\r\n{}\r\n", body.len(), body);
+        let _ = stream.write_all(framed.as_bytes());
+        let _ = stream.flush();
+
+        // Now go quiet with the stream open.
+        std::thread::sleep(std::time::Duration::from_secs(20));
+    });
+
+    let client = stall_client();
+    let mut got = vec![];
+
+    let out = stream_once(&client, &url, &mut got).await;
+
+    assert!(
+        got.iter().any(|d| d.contains("half a th")),
+        "the partial reply must have been delivered: {got:?}"
+    );
+
+    let err = out.expect_err("the stall must end the stream");
+    assert!(err.msg.contains("stopped sending mid-reply"), "{err:?}");
+    drop(handle);
+}

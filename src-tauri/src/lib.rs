@@ -87,7 +87,10 @@ pub fn run() {
                 let _ = sessions::ext_install::install_core(&dir);
             }
 
-            let http = reqwest::Client::builder().build()?;
+            // A provider can accept a request and then say nothing forever.
+            // Nothing above this line bounds that, so the turn would park with
+            // no way out and no error to retry on.
+            let http = gateway::http_client()?;
 
             app.manage(Gateway {
                 conn: Mutex::new(conn),

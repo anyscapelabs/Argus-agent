@@ -147,11 +147,10 @@ pub async fn stream(
         req = req.header("x-api-key", t);
     }
 
-    let resp = req.send().await.map_err(|err| CallError {
-        status: None,
-        msg: err.to_string(),
-        retry_after: None,
-    })?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|err| CallError::from_send(&err, false))?;
 
     let status = resp.status().as_u16();
     if status != 200 {
@@ -170,11 +169,7 @@ pub async fn stream(
     let mut stream = resp.bytes_stream();
 
     while let Some(chunk) = stream.next().await {
-        let bytes = chunk.map_err(|err| CallError {
-            status: None,
-            msg: err.to_string(),
-            retry_after: None,
-        })?;
+        let bytes = chunk.map_err(|err| CallError::from_send(&err, !done.text.is_empty()))?;
 
         buf.push_str(&String::from_utf8_lossy(&bytes));
 
@@ -292,11 +287,10 @@ pub async fn chat(
         req = req.header("x-api-key", t);
     }
 
-    let resp = req.send().await.map_err(|err| CallError {
-        status: None,
-        msg: err.to_string(),
-        retry_after: None,
-    })?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|err| CallError::from_send(&err, false))?;
 
     let status = resp.status().as_u16();
     let ra = retry_after_secs(&resp);

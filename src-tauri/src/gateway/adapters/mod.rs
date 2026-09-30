@@ -19,6 +19,31 @@ impl CallError {
             Some(s) => s == 402 || s == 408 || s == 429 || s >= 500,
         }
     }
+
+    /// Name a stall for what it is.
+    ///
+    /// A raw reqwest `TimedOut` does not say whether the provider never sent
+    /// headers or went quiet partway through a reply, and those are different
+    /// failures to someone watching a turn that stopped moving.
+    pub fn from_send(err: &reqwest::Error, sent_any: bool) -> Self {
+        if !err.is_timeout() {
+            return Self {
+                status: None,
+                msg: err.to_string(),
+                retry_after: None,
+            };
+        }
+
+        Self {
+            status: None,
+            msg: if sent_any {
+                format!("provider stopped sending mid-reply: {err}")
+            } else {
+                format!("provider accepted the request then went silent: {err}")
+            },
+            retry_after: None,
+        }
+    }
 }
 
 pub(crate) fn retry_after_secs(resp: &reqwest::Response) -> Option<u64> {

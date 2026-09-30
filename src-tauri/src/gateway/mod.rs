@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use reqwest::Client;
 use rusqlite::Connection;
@@ -20,6 +21,37 @@ use schema::{
 };
 
 pub const BUS_CAP: usize = 512;
+
+/// TCP connect budget. Generous, because a cold TLS handshake to a distant
+/// provider is slow but bounded.
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Silence before a provider is presumed dead.
+///
+/// Sized well past any real inter-token gap, so a healthy stream never trips
+/// it. Long reasoning pauses and slow models sit far under this.
+pub const STALL_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// The client every provider call shares.
+///
+/// A provider can accept a request and then say nothing forever, and nothing
+/// downstream bounds that, so a stalled turn would park with no way out. The
+/// stall bound is per-read and resets on progress, which is what makes it safe
+/// on a long stream: a slow-but-alive reply is never killed, only one that
+/// stops talking. A total timeout would be wrong here, since it runs until the
+/// body finishes and would cap every long reply.
+pub fn http_client() -> Result<Client, reqwest::Error> {
+    http_client_with(CONNECT_TIMEOUT, STALL_TIMEOUT)
+}
+
+/// Same client, explicit bounds. Split out so a test can prove the stall bound
+/// bites without waiting the production two minutes.
+pub fn http_client_with(connect: Duration, stall: Duration) -> Result<Client, reqwest::Error> {
+    Client::builder()
+        .connect_timeout(connect)
+        .read_timeout(stall)
+        .build()
+}
 
 pub struct Bus {
     pub tx: broadcast::Sender<StreamEvent>,

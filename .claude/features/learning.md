@@ -1,6 +1,6 @@
 # Learning — Feedback Loop (behavioral preferences, not facts)
 
-Code: `src-tauri/src/learning/{mod.rs,store.rs,schema.rs}`, `src/lib/ipc.ts` (learning* bindings), `src/components/{AgentBubble,ChatDetailPage}.tsx` (edit affordance).
+Code: `src-tauri/src/learning/{mod.rs,store.rs,schema.rs}`, `src/lib/ipc/` (learning* bindings), `src/components/{AgentBubble,ChatDetailPage}.tsx` (edit affordance).
 
 ## Model
 

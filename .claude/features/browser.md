@@ -1,6 +1,6 @@
 # Browser — Isolated Profiles + Extension Bridge
 
-Code: `src-tauri/src/tools/browser/{mod.rs,ext.rs,extpipe.rs}`, `src-tauri/src/sessions/{browser_import.rs,ext_install.rs}`, `extension/{manifest.json,background.js,content.js}`, `src/lib/ipc.ts:256-276`.
+Code: `src-tauri/src/tools/browser/{mod.rs,ext.rs,extpipe.rs}`, `src-tauri/src/sessions/{browser_import.rs,ext_install.rs}`, `extension/{manifest.json,background.js,content.js}`, `src/lib/ipc/`.
 
 ## Isolated (`browser/mod.rs`)
 

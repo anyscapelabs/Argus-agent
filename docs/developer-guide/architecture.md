@@ -6,7 +6,7 @@
 ```text
 src/                  React + TypeScript frontend (2-space indent)
   components/         Chat, settings, connectors, agent bubbles
-  lib/ipc.ts          All Tauri command bindings (top-level functions)
+  lib/ipc/          All Tauri command bindings (top-level functions)
   stores/sessions.ts  Session store
 src-tauri/src/        Rust backend (rustfmt: 4 spaces, 100 cols)
   lib.rs              Tauri setup, command registry, app directories

@@ -8,7 +8,7 @@
 
 ## Rules
 
-- New backend command → `src/lib/ipc.ts` binding + types first, then components. No raw `invoke` outside `ipc.ts`.
+- New backend command → `src/lib/ipc/` binding + types first, then components. No raw `invoke` outside `ipc.ts`.
 - `camelCase` values / `PascalCase` types / `SCREAMING_SNAKE_CASE` consts, top-level `function`s, 2-space indent, Tailwind tokens. No `console.*` in prod.
 - `ApprovalBlock` Run/Deny preserved for mutating tools. `agentXml.ts TAG_SCHEMA` kept in sync with prompt format.
 - Streaming: mutate `Turn` incrementally via `Channel<StreamEvent>` (see `stores/sessions.ts`); `step/done/err` handling intact.

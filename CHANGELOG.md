@@ -7,7 +7,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-Nothing yet. The next entry is `0.2.0-alpha.1`.
+Nothing yet. The next entry is `0.3.0`, the public release.
+
+## [0.2.0-alpha.1] — Sphinx
+
+The first alpha of the testing loop. Everything below either ships as a build
+or is documentation for it; the public release is 0.3.0.
+
+### Added
+
+- **Signed release builds for every platform** — macOS (Apple Silicon and
+  Intel), Windows, and Linux (`.deb` and AppImage), triggered by pushing a
+  version tag. Alpha builds are self-signed, so expect a platform warning on
+  first launch; see `docs/developer-guide/releasing.md`.
+- **CI on every push and pull request** — `cargo fmt --check`, clippy with
+  `-D warnings`, the full backend suite, `tsc --noEmit`, `bun test`, and a
+  production frontend build. The version is checked for consistency across
+  `package.json`, `tauri.conf.json`, `Cargo.toml`, and the README badge.
+- **Scrollable sidebar** — the chat list scrolls independently of the window,
+  with the same thumb as the model list.
+- **Release documentation** — a changelog, a manifest with the version code
+  name, and a guide covering the version scheme, what signing actually gets
+  you, and how to move to real certificates.
+
+### Removed
+
+- **Voice input** — local dictation shipped and was removed before this alpha.
+  A transcript is indistinguishable from typed text, so a misheard instruction
+  becomes an executed one, and the read-back half wanted cloud text-to-speech,
+  which breaks the offline promise. Possible v0.4 feature, not v0.2.
+
+[Unreleased]: https://github.com/anyscapelabs/Argus-agent/compare/v0.2.0-alpha.1...HEAD
+[0.2.0-alpha.1]: https://github.com/anyscapelabs/Argus-agent/compare/v0.1.0...v0.2.0-alpha.1
 
 ## [0.1.0] — Panoptes
 

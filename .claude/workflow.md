@@ -5,7 +5,7 @@
 
 - Load `AGENTS.md` route + one `features/*.md` + matching `rules/*.md`. Do NOT load all memory files.
 - For complex work, delegate to `agents/planner.md` first: produce phases, file plan, risk list, test plan. Get human approval on plan.
-- Identify IPC impact: does `src/lib/ipc.ts` need a new binding? Does `src-tauri/src/lib.rs` handler list need a new `#[tauri::command]`? Keep `snake_case` commands / `camelCase` args.
+- Identify IPC impact: does `src/lib/ipc/` need a new binding? Does `src-tauri/src/lib.rs` handler list need a new `#[tauri::command]`? Keep `snake_case` commands / `camelCase` args.
 - Identify permission impact: is the tool `mutating:true`? Then `ask` gate + `ApprovalBlock` path must be preserved (see `rules/security.md`).
 
 ## 2. Test-first (mandatory for backend, expected for UI logic)

@@ -1,6 +1,6 @@
 # Library — Document Generation
 
-Code: `src-tauri/src/library/{mod.rs,store.rs,schema.rs,doc.rs}`, `src/lib/ipc.ts:410-454`, `src/components/{LibraryPage,LibraryCard,DocViewer}.tsx`, `src/stores/docViewer.ts`, `src/components/agent/DocumentCard.tsx`.
+Code: `src-tauri/src/library/{mod.rs,store.rs,schema.rs,doc.rs}`, `src/lib/ipc/`, `src/components/{LibraryPage,LibraryCard,DocViewer}.tsx`, `src/stores/docViewer.ts`, `src/components/agent/DocumentCard.tsx`.
 
 ## Backend
 

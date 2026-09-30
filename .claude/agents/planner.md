@@ -13,7 +13,7 @@ Load `.claude/workflow.md`, `.claude/architecture.md`, `.claude/boundaries.md` +
 ## Outputs (required)
 
 1. Phases (max 3–5), each with goal + files + test plan.
-2. File plan: `src/lib/ipc.ts` binding? `lib.rs` handler? `schema.rs` migration? UI blocks?
+2. File plan: `src/lib/ipc/` binding? `lib.rs` handler? `schema.rs` migration? UI blocks?
 3. Risks: approval gate impact, secret handling, IPC contract break, FTS/migration need.
 4. Verify plan: `tsc`, `cargo fmt/check/test` scope + smoke (`bunx tauri dev` if UI).
 5. Question list for the human if scope ambiguous.

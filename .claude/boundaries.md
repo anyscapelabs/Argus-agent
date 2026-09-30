@@ -5,10 +5,10 @@ Source: `docs/developer-guide/contributing.md`, `.gitignore`, `src-tauri/.gitign
 ## SHOULD touch (normal feature work)
 
 - `src/components/**/*.tsx`, `src/components/agent/*.tsx` — UI blocks/pages.
-- `src/lib/ipc.ts` — add binding + types when adding a command. Keep `SCREAMING_SNAKE_CASE CMD_*` + `function` decls, `camelCase` values / `PascalCase` types.
+- `src/lib/ipc/` — add binding + types when adding a command. Keep `SCREAMING_SNAKE_CASE CMD_*` + `function` decls, `camelCase` values / `PascalCase` types.
 - `src/stores/*.ts`, `src/hooks/*.ts`, `src/types/*.ts`, `src/index.css`, `src/App.tsx`, `src/main.tsx`.
 - `src-tauri/src/{sessions,gateway,prompt,tools,skills,library,memory,connectors,mcp}/**/*.rs` + `src-tauri/src/lib.rs` handler list + `src-tauri/src/mcp/mod.rs: pub mod <service>`.
-- `src-tauri/tests/*.rs` — ONLY test location (35 files today).
+- `src-tauri/tests/*.rs` — ONLY test location (72 files today).
 - `extension/{background.js,content.js,manifest.json}` — browser bridge only.
 - `docs/**/*.md`, `docs/llms.txt`, `README.md`, `MANIFEST` — user-facing changes.
 - Careful: `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, `src-tauri/capabilities/default.json`, `vite.config.ts`, `index.html`, `tsconfig*.json`.

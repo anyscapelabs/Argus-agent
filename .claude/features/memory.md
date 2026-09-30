@@ -1,6 +1,6 @@
 # Memory — Skills + Durable Memory + Session Graph
 
-Code: `src-tauri/src/skills/{mod.rs,store.rs,schema.rs}`, `src-tauri/src/memory/{mod.rs,store.rs,schema.rs,session_memory.rs}`, `src/lib/ipc.ts:329-408`, `src/components/{SkillsPage,SkillCard,MemoryPage}.tsx`.
+Code: `src-tauri/src/skills/{mod.rs,store.rs,schema.rs}`, `src-tauri/src/memory/{mod.rs,store.rs,schema.rs,session_memory.rs}`, `src/lib/ipc/`, `src/components/{SkillsPage,SkillCard,MemoryPage}.tsx`.
 
 ## Skills
 

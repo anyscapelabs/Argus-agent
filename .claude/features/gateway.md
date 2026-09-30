@@ -1,6 +1,6 @@
 # Gateway — Providers, Models, Router
 
-Code: `src-tauri/src/gateway/{mod.rs,store.rs,catalog.rs,router.rs,schema.rs,adapters/{mod.rs,anthropic.rs,openai_compat.rs}}`, `src/hooks/{useProviders,useChatModels,useModels,useProviderLogo}.ts`, `src/lib/ipc.ts:43-118`, `src/components/settings/*`.
+Code: `src-tauri/src/gateway/{mod.rs,store.rs,catalog.rs,router.rs,schema.rs,adapters/{mod.rs,anthropic.rs,openai_compat.rs}}`, `src/hooks/{useProviders,useChatModels,useModels,useProviderLogo}.ts`, `src/lib/ipc/`, `src/components/settings/*`.
 
 ## Structure
 

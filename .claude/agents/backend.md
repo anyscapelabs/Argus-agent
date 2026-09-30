@@ -8,7 +8,7 @@
 
 ## Rules
 
-- New command → `#[tauri::command]` + `lib.rs` registry + `src/lib/ipc.ts` binding + `src-tauri/tests/*.rs` test. Keep names `snake_case` / args `camelCase`.
+- New command → `#[tauri::command]` + `lib.rs` registry + `src/lib/ipc/` binding + `src-tauri/tests/*.rs` test. Keep names `snake_case` / args `camelCase`.
 - `Result` + `let-else`, no panics, no `println!/dbg!` in prod. `cargo fmt` before done.
 - Mutating tool → `mutating:true` + approval-gate test. Secrets via keyring/vault only, redact `token=/key=`.
 - Migrations in `*/schema.rs`; FTS triggers kept in sync; parameterized queries.

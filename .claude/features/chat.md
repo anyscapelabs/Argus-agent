@@ -1,6 +1,6 @@
 # Chat — Sessions, Approvals, Streaming
 
-Code: `src-tauri/src/sessions/{chat.rs,mod.rs,store.rs,schema.rs,browser_import.rs,ext_install.rs}`, `src/stores/sessions.ts`, `src/lib/ipc.ts:152-287`, `src/components/{ChatDetailPage,ChatInput,AgentBubble,UserBubble,SessionList,NewAgentPage}.tsx`, `src/components/agent/*.tsx`.
+Code: `src-tauri/src/sessions/{chat.rs,mod.rs,store.rs,schema.rs,browser_import.rs,ext_install.rs}`, `src/stores/sessions.ts`, `src/lib/ipc/`, `src/components/{ChatDetailPage,ChatInput,AgentBubble,UserBubble,SessionList,NewAgentPage}.tsx`, `src/components/agent/*.tsx`.
 
 ## Loop (`sessions/chat.rs::send`, ≤12 steps)
 

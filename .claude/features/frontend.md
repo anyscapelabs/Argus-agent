@@ -1,6 +1,6 @@
 # Frontend — React UI, Stores, Agent Blocks
 
-Code: `src/{App.tsx,lib/ipc.ts,lib/agentXml.ts,stores/,hooks/,components/}`, `src/index.css`, `src/types/chat.ts`.
+Code: `src/{App.tsx,lib/ipc/,lib/agentXml.ts,stores/,hooks/,components/}`, `src/index.css`, `src/types/chat.ts`.
 
 ## Shell
 
@@ -11,7 +11,7 @@ Code: `src/{App.tsx,lib/ipc.ts,lib/agentXml.ts,stores/,hooks/,components/}`, `sr
 
 ## IPC + parsing
 
-- `lib/ipc.ts`: SOLE invoke boundary. Top-level `function`s, `SCREAMING_SNAKE_CASE CMD_*`, `camelCase` values / `PascalCase` types. Sections: gateway (43-118), sessions (152-287), connectors/vault (290-327), skills/memory (329-408), library (410-454), browser/ext (256-276).
+- `lib/ipc/`: SOLE invoke boundary, one module per domain (it was a single `ipc.ts` until the voice work split it). Top-level `function`s, `SCREAMING_SNAKE_CASE CMD_*` in `commands.ts`, `camelCase` values / `PascalCase` types. Modules: `sessions` (largest), `memory`, `connectors`, `gateway`, `library`, `profiles`, `skills`, `sandbox`, `slash`, `stream`, `terminal`, `jobs`, `agents`, `errors`, `index` (barrel). Command name constants live in `commands.ts` — add there first.
 - External links in chat/docs/skills all use `ExtLink` (`lib/extLink.tsx`): click → `openUrl` from the opener plugin (Tauri webview never navigates itself); shared style `EXT_LINK_CLS` includes `break-all` for long URLs/paths. No `target="_blank"` anywhere in `src/`.
 - `lib/agentXml.ts`: `TAG_SCHEMA` 20+ tags + `tokenize/buildTree/parse` + `parseCached` (bounded 50-entry map shared by panel builders) + MD→XML; `blockRole()` is the single work/content classifier. `lib/notify.ts` (`notifyDone`), `lib/relativeTime.ts`.
 - `buildTree` recovers from malformed markup: a new block open force-closes the current node, and a garbled close (`</…>` failing the tag regex) emits an empty-tag close that ends the open node — one bad tag degrades to one odd card, never swallows the rest of the reply.

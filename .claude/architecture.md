@@ -1,4 +1,4 @@
-# Architecture — Argus (v0.1.0 Panoptes)
+# Architecture — Argus (v0.2.0-alpha.1 Sphinx)
 
 Source: `docs/developer-guide/architecture.md`, `src-tauri/src/lib.rs`, `MANIFEST`. Do not guess paths.
 
@@ -8,7 +8,7 @@ Source: `docs/developer-guide/architecture.md`, `src-tauri/src/lib.rs`, `MANIFES
 src/                  React 19 + TS 5.8 + Tailwind 4 (2-space indent)
   App.tsx             View router: new-agent|chat|memory|skills|library|projects|connectors + SettingsModal+DocViewer+Toasts
   main.tsx            Boot -> App.tsx (via index.html)
-  lib/ipc.ts          SOLE frontend IPC boundary (top-level functions wrapping invoke)
+  lib/ipc/          SOLE frontend IPC boundary (top-level functions wrapping invoke)
   lib/agentXml.ts     <action>/<terminal>/<plan>/<thinking>/… tokenizer + tree + MD normalizer
   stores/sessions.ts  SessionStore (ExternalStore, Channel<StreamEvent> handling)
   stores/toast.ts, workTimer.ts, docViewer.ts
@@ -42,7 +42,7 @@ extension/            Chrome MV3 bridge: manifest.json, background.js (nativeMes
 
 ## IPC boundary
 
-- Frontend `invoke<Row>(snake_case_cmd, {camelCase args})` in `src/lib/ipc.ts` ↔ `#[tauri::command] snake_case_fn` in `src-tauri/src/lib.rs`.
+- Frontend `invoke<Row>(snake_case_cmd, {camelCase args})` in `src/lib/ipc/` ↔ `#[tauri::command] snake_case_fn` in `src-tauri/src/lib.rs`.
 - Streaming: `tauri::ipc::Channel<StreamEvent>` (`delta|reset|step|term|term_end|approval|notice|err`) — see `src/stores/sessions.ts:294-357`.
 - Events: `app.emit("sessions-changed"|"browser-import-progress|done")` ↔ `listen()` in `App.tsx`, `ConnectorsPage.tsx`.
 - Escape hatch: `--native-host` → `tools/browser/extpipe.rs::run_stdio_host(native.sock)`.

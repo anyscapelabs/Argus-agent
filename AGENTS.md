@@ -25,7 +25,7 @@
 | 14 connectors (Google, GitHub, Slack…) | `.claude/features/connectors.md` | `src-tauri/src/mcp/{mod.rs,client.rs,vault.rs,<service>/}` |
 | Document library (docx/pdf/pptx/xlsx…) | `.claude/features/library.md` | `src-tauri/src/library/{mod.rs,doc.rs}`, `src/components/LibraryPage.tsx` |
 | System prompt, compaction, per-model windows | `.claude/features/prompt.md` | `src-tauri/src/prompt/{mod.rs,config.rs,compressor.rs}` |
-| React UI, stores, agent blocks, styles | `.claude/features/frontend.md` | `src/{App.tsx,lib/ipc.ts,lib/agentXml.ts,stores/,components/}` |
+| React UI, stores, agent blocks, styles | `.claude/features/frontend.md` | `src/{App.tsx,lib/ipc/,lib/agentXml.ts,stores/,components/}` |
 
 Rules: `.claude/rules/typescript.md`, `.claude/rules/rust.md`, `.claude/rules/security.md`.
 Agents: `.claude/agents/{planner,frontend,backend,reviewer}.md`.
@@ -33,8 +33,8 @@ Agents: `.claude/agents/{planner,frontend,backend,reviewer}.md`.
 ## Repo facts (do not guess)
 
 - Stack: React 19 + TypeScript 5.8 + Tailwind 4 frontend (`src/`), Tauri 2 + Rust backend (`src-tauri/src/`), SQLite `argus.db` + OS keyring, Chrome MV3 bridge (`extension/`).
-- Sole IPC boundary: `src/lib/ipc.ts` ↔ `#[tauri::command]` in `src-tauri/src/lib.rs` registry (~70 commands). Streaming via `Channel<StreamEvent>`.
-- Tests live ONLY in `src-tauri/tests/*.rs` (35 files). Never inline `#[cfg(test)]` in `src/`.
+- Sole IPC boundary: `src/lib/ipc/` ↔ `#[tauri::command]` in `src-tauri/src/lib.rs` registry (130 commands). Streaming via `Channel<StreamEvent>`.
+- Tests live ONLY in `src-tauri/tests/*.rs` (72 files). Never inline `#[cfg(test)]` in `src/`.
 - This `AGENTS.md` IS committed and must stay secret-free. Gitignored private files stay untracked — never `git add -f` them.
 
 ## Commands

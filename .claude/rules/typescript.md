@@ -29,7 +29,7 @@ Source: `docs/developer-guide/contributing.md`, `tsconfig.json`.
 ## Strictness and boundaries
 
 - Strict: `strict, noUnusedLocals, noUnusedParams, noFallthroughCases`, `jsx: react-jsx`, `moduleResolution: bundler`. `npx tsc --noEmit` must pass.
-- All backend access via `src/lib/ipc.ts` wrappers. Never raw `invoke` strings in components. Keep `snake_case` command names + `camelCase` args in sync with `src-tauri/src/lib.rs`.
+- All backend access via `src/lib/ipc/` wrappers. Never raw `invoke` strings in components. Keep `snake_case` command names + `camelCase` args in sync with `src-tauri/src/lib.rs`.
 - Tailwind utilities + `src/index.css` tokens. No `console.*` in prod.
 - State: `zustand` custom `ExternalStore` pattern in `src/stores/` (see `sessions.ts`). Side-effects in stores, not render.
 - Agent XML: update `src/lib/agentXml.ts TAG_SCHEMA` + parser when prompt format changes.

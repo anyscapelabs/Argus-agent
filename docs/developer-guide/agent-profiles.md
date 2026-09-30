@@ -300,7 +300,7 @@ user like any other write, which is the desired behaviour under `ask`.
 ## 10. New commands
 
 All in `src-tauri/src/agents/` or a new `src-tauri/src/profiles/`, registered in
-`generate_handler!` (`src-tauri/src/lib.rs`, ~70 commands today), each with an
+`generate_handler!` (`src-tauri/src/lib.rs`, 130 commands today), each with an
 `ipc.ts` binding and a test in `src-tauri/tests/profiles_test.rs`.
 
 ```

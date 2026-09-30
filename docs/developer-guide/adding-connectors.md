@@ -16,7 +16,7 @@ Same as above, plus a flow module: loopback-callback server (Google, Spotify) or
 
 ## Frontend
 
-Add `*_status` / `*_connect*` / `*_disconnect` bindings in `src/lib/ipc.ts`, a card on the Connectors page following `GoogleCard` (OAuth) or the token-paste pattern, and remove nothing else's card without discussion.
+Add `*_status` / `*_connect*` / `*_disconnect` bindings in `src/lib/ipc/`, a card on the Connectors page following `GoogleCard` (OAuth) or the token-paste pattern, and remove nothing else's card without discussion.
 
 ## Event logging
 

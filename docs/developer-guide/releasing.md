@@ -25,6 +25,13 @@ The scheme is semver with a pre-release suffix:
 A tag with a `-alpha` suffix becomes a prerelease automatically; there is no
 separate flag to remember.
 
+The `v` prefix is part of the tag, not decoration — the release is cut from
+`v0.1.0-alpha.1`, and that is the name people download. A tag push already
+carries it. If you re-run a build by hand from the Actions tab, the `v` is
+added for you if you leave it out, and the same normalized tag drives the
+release name, the release body, and the prerelease flag, so they cannot
+disagree.
+
 ## Cutting a release
 
 ```bash

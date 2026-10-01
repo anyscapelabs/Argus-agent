@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Tag to build, e.g. v0.1.0-alpha.1
+        description: Tag to build, e.g. v0.1.0-alpha.1 (the v is added if omitted)
         required: true
 
 permissions:
@@ -29,24 +29,38 @@ jobs:
     # they are looking at something you stand behind. A `-alpha` suffix has to
     # become a prerelease badge, not a normal release that happens to have a
     # funny tag.
+    #
+    # This job also owns the tag string. A tag push already arrives as
+    # `v0.1.0-alpha.1`, but `workflow_dispatch` takes it as free text, and a
+    # mistyped `0.1.0-alpha.1` would create a release with no `v` and, worse,
+    # miss the prerelease check below. Normalising once here means the build
+    # jobs cannot disagree with the flag.
     runs-on: ubuntu-latest
     outputs:
       prerelease: ${{ steps.check.outputs.prerelease }}
+      tag: ${{ steps.check.outputs.tag }}
     steps:
       - id: check
         env:
-          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          RAW: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          tag="$TAG"
-          # A dash anywhere after the leading `v` means a semver prerelease:
-          # v0.1.0-alpha.1, v0.1.0-rc.2, v1.0.0-beta. Matching the digit-dash
-          # instead would miss every real tag — the dash follows a dot, not a
-          # digit — and publish a test build as a stable release.
+          # The `v` is part of the tag, not decoration: it is what the release
+          # is cut from and what the docs tell people to download. Add it if
+          # missing, and collapse a doubled one rather than trusting the input
+          # to be typed exactly once.
+          tag="$RAW"
+          while [ "${tag#v}" != "$tag" ]; do tag="${tag#v}"; done
+          tag="v$tag"
+          # A dash after the version means a semver prerelease: v0.1.0-alpha.1,
+          # v0.1.0-rc.2, v1.0.0-beta. Matching a digit-dash instead would miss
+          # every real tag — the dash follows a dot, not a digit — and publish
+          # a test build as a stable release.
           case "$tag" in
             v[0-9]*-*) prerelease=true ;;
             *) prerelease=false ;;
           esac
           echo "tag=$tag prerelease=$prerelease"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
   build:
@@ -74,7 +88,10 @@ jobs:
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 60
     env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      # The normalized tag from the prerelease job, so the release name, the
+      # body, and the prerelease flag can never disagree about what is being
+      # cut.
+      TAG: ${{ needs.prerelease.outputs.tag }}
 
     steps:
       # `persist-credentials: false` because this job has `contents: write`

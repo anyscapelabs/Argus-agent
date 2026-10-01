@@ -20,7 +20,6 @@ pub use detect::{ShellConfig, ShellKind};
 const TERM_TIMEOUT_MIN: u64 = 10;
 pub const TERM_TIMEOUT_MAX: u64 = 1800;
 const TERM_TIMEOUT_DEF: u64 = 120;
-const TERM_TIMEOUT_LONG: u64 = 600;
 const DRAIN: Duration = Duration::from_secs(2);
 
 /// Default ceiling on what one command can accumulate. Display clips far below
@@ -125,28 +124,16 @@ fn take(buf: &Buf) -> String {
     std::mem::take(&mut buf.lock().unwrap_or_else(|p| p.into_inner()))
 }
 
-pub fn default_timeout_for(cmd: &str) -> u64 {
-    const LONG: [&str; 12] = [
-        "cargo build",
-        "cargo test",
-        "bun install",
-        "npm install",
-        "pip install",
-        "apt ",
-        "dnf ",
-        "pacman ",
-        "rm -rf",
-        "find /",
-        "du -sh",
-        "rsync ",
-    ];
-
-    let lower = cmd.to_lowercase();
-
-    if LONG.iter().any(|p| lower.contains(p)) {
-        return TERM_TIMEOUT_LONG;
-    }
-
+/// Where a command's timeout starts when the agent names none.
+///
+/// One number, and no opinion about the command. This used to guess from the
+/// command text against a substring table, which could only ever be wrong in
+/// one direction: `git status` and `git clone` looked identical to it, so a
+/// real clone was cut off at the two-minute mark while `pip install` was
+/// given ten minutes. The agent knows what it is about to run and roughly how
+/// long that takes; a substring table knows neither. So the length is the
+/// agent's call, and all this decides is where it starts.
+pub fn default_timeout_for() -> u64 {
     TERM_TIMEOUT_DEF
 }
 
@@ -468,11 +455,11 @@ pub async fn run_child(
     }
 }
 
-pub fn timeout_from(args: &Value, cmd: &str) -> Duration {
+pub fn timeout_from(args: &Value) -> Duration {
     let secs = args["timeout"]
         .as_u64()
         .map(|t| t.clamp(TERM_TIMEOUT_MIN, TERM_TIMEOUT_MAX))
-        .unwrap_or_else(|| default_timeout_for(cmd));
+        .unwrap_or_else(default_timeout_for);
 
     Duration::from_secs(secs)
 }
@@ -494,7 +481,7 @@ pub async fn run_stream(
         );
     }
 
-    let hard = timeout_from(args, cmd);
+    let hard = timeout_from(args);
     let child = spawn_shell(cmd, args["cwd"].as_str(), elevated)?;
     let run = run_child(child.into(), idx, chan, hard, DEFAULT_OUT_CAP, None).await?;
 
@@ -514,7 +501,21 @@ pub async fn run_stream(
 
     if run.timed_out {
         let secs = hard.as_secs();
-        return Ok((format!("{}\ncommand timed out after {secs}s", run.out), -1));
+        // Say what to do next, not just what happened. The command was
+        // stopped, not broken, and it was stopped at a number the agent chose
+        // or inherited — so the fix is to run it again with a longer timeout,
+        // which it can only do if it knows the argument exists. A bare "timed
+        // out" reads as a failure and ends the turn.
+        return Ok((
+            format!(
+                "{}\ncommand timed out after {secs}s — that is the timeout, not a failure \
+         of the command. Run it again with a larger timeout, up to {TERM_TIMEOUT_MAX}s; \
+         it restarts from the beginning, so budget for that. If it is long enough that \
+         you would rather not wait, start it with background true instead.",
+                run.out
+            ),
+            -1,
+        ));
     }
 
     Ok((run.out, run.exit))

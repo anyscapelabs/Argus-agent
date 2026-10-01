@@ -375,7 +375,7 @@ async fn finish(
     let asked = req
         .timeout_secs
         .or(policy.limits.wall_secs)
-        .unwrap_or_else(|| shell::default_timeout_for(req.command));
+        .unwrap_or_else(|| shell::default_timeout_for());
 
     let ceiling = if req.background {
         crate::jobs::DEADMAN_MAX

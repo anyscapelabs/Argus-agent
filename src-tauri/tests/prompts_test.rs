@@ -151,6 +151,30 @@ fn base_teaches_background_work() {
     }
 }
 
+// The agent owns the timeout. Nothing reads the command text to guess one, so
+// if it is not told the argument exists and that the number is its call, every
+// slow command dies at the two-minute default and the turn ends there.
+#[test]
+fn the_agent_is_told_the_timeout_is_its_to_choose() {
+    for rule in [
+        "TIMEOUTS",
+        "unless you set timeout yourself",
+        "Deciding that number is your job",
+        "up to 1800",
+        "starts again from the beginning",
+    ] {
+        assert!(BASE.contains(rule), "missing: {rule}");
+    }
+
+    let desc = tool_specs(false)
+        .iter()
+        .find(|t| t.name == "terminal")
+        .map(|t| format!("{} {}", t.desc, t.parameters))
+        .unwrap_or_default();
+    assert!(desc.contains("timeout"), "{desc}");
+    assert!(desc.contains("1800"), "{desc}");
+}
+
 #[test]
 fn the_job_tools_are_offered_and_read_only_where_they_should_be() {
     let specs = tool_specs(false);

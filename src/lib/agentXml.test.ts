@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { parse } from "./agentXml";
 import { normalizeMd } from "./agentXml/markdown";
-import { tokenize } from "./agentXml/tokenize";
+import { tokenize } from "./agentXml/lexer";
 
 // What the user reads is whatever this returns. Every case below is either a
 // tag that leaked into prose or prose that was read as a tag; both are the

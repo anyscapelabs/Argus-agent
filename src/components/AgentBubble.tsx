@@ -14,7 +14,7 @@ import { type PendingApproval } from "../stores/sessions";
 import AgentCard from "./agent/AgentCard";
 import AlertBanner from "./agent/AlertBanner";
 import ApprovalBlock from "./agent/ApprovalBlock";
-import { renderInline } from "./agent/InlineText";
+import { MemoizedMarkdown } from "./agent/MemoizedMarkdown";
 import ToolActivity, {
   actionStep,
   browserDoneStep,
@@ -30,7 +30,6 @@ import MemoryRefChip from "./agent/MemoryRefChip";
 import PlanBlock from "./agent/PlanBlock";
 import StreamingIndicator from "./agent/StreamingIndicator";
 import TableBlock from "./agent/TableBlock";
-import ThinkingBlock from "./agent/ThinkingBlock";
 import WebSearchGroup, { WEB_ACTIONS } from "./agent/WebSearchGroup";
 
 type LiveTerm = {
@@ -115,12 +114,12 @@ function renderBlk(
 
       if (items.length === 0) {
         return (
-          <p
+          <div
             key={key}
             className="mt-2 font-sans text-[16px] font-medium leading-6 first:mt-0"
           >
-            {renderInline(blk.children)}
-          </p>
+            <MemoizedMarkdown content={raw} id={key} />
+          </div>
         );
       }
 
@@ -135,7 +134,7 @@ function renderBlk(
                 key={idx}
                 className="font-sans text-[16px] font-medium leading-6 text-text-primary"
               >
-                {renderInline([{ kind: "text", value: it }])}
+                <MemoizedMarkdown content={it} id={`${key}-li-${idx}`} />
               </li>
             ))}
           </ol>
@@ -152,7 +151,7 @@ function renderBlk(
               key={idx}
               className="font-sans text-[16px] font-medium leading-6 text-text-primary"
             >
-              {renderInline([{ kind: "text", value: it }])}
+              <MemoizedMarkdown content={it} id={`${key}-li-${idx}`} />
             </li>
           ))}
         </ul>
@@ -160,24 +159,25 @@ function renderBlk(
     }
 
     return (
-      <p
+      <div
         key={key}
         className="mt-2 font-sans text-[16px] font-medium leading-6 first:mt-0"
       >
-        {renderInline(blk.children)}
-      </p>
+        <MemoizedMarkdown content={raw} id={key} />
+      </div>
     );
   }
 
   if (blk.kind === "heading") {
     const cls = HEADING_CLS[blk.tag] ?? "text-[16px] font-semibold";
+    const raw = blk.children.map((c) => c.value).join("");
 
     return (
       <div
         key={key}
         className={`mt-3 font-sans leading-tight ${cls} first:mt-0`}
       >
-        {renderInline(blk.children)}
+        <MemoizedMarkdown content={raw} id={key} />
       </div>
     );
   }
@@ -206,7 +206,8 @@ function renderBlk(
         />
       );
     case "thinking":
-      return <ThinkingBlock key={key} block={blk} />;
+      // Owned by the Worked summary, never the main answer.
+      return null;
     case "plan":
       return <PlanBlock key={key} block={blk} />;
     case "approval":
@@ -259,9 +260,9 @@ function renderBlk(
       return (
         <div key={key} className="mt-2 flex flex-col gap-2 first:mt-0">
           {blk.children.map((c, ci) => (
-            <p key={ci} className="font-sans text-[16px] font-medium leading-6">
-              {renderInline([c])}
-            </p>
+            <div key={ci} className="font-sans text-[16px] font-medium leading-6">
+              <MemoizedMarkdown content={c.value} id={`${key}-c-${ci}`} />
+            </div>
           ))}
         </div>
       );
@@ -309,6 +310,13 @@ function renderTree(
 
   while (i < tree.length) {
     const blk = tree[i];
+
+    // Thinking lives in the Worked summary as a paragraph, never in the
+    // main answer.
+    if (blk.tag === "thinking") {
+      i++;
+      continue;
+    }
 
     if (hideTools === true && blockRole(blk.tag) === "work") {
       i++;

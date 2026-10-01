@@ -1,5 +1,5 @@
 import type { BlockNode } from "../../lib/agentXml";
-import { renderInline } from "./InlineText";
+import { MemoizedMarkdown } from "./MemoizedMarkdown";
 
 type Props = { block: BlockNode };
 
@@ -25,7 +25,7 @@ export default function AlertBanner({ block }: Props) {
             key={i}
             className="font-serif text-[16px] font-light leading-6 text-text-secondary"
           >
-            {renderInline([{ kind: "text", value: it }])}
+            <MemoizedMarkdown content={it} id={`warn-${i}`} />
           </li>
         ))}
       </ul>

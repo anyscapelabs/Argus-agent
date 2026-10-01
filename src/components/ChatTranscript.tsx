@@ -656,13 +656,6 @@ export default function ChatTranscript({
             {note.text}
           </div>
         ))}
-        {running && turn?.status != null && (
-          <div className="text-xs text-text-tertiary">
-            {turn.status.attempt > 1
-              ? `Retrying — ${turn.status.providerId}, attempt ${turn.status.attempt}`
-              : `Asking ${turn.status.providerId}`}
-          </div>
-        )}
         {turn?.err !== undefined && turn !== undefined && turn.err !== null && (
           <div
             className={

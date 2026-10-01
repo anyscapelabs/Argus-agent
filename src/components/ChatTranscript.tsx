@@ -325,6 +325,8 @@ export default function ChatTranscript({
 
               // Events own the turn: steps from rows, doc cards from the event, no
               // text parsing. Legacy rows fall through to the parser.
+              // Thinking still comes from text, so it is spliced in as a
+              // paragraph step even on event-owned turns.
               if (!isLive) {
                 const owned = eventsFor(eventMap, m.id);
 
@@ -335,6 +337,35 @@ export default function ChatTranscript({
 
                     const doc = docBlockFor(ev);
                     if (doc !== null) docBlocks.push(doc);
+                  }
+
+                  try {
+                    const thoughtBlocks = parseCached(m.content, {
+                      final: true,
+                    });
+
+                    for (const b of thoughtBlocks) {
+                      if (b.tag !== "thinking") {
+                        continue;
+                      }
+
+                      const body = b.children
+                        .map((c) => c.value)
+                        .join("")
+                        .trim();
+
+                      if (body.length === 0) {
+                        continue;
+                      }
+
+                      steps.push({
+                        group: "thought",
+                        label: "Thought",
+                        body,
+                      });
+                    }
+                  } catch {
+                    // Never break rendering.
                   }
                   continue;
                 }
@@ -397,6 +428,19 @@ export default function ChatTranscript({
                         : "Checked the answer",
                   });
                 } else if (b.tag === "thinking") {
+                  const body = b.children
+                    .map((c) => c.value)
+                    .join("")
+                    .trim();
+
+                  if (body.length > 0) {
+                    steps.push({
+                      group: "thought",
+                      label: "Thought",
+                      body,
+                    });
+                  }
+
                   const texts: string[] = [];
                   let j = bi + 1;
 
@@ -411,17 +455,15 @@ export default function ChatTranscript({
                   }
                   bi = j - 1;
 
-                  steps.push({
-                    group: "plan",
-                    label:
-                      texts.length > 0
-                        ? `Plan · ${texts.length} steps`
-                        : "Plan",
-                    body:
-                      texts.length > 0
-                        ? texts.map((t, n) => `${n + 1}. ${t}`).join("\n")
-                        : undefined,
-                  });
+                  if (texts.length > 0) {
+                    steps.push({
+                      group: "plan",
+                      label: `Plan · ${texts.length} steps`,
+                      body: texts
+                        .map((t, n) => `${n + 1}. ${t}`)
+                        .join("\n"),
+                    });
+                  }
                 }
               }
             }
@@ -490,7 +532,12 @@ export default function ChatTranscript({
               proseParts.push(b.kind === "heading" ? `# ${t}` : t);
             }
           }
-          const priorProse = [...cardParts, proseParts.join("\n\n")]
+          // Intermediate narration stays in the Worked panel: only a stub
+          // final borrows prior prose, otherwise the final answers alone.
+          const STUB_CHARS = 40;
+          const lastLen = last?.content.trim().length ?? 0;
+          const borrowed = lastLen < STUB_CHARS ? proseParts.join("\n\n") : "";
+          const priorProse = [...cardParts, borrowed]
             .filter((s) => s.length > 0)
             .join("\n\n");
           const summaryText =

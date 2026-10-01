@@ -1,5 +1,5 @@
 import type { BlockNode } from "../../lib/agentXml";
-import { renderInlineText } from "./inline";
+import { MemoizedMarkdown } from "./MemoizedMarkdown";
 
 type Props = { block: BlockNode };
 
@@ -42,7 +42,7 @@ export default function TableBlock({ block }: Props) {
                   key={idx}
                   className="px-3 py-2 text-left font-medium text-text-primary"
                 >
-                  {renderInlineText(cell.txt)}
+                  <MemoizedMarkdown content={cell.txt} id={`tbl-h-${idx}`} />
                 </th>
               ))}
             </tr>
@@ -56,7 +56,7 @@ export default function TableBlock({ block }: Props) {
                   key={cIdx}
                   className="px-3 py-2 text-left font-light text-text-secondary"
                 >
-                  {renderInlineText(cell.txt)}
+                  <MemoizedMarkdown content={cell.txt} id={`tbl-c-${rIdx}-${cIdx}`} />
                 </td>
               ))}
             </tr>

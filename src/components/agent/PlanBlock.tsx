@@ -2,7 +2,7 @@ import { useState } from "react";
 import { FiChevronDown } from "react-icons/fi";
 
 import type { BlockNode } from "../../lib/agentXml";
-import { renderInline } from "./InlineText";
+import { MemoizedMarkdown } from "./MemoizedMarkdown";
 
 type Props = { block?: BlockNode; steps?: BlockNode[] };
 
@@ -42,7 +42,14 @@ export default function PlanBlock({ steps: stepsProp }: Props) {
                 key={s.attrs.id ?? `step-${idx}`}
                 className="font-serif text-[16px] font-light leading-6 text-text-secondary"
               >
-                {s.children.length > 0 ? renderInline(s.children) : "…"}
+                {s.children.length > 0 ? (
+                  <MemoizedMarkdown
+                    content={s.children.map((c) => c.value).join("")}
+                    id={`plan-step-${idx}`}
+                  />
+                ) : (
+                  "…"
+                )}
               </li>
             ))
           ) : (

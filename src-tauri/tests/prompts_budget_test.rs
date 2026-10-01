@@ -1,6 +1,20 @@
 use argus_lib::prompt::{budget, project, tools_budget, BASE};
 use argus_lib::tools::{section, tool_specs, ToolCallStyle};
 
+#[test]
+fn system_carries_user_clock_for_calendar_and_mail() {
+    let (conn, _sid) = setup();
+    let p = project(&conn, "s1", &dir()).unwrap();
+
+    assert!(p.system.contains("<user-context>"), "{}", p.system);
+    assert!(p.system.contains("UTC"), "{}", p.system);
+    assert!(
+        p.system.contains("Never ask the user for the current date"),
+        "{}",
+        p.system
+    );
+}
+
 // No library in these tests, so this is never walked.
 fn dir() -> std::path::PathBuf {
     std::path::PathBuf::new()
@@ -299,6 +313,7 @@ fn project_prompt_follows_the_session_model_style() {
     let glm = project(&conn, "sg", &dir()).unwrap();
     assert!(glm.system.contains("<tool_call>"), "{}", glm.system);
     assert!(glm.system.contains("never an empty key"), "{}", glm.system);
+    assert!(glm.system.contains("<turn-format>"), "{}", glm.system);
 
     let native = project(&conn, "sn", &dir()).unwrap();
     assert!(
@@ -309,4 +324,9 @@ fn project_prompt_follows_the_session_model_style() {
         native.system
     );
     assert!(!native.system.contains("<arg_key>"), "{}", native.system);
+    assert!(
+        !native.system.contains("<turn-format>"),
+        "{}",
+        native.system
+    );
 }

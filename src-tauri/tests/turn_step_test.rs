@@ -534,6 +534,40 @@ fn a_nudged_reply_clears_the_buffer_before_the_next_one() {
     );
 }
 
+/// A complete answer missing only its close marker is finished, not broken.
+/// Nudging it resends the whole answer, which is the duplication: the retry
+/// streams on top of a row that already holds the same words.
+#[test]
+fn an_unclosed_answer_is_accepted_not_resent() {
+    let answer = "Here is the full story of everything you asked about, written out \
+         completely in this one reply with every finding included.";
+
+    assert!(
+        answer.chars().count() >= 100,
+        "the fixture must read as an answer, not a stub"
+    );
+
+    // One reply in the script: a nudge would ask for a second and fail fast
+    // on the spent mock (400, not retryable) instead of passing.
+    let (url, server) = mock_provider(vec![sse(&[answer], "stop")]);
+
+    let (gw, _base) = gw_and_dirs("unclosed");
+    wire_provider(&gw, &url);
+    let session_id = new_session(&gw);
+    add_user(&gw, &session_id, "tell me everything");
+    let app = tauri::test::mock_app().handle().clone();
+    let rec = Recorder::new();
+
+    let out = run_turn(&gw, &app, &session_id, &rec);
+    server.join().unwrap();
+
+    assert!(out.is_ok(), "turn failed: {out:?}");
+
+    let rows = assistant_rows(&gw, &session_id);
+    assert_eq!(rows.len(), 1, "one answer, one row: {rows:?}");
+    assert!(rows[0].contains("full story"), "got {:?}", rows[0]);
+}
+
 /// An empty reply is thrown away, never persisted, so no `Step` is owed — but
 /// the whitespace that did arrive is still in the buffer. `Reset` is what
 /// clears it, and before the fix nothing did: the retry streamed on top of

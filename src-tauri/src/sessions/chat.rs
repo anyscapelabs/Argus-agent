@@ -33,11 +33,14 @@ pub const DENIED_CODE: i64 = -2;
 pub const MAX_CLAIM_NUDGES: usize = 2;
 pub const MAX_TRUNC_CONTS: usize = 2;
 
-pub const NUDGE: &str = "Your last reply neither ran a tool nor closed the turn. A reply ends \
-one of exactly two ways: with a tool call, or with the final answer followed by \
-<final/> on its own last line. If you meant to act, make the call now and end the reply \
-right after it. If you cannot act, say so plainly and end with <final/> — never \
-describe an action without running it.";
+pub const NUDGE: &str = "Your last reply neither ran a tool nor closed the turn. Do not \
+resend it: reply now with <final/> on its own last line and nothing else. If you \
+meant to act, make the tool call instead and end the reply right after it.";
+
+/// A no-tool answer at least this long reads as an answer, not a status
+/// stub: "Working on it." still nudges, a full answer missing only its close
+/// marker is accepted instead of sent back and resent whole.
+pub const MIN_CLOSE_CHARS: usize = 100;
 
 pub const SUMMARY_DEMAND: &str = "Your last replies kept ending without closing the turn. \
 Do not emit any more tool blocks. Reply now with a plain-text summary of what was \
@@ -287,6 +290,31 @@ pub async fn send<R: tauri::Runtime>(
     // The forwarder only releases the session lock on TurnEnd, so this cannot
     // sit behind a `?`.
     if let Err(err) = &out {
+        // A failed turn persists nothing, so the reload after TurnEnd shows no
+        // bubble. Every provider error belongs in the transcript instead.
+        if let Ok(conn) = gw.conn.lock() {
+            let body = err.replace('&', "&amp;").replace('<', "&lt;");
+            let content = format!("<error severity=\"high\">{}</error>", body.trim());
+
+            if let Ok(row) = store::add_msg(
+                &conn,
+                &NewMsg {
+                    session_id: session_id.into(),
+                    role: "assistant".into(),
+                    content,
+                    model_id: None,
+                    provider_id: None,
+                    tok_in: None,
+                    tok_out: None,
+                    tool_calls: None,
+                    tool_call_id: None,
+                    attachments: None,
+                },
+            ) {
+                let _ = store::mark_final(&conn, &row.id);
+            }
+        }
+
         sink.emit(StreamEvent::Err { msg: err.clone() });
     }
 

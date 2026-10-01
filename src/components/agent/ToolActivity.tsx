@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FiCheck, FiChevronDown, FiList, FiMessageSquare, FiShield, FiTerminal, FiTool, FiX } from "react-icons/fi";
+import { FiCheck, FiChevronDown, FiList, FiShield, FiTerminal, FiTool, FiX } from "react-icons/fi";
 import { SiGooglechrome } from "react-icons/si";
 
 import { sessionStore, type PendingApproval } from "../../stores/sessions";
@@ -200,7 +200,7 @@ export function formatWorked(startMs: number | null, endMs: number | null): stri
 
 function ThoughtRow({ step }: { step: ToolStep }) {
   const [show, setShow] = useState(false);
-  const Icon = step.group === "plan" ? FiList : FiMessageSquare;
+  const Icon = FiList;
 
   return (
     <div className="flex flex-col gap-1 px-3 py-2">
@@ -224,6 +224,22 @@ function ThoughtRow({ step }: { step: ToolStep }) {
           {step.body}
         </p>
       )}
+    </div>
+  );
+}
+
+function ThoughtParagraph({ step }: { step: ToolStep }) {
+  const body = (step.body ?? "").trim();
+
+  if (body.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="px-3 py-2">
+      <p className="whitespace-pre-wrap text-sm leading-6 text-text-secondary">
+        {body}
+      </p>
     </div>
   );
 }
@@ -469,7 +485,9 @@ export default function ToolActivity({
         <div className="mt-1.5 overflow-hidden rounded-lg border border-border-primary">
           <div className="flex flex-col divide-y divide-border-primary">
           {steps.map((step, i) =>
-            step.group === "thought" || step.group === "plan" ? (
+            step.group === "thought" ? (
+              <ThoughtParagraph key={i} step={step} />
+            ) : step.group === "plan" ? (
               <ThoughtRow key={i} step={step} />
             ) : step.group === "terminal" || step.group === "sandbox" ? (
                 <TerminalActivity

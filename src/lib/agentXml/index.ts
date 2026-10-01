@@ -1,5 +1,4 @@
 export * from "./markdown";
-export * from "./parse";
+export * from "./parser";
 export * from "./schema";
-export * from "./tokenize";
-export * from "./tree";
+export * from "./lexer";

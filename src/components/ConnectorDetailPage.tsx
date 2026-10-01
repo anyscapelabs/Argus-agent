@@ -87,10 +87,12 @@ export default function ConnectorDetailPage({
     setErr(null);
 
     try {
-      if (oauth) await oauth.disconnect();
+      // Flow first: it owns the OAuth badge state, the keyring owns the rest.
+      if (oauth) await flow.drop();
       await connRemoveToken(svc.id);
       await connClearClient(svc.id);
       await connClearSecret(svc.id);
+      setSaved({ token: false, client: false });
       onDisabled();
     } catch (e) {
       setErr(String(e));

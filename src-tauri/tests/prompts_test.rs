@@ -169,7 +169,7 @@ fn the_agent_is_told_the_timeout_is_its_to_choose() {
     let desc = tool_specs(false)
         .iter()
         .find(|t| t.name == "terminal")
-        .map(|t| format!("{} {}", t.desc, t.parameters))
+        .map(|t| format!("{} {}", t.description, t.parameters))
         .unwrap_or_default();
     assert!(desc.contains("timeout"), "{desc}");
     assert!(desc.contains("1800"), "{desc}");

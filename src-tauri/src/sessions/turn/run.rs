@@ -273,8 +273,7 @@ impl Turn {
             let mut shown_candidates: Vec<(String, &'static str, Option<u64>)> = vec![];
 
             let mut events_ok = true;
-            // Bound once: a spawned reader task has to own the sink, and a
-            // per-exec temporary would not outlive the call that hands it over.
+            // Owned: a per-exec temporary would not outlive the call.
             let ev = sink.event_sink();
 
             for exec in pending.iter_mut() {

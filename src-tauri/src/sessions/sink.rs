@@ -11,10 +11,7 @@ use crate::gateway::{EventSink, Gateway};
 pub trait ChatSink: Send + Sync {
     fn emit(&self, ev: StreamEvent);
 
-    /// How a spawned task — a running command's output, the model's stream —
-    /// gets events back here. `None` only if this sink genuinely wants them
-    /// dropped; a bus sink must answer, or the chat goes silent for exactly
-    /// the events a user is waiting on.
+    /// For spawned tasks. None drops the events.
     fn event_sink(&self) -> Option<EventSink> {
         None
     }

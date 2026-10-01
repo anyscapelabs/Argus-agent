@@ -21,20 +21,11 @@ use schema::{
     SyncStats,
 };
 
-/// Where a turn's events go.
-///
-/// Two transports, because a turn runs two ways: a caller that hands over a
-/// Tauri channel, and the chat path, which publishes onto the session bus and
-/// lets a watcher relay it. This used to be a bare `&Channel<StreamEvent>`
-/// threaded down from the sink, which quietly assumed the first: only a raw
-/// `Channel` could supply one, so in the chat path every streaming reply and
-/// every byte of a running command's output went to a null channel. Naming the
-/// two transports makes the caller pick, and `BusSink` can finally answer.
+/// Both transports, because one type collapses to whichever the caller has.
+/// A sink that can only name one goes silent on the other's events.
 #[derive(Clone)]
 pub enum EventSink {
-    /// Straight to the webview that asked for this turn.
     Channel(Channel<StreamEvent>),
-    /// Onto the session bus, for anyone watching it.
     Bus(broadcast::Sender<StreamEvent>),
 }
 
@@ -50,7 +41,7 @@ impl EventSink {
     pub fn send(&self, ev: StreamEvent) -> Result<(), String> {
         match self {
             Self::Channel(c) => c.send(ev).map_err(|err| err.to_string()),
-            Self::Bus(tx) => tx.send(ev).map_err(|err| err.to_string()),
+            Self::Bus(tx) => tx.send(ev).map(|_| ()).map_err(|err| err.to_string()),
         }
     }
 }
@@ -187,10 +178,7 @@ impl Gateway {
         self.bus(session_id).0.subscribe()
     }
 
-    /// A clone of the session's sender, for anything that has to emit from a
-    /// spawned task. `broadcast::Sender` is `Clone + Send + Sync + 'static`, so
-    /// this is what lets a running command's output reach the bus even though
-    /// the caller only ever holds a borrow.
+    /// Cloneable and 'static, so a spawned task can emit without a borrow.
     pub fn term_tx(&self, session_id: &str) -> broadcast::Sender<StreamEvent> {
         self.bus(session_id).0
     }

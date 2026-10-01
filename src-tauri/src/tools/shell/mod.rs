@@ -126,13 +126,7 @@ fn take(buf: &Buf) -> String {
 
 /// Where a command's timeout starts when the agent names none.
 ///
-/// One number, and no opinion about the command. This used to guess from the
-/// command text against a substring table, which could only ever be wrong in
-/// one direction: `git status` and `git clone` looked identical to it, so a
-/// real clone was cut off at the two-minute mark while `pip install` was
-/// given ten minutes. The agent knows what it is about to run and roughly how
-/// long that takes; a substring table knows neither. So the length is the
-/// agent's call, and all this decides is where it starts.
+/// One number, no opinion about the command. The length is the agent's call.
 pub fn default_timeout_for() -> u64 {
     TERM_TIMEOUT_DEF
 }
@@ -501,11 +495,7 @@ pub async fn run_stream(
 
     if run.timed_out {
         let secs = hard.as_secs();
-        // Say what to do next, not just what happened. The command was
-        // stopped, not broken, and it was stopped at a number the agent chose
-        // or inherited — so the fix is to run it again with a longer timeout,
-        // which it can only do if it knows the argument exists. A bare "timed
-        // out" reads as a failure and ends the turn.
+        // A bare "timed out" reads as a failure and ends the turn.
         return Ok((
             format!(
                 "{}\ncommand timed out after {secs}s — that is the timeout, not a failure \

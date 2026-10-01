@@ -6,7 +6,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::gateway::router;
 use crate::gateway::schema::{ChatReq, StreamEvent, WireMsg};
-use crate::gateway::Gateway;
+use crate::gateway::{EventSink, Gateway};
 use crate::prompt::{compressor, project};
 use crate::tools;
 
@@ -24,9 +24,7 @@ const TERM_TIMEOUT: u64 = 300;
 
 const WATCH_IDLE: std::time::Duration = std::time::Duration::from_millis(150);
 
-/// How long the event forwarder gets to finish before teardown stops waiting on
-/// it. The turn is already over by then; this only bounds the relay, and
-/// `drop_bus` closes the receiver a moment later anyway.
+/// Bounds the relay wait. The turn is already over.
 const FWD_DRAIN: std::time::Duration = std::time::Duration::from_secs(5);
 
 const WAKE_SLOTS: u32 = 240;
@@ -288,16 +286,10 @@ pub async fn send<R: tauri::Runtime>(
 ) -> Result<(), String> {
     let out = turn(gw, app, session_id, content, attachments, sink, role).await;
 
-    // The turn is over either way, and two things stall if this never arrives.
-    // The webview clears its turn on TurnEnd, and sess_chat_stream's forwarder
-    // breaks on it and only then releases the session lock. Every early `?` in
-    // the body below used to skip it, so a turn that died on a provider error
-    // left the forwarder waiting on an event nobody was going to send — and
-    // `fwd.await` never returned, so `release_turn` never ran and every later
-    // message came back "this session is already answering". For good.
+    // The forwarder in sess_chat_stream only releases the session lock on
+    // TurnEnd, so this cannot sit behind a `?`.
     if let Err(err) = &out {
-        // The promise carries this to whoever asked. A watcher attached to the
-        // bus has no promise, so it needs the event to learn the turn failed.
+        // Watchers have no promise to reject.
         sink.emit(StreamEvent::Err { msg: err.clone() });
     }
 
@@ -515,12 +507,7 @@ pub async fn sess_chat_stream(
         out = crate::tools::shell::CANCEL.scope(notify.clone(), crate::tools::notepad::SESSION_ID.scope(Some(session_id.clone()), send(&gw, &app, &session_id, &content, attachments.as_deref(), &sink, "user"))) => out,
     };
 
-    // Bounded, because the turn is already over and teardown must not be able
-    // to stall on the relay. `send` closes every path with TurnEnd now, but a
-    // chat busier than BUS_CAP can lag that last event away, and waiting on an
-    // event that has already gone past is exactly how the session lock used to
-    // be held for good. Dropping the bus below closes the receiver, so a
-    // forwarder that outlasts this stops on its own a moment later.
+    // A bus busier than BUS_CAP can lag the last event away.
     let _ = tokio::time::timeout(FWD_DRAIN, fwd).await;
 
     if let Ok(mut tasks) = gw.tasks.lock() {

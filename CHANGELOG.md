@@ -7,7 +7,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-Nothing yet. The next entry is `0.1.0-alpha.2`.
+Nothing yet. The next entry is `0.1.0-alpha.3`.
+
+## [0.1.0-alpha.2]
+
+Rendering and model-compliance pass over Alpha 1.
+
+### Fixed
+
+- **Thinking and narration** — `<thinking>` renders as paragraphs in the
+  Worked summary, never in the answer; intermediate step narration no longer
+  joins the final bubble.
+- **Duplication** — retried turns no longer stack the same answer twice;
+  repeat blocks render once.
+- **Provider errors** — every model error persists as a bubble message instead
+  of vanishing when the turn ends.
+- **GLM compliance** — per-model close rules, accept-and-close for complete
+  unclosed answers, and a resend-proof nudge.
+- **Markdown** — Vercel-style memoized renderer (full GFM: tables, lists,
+  quotes, code).
+- **Connectors** — disconnect updates the UI immediately.
+- **Release plumbing** — `bun run bump` sets all four version files at once;
+  GitHub/Google OAuth secrets bake in at compile time so shipped builds carry
+  them; native window decorations restored.
 
 ## [0.1.0-alpha.1] — Panoptes Alpha 1
 

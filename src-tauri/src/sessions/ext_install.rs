@@ -1,5 +1,6 @@
 use std::fs;
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -94,7 +95,13 @@ fn write_wrapper(exe: &Path, path: &Path) -> Result<(), String> {
     writeln!(f, "#!/bin/sh").map_err(|err| err.to_string())?;
     writeln!(f, "exec \"{}\" --native-host", exe.display()).map_err(|err| err.to_string())?;
 
-    fs::set_permissions(path, PermissionsExt::from_mode(0o755)).map_err(|err| err.to_string())
+    // Unix executes the wrapper directly; Windows launches the host binary
+    // itself, so there is no mode bit to set.
+    #[cfg(unix)]
+    return fs::set_permissions(path, PermissionsExt::from_mode(0o755))
+        .map_err(|err| err.to_string());
+    #[cfg(windows)]
+    return Ok(());
 }
 
 fn write_host_manifest(wrapper: &Path, ext_id: &str) -> Result<usize, String> {

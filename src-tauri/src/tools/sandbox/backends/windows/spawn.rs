@@ -29,11 +29,17 @@ pub struct RawChild {
     pub err: Option<std::fs::File>,
 }
 
+// SAFETY: every handle field is exclusively owned and closed exactly once by
+// Drop; `wait` copies the raw integer out before any await, and no method
+// exposes shared mutable state — concurrent waits only duplicate a kernel
+// wait, so moving and sharing across threads is sound.
+unsafe impl Send for RawChild {}
+unsafe impl Sync for RawChild {}
+
 impl RawChild {
     pub fn id(&self) -> Option<u32> {
         Some(self.pid)
     }
-
     pub fn kill_tree(&self) {
         self.job.terminate();
     }

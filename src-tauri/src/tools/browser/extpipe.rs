@@ -5,6 +5,9 @@ use std::time::Duration;
 
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(windows)]
+use tokio::net::{TcpListener, TcpStream};
+#[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{mpsc, oneshot};
 
@@ -35,34 +38,81 @@ pub fn connected() -> bool {
     g.as_ref().map(|t| !t.is_closed()).unwrap_or(false)
 }
 
-fn socket_path(dir: &Path) -> PathBuf {
-    dir.join("native.sock")
+/// Rendezvous between the app and the `--native-host` bridge: a socket path
+/// on Unix, a file holding a `127.0.0.1:PORT` address on Windows (which has
+/// no Unix sockets).
+pub fn socket_path(dir: &Path) -> PathBuf {
+    #[cfg(unix)]
+    return dir.join("native.sock");
+    #[cfg(windows)]
+    return dir.join("native.port");
 }
 
 pub fn start_listener(data_dir: PathBuf) {
     let path = socket_path(&data_dir);
-    let _ = std::fs::remove_file(&path);
-
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::set_permissions(dir, std::os::unix::fs::PermissionsExt::from_mode(0o700));
-    }
 
     tauri::async_runtime::spawn(async move {
-        let listener = match UnixListener::bind(&path) {
-            Ok(l) => l,
-            Err(_) => return,
-        };
+        #[cfg(unix)]
+        {
+            let _ = std::fs::remove_file(&path);
 
-        while let Ok((stream, _)) = listener.accept().await {
-            tauri::async_runtime::spawn(async move {
-                serve_conn(stream).await;
-            });
+            if let Some(dir) = path.parent() {
+                let _ = std::fs::set_permissions(
+                    dir,
+                    std::os::unix::fs::PermissionsExt::from_mode(0o700),
+                );
+            }
+
+            let listener = match UnixListener::bind(&path) {
+                Ok(l) => l,
+                Err(_) => return,
+            };
+
+            while let Ok((stream, _)) = listener.accept().await {
+                tauri::async_runtime::spawn(async move {
+                    serve_conn(stream).await;
+                });
+            }
+        }
+
+        #[cfg(windows)]
+        {
+            let listener = match TcpListener::bind("127.0.0.1:0").await {
+                Ok(l) => l,
+                Err(_) => return,
+            };
+
+            // The host process reads this file to find us; it retries until
+            // the file exists and the port accepts.
+            let addr = listener
+                .local_addr()
+                .map(|a| a.to_string())
+                .unwrap_or_default();
+
+            if addr.is_empty() || std::fs::write(&path, &addr).is_err() {
+                return;
+            }
+
+            while let Ok((stream, _)) = listener.accept().await {
+                let (rd, wr) = stream.into_split();
+                tauri::async_runtime::spawn(async move {
+                    serve_split(rd, wr).await;
+                });
+            }
         }
     });
 }
 
+#[cfg(unix)]
 pub async fn serve_conn(stream: UnixStream) {
-    let (rd, mut wr) = stream.into_split();
+    let (rd, wr) = stream.into_split();
+    serve_split(rd, wr).await;
+}
+
+async fn serve_split(
+    rd: impl AsyncReadExt + Unpin + Send + 'static,
+    mut wr: impl AsyncWriteExt + Unpin + Send + 'static,
+) {
     let (tx, mut rx) = mpsc::channel::<String>(64);
 
     {
@@ -93,7 +143,7 @@ pub async fn serve_conn(stream: UnixStream) {
     fail_pending("Argus extension disconnected");
 }
 
-async fn read_loop(mut rd: tokio::net::unix::OwnedReadHalf) {
+async fn read_loop(mut rd: impl AsyncReadExt + Unpin) {
     loop {
         let len = match read_u32(&mut rd).await {
             Some(n) => n,
@@ -118,13 +168,13 @@ async fn read_loop(mut rd: tokio::net::unix::OwnedReadHalf) {
     }
 }
 
-async fn read_u32(rd: &mut tokio::net::unix::OwnedReadHalf) -> Option<u32> {
+async fn read_u32(rd: &mut (impl AsyncReadExt + Unpin)) -> Option<u32> {
     let mut b = [0u8; 4];
     rd.read_exact(&mut b).await.ok()?;
     Some(u32::from_ne_bytes(b))
 }
 
-async fn write_frame(wr: &mut tokio::net::unix::OwnedWriteHalf, msg: &str) -> std::io::Result<()> {
+async fn write_frame(wr: &mut (impl AsyncWriteExt + Unpin), msg: &str) -> std::io::Result<()> {
     let b = msg.as_bytes();
     wr.write_all(&(b.len() as u32).to_ne_bytes()).await?;
     wr.write_all(b).await?;
@@ -211,8 +261,22 @@ pub async fn run_stdio_host(socket: PathBuf) {
     loop {
         let mut wr = stdout();
 
+        #[cfg(unix)]
         let stream = loop {
             match UnixStream::connect(&socket).await {
+                Ok(s) => break s,
+                Err(_) => tokio::time::sleep(Duration::from_secs(1)).await,
+            }
+        };
+
+        // The socket path is the port file here: read `127.0.0.1:PORT` from
+        // it on every attempt, so a missing file and a refused port both
+        // just retry until the app listener is up.
+        #[cfg(windows)]
+        let stream = loop {
+            let addr = std::fs::read_to_string(&socket).unwrap_or_default();
+
+            match TcpStream::connect(addr.trim()).await {
                 Ok(s) => break s,
                 Err(_) => tokio::time::sleep(Duration::from_secs(1)).await,
             }

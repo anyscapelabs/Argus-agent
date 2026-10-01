@@ -1,5 +1,5 @@
 // The layered system prompt and the message list. `project()` is the only
-// entry point; everything below it is one layer it stacks in order.
+// entry point; everything below it is one layer it stacks.
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -131,9 +131,8 @@ fn stable_layer(
 
     s.push_str(&crate::tools::section(web, style));
 
-    // Added to, never substituted for. A profile carrying its own system
-    // prompt would silently lose the sandbox boundary, the approval rules and
-    // the recovery section, and the user would not know what went missing.
+    // Added to, never substituted for: a profile system prompt would silently
+    // drop the sandbox boundary and approval rules.
     if let Some(p) = profile_section(conn, profile_id) {
         s.push_str(&p);
     }
@@ -150,9 +149,8 @@ fn stable_layer(
     Ok(s)
 }
 
-/// A name is a label, not a mechanism. A profile called "Senior Developer"
-/// that says nothing behaves like base Argus with a friendlier tone, so only
-/// the instructions earn a layer.
+/// A name is a label, not a mechanism: a profile called "Senior Developer" that
+/// says nothing is base Argus with a friendlier tone.
 fn profile_section(conn: &Connection, profile_id: Option<&str>) -> Option<String> {
     let id = profile_id?;
     let body: String = conn
@@ -322,10 +320,9 @@ pub fn project(
         system.push_str(&notes);
     }
 
-    // After the notes and before the transcript: it is state about the turn,
-    // not a memory the agent chose to keep. A sub-agent gets its own task
-    // brief, never the parent's unfinished work — inheriting that is how a
-    // child spends its window re-deriving a conversation it was not in.
+    // State about the turn, not a memory the agent chose to keep. A sub-agent
+    // gets its own brief: inheriting the parent's unfinished work costs it a
+    // window re-deriving a conversation it was not in.
     if let Some(resume) = crate::sessions::resume::prompt_include(conn, session_id) {
         if !child {
             system.push_str("\n\n");
@@ -333,14 +330,9 @@ pub fn project(
         }
     }
 
-    // Playbook first, so its lessons sit next to the learned preferences they
-    // sit beside: both are things observed about past work, and both are
-    // evidence-gated. A model with no history contributes nothing here, which
-    // is what keeps an evidence-free session's prompt unchanged.
-    // A sub-agent gets its own task brief and its own return value. A
-    // playbook is advice for whoever has been here before; a child has not,
-    // and handing it the parent's lessons spends its window on a history it
-    // was not present for.
+    // Both the playbook and the learned preferences are evidence-gated, so a
+    // model with no history leaves an evidence-free session's prompt unchanged.
+    // No sub-agent: a playbook is advice for whoever has been here before.
     if let Ok(playbook) = crate::playbook::prompt_context(conn, model_id.as_deref()) {
         if !child && !playbook.trim().is_empty() {
             system.push_str("\n\n");
@@ -353,9 +345,8 @@ pub fn project(
         system.push_str(&index);
     }
 
-    // `local = 0` is the one place a line the app answered itself is kept out
-    // of the model's history. It is a real turn in the transcript and was never
-    // a question put to anyone.
+    // `local = 0` keeps out lines the app answered itself: a real turn in the
+    // transcript, never a question put to anyone.
     let mut stmt = conn
         .prepare(
             "SELECT role, content, tool_calls, tool_call_id, attachments FROM messages
@@ -404,8 +395,7 @@ pub fn project(
     })
 }
 
-/// One message row as the database hands it over: role, content, tool calls,
-/// tool call id, attachments.
+/// One message row: role, content, tool calls, tool call id, attachments.
 type WireRow = (
     String,
     String,
@@ -461,11 +451,9 @@ fn to_wire(rows: &[WireRow], resolve: &dyn Fn(&Attachment) -> Option<String>) ->
         .collect()
 }
 
-// The model re-reads what it said, not how we drew it. `<thinking>` and
-// `<plan>`/`<step>` are the renderer's business, and `<final/>` is a marker
-// for a turn that has already closed. Feeding them back teaches the markup and
-// spends context on it. A sub-agent's `<agent-done>` report stays: that is
-// content, not bookkeeping, and the parent may still need it.
+// The model re-reads what it said, not how we drew it. `<thinking>`,
+// `<plan>`/`<step>`, and `<final/>` are renderer bookkeeping — feeding them back
+// teaches the markup. `<agent-done>` stays: content, and the parent may need it.
 pub fn strip_display_tags(text: &str) -> String {
     static THINKING: OnceLock<Regex> = OnceLock::new();
 

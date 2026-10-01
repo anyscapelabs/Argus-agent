@@ -1,6 +1,4 @@
-// Assembling tokens into a tree, and deciding which blocks are the work log
-// rather than the answer. `WORK_TAGS` is the single source of truth for that
-// split, so the panel and the renderer cannot disagree about it.
+// Tokens into a tree, and which blocks are the work log rather than the answer.
 import { Char, classifyAt, isSpaceAt } from "./scan";
 import type { Token } from "./tokenize";
 

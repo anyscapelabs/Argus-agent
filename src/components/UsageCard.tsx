@@ -9,8 +9,7 @@ const WINDOWS: { key: UsageWindow; label: string }[] = [
 ];
 
 type Props = {
-  /// Which window to open on. The stored turn carries it, so `/usage month`
-  /// comes back on Month rather than on whatever the default is today.
+  /// The stored turn carries the window, so `/usage month` comes back on Month.
   window?: UsageWindow;
 };
 
@@ -18,9 +17,8 @@ export default function UsageCard({ window: start = "week" }: Props) {
   const [win, setWin] = useState<UsageWindow>(start);
   const [report, setReport] = useState<Usage | null>(null);
 
-  // The card is a view, not a snapshot. The turn stores the line the user
-  // typed and the numbers are read when it is drawn, so a chat reopened
-  // tomorrow is not showing what was true when `/usage` was run.
+  // A view, not a snapshot: the turn stores what the user typed and the
+  // numbers are read when the card is drawn.
   useEffect(() => {
     let live = true;
     setReport(null);
@@ -31,8 +29,8 @@ export default function UsageCard({ window: start = "week" }: Props) {
           setReport(out.usage);
         }
       })
-      // A window that will not load is not worth blanking the card, and there
-      // is nothing to retry: the next tab change asks again.
+      // Not worth blanking the card, and nothing to retry: the next tab change
+      // asks again.
       .catch(() => {});
 
     return () => {
@@ -140,9 +138,8 @@ function Calendar({
     return <div className="h-[52px]" />;
   }
 
-  // Four levels, the way a contribution grid reads: none, low, mid, high. The
-  // scale is relative to this window's busiest day, because a fixed threshold
-  // makes every month look like the same quiet month.
+  // Scaled to this window's busiest day: a fixed threshold makes every month
+  // look like the same quiet month.
   const peak = Math.max(...days.map((d) => d.tokens), 1);
   const cols = { gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` };
 
@@ -175,8 +172,7 @@ function Calendar({
   );
 }
 
-// A week reads as days of the week, a month as days of the month. Spelling out
-// "2026-09-20" seven times says less than the date it is on.
+// A week reads as weekdays, a month as days of the month.
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function tick(day: string, window: UsageWindow): string {
@@ -188,9 +184,8 @@ function tick(day: string, window: UsageWindow): string {
   return day.slice(8);
 }
 
-// A share of this window's busiest day. The bands are decades rather than
-// quarters: one heavy day is often twenty times a quiet one, and quarter cuts
-// would paint all six of the quiet days the same grey.
+// Decades, not quarters: one heavy day is often twenty times a quiet one, and
+// quarter cuts paint all six quiet days the same grey.
 function level(ratio: number): string {
   if (ratio <= 0) {
     return "bg-bg-hover-primary";
@@ -242,8 +237,8 @@ function tokens(n: number): string {
   return n.toString();
 }
 
-// A cent under is not $0.00, and the whole point of the number is that it is
-// not zero.
+// A cent under is not $0.00, and the point of the number is that it is not
+// zero.
 function money(cost: number): string {
   if (cost > 0 && cost < 0.01) {
     return "under a cent";
@@ -252,10 +247,9 @@ function money(cost: number): string {
   return `$${cost.toFixed(2)}`;
 }
 
-// The same shape the transcript's "Worked for" label uses, so a number in the
-// card and a label above a turn read as the same unit. Seconds stop counting
-// once they are the smaller half of the number, which is also when they would
-// wrap the strip.
+// Same shape as the transcript's "Worked for" label, so both read as one unit.
+// Seconds drop out once they are the smaller half, which is also when they
+// would wrap the strip.
 function duration(ms: number): string {
   const sec = Math.max(0, Math.round(ms / 1000));
 

@@ -56,26 +56,20 @@ pub struct StreamStats {
     pub tok_out: i64,
     pub truncated: bool,
     pub tool_calls: Vec<ToolCall>,
-    // The provider refused the tools payload, so the reply came back through
-    // the degraded in-band path. Text actions must execute: stripping them
-    // here would silence the only channel left.
+    // The provider refused the tools payload, so the reply came back in-band.
+    // Text actions must still execute: stripping them silences the only
+    // channel left.
     pub degraded: bool,
 }
 
-/// Turn a keyring read into the key to send, given what the provider is.
-///
-/// Split out from the keyring call so the decision is testable without a
-/// secret-service, which is the whole point: the local case has to be
-/// decidable when the keyring cannot be reached at all.
+/// Split out from the keyring call so the local case is decidable when the
+/// keyring cannot be reached at all.
 pub fn decide_key(
     prov: &Provider,
     got: Result<Option<String>, String>,
 ) -> Result<Option<String>, String> {
-    // Local first. Ollama and friends have no key to store, so an unavailable
-    // keyring — no secret-service on a headless Linux box or a CI runner,
-    // kwallet not started — must not stop a provider that never needed one.
-    // Reading the keyring first made a local model unreachable on exactly the
-    // machines most likely to run one.
+    // Local first. Ollama and friends have no key, so no secret-service on a
+    // headless box or a CI runner must not stop them.
     if adapters::is_local(&prov.base_url) {
         return Ok(got.unwrap_or(None));
     }
@@ -124,8 +118,7 @@ fn resolve(gw: &Gateway, req: &ChatReq) -> Result<Resolved, String> {
     })
 }
 
-/// Something to call the provider in a sentence. A provider with no name is
-/// still a provider, and "is rate limiting" beats a bare id.
+/// "is rate limiting" beats a bare id for a provider with no name.
 pub fn provider_label(name: &str, id: &str) -> String {
     let n = name.trim();
 
@@ -444,9 +437,7 @@ pub async fn stream_run(
                     let _ = store::log_req(&conn, &log);
                 }
 
-                // The provider turned down the tools payload. The in-band
-                // syntax is the only channel left, so teach it — but only if
-                // this prompt has not already been through here once.
+                // Tools payload refused: teach the in-band syntax, once per prompt.
                 if !err.retryable()
                     && matches!(err.status, Some(400) | Some(404) | Some(422))
                     && !req.tools.is_empty()

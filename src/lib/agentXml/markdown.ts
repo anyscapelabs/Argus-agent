@@ -1,6 +1,3 @@
-// Rendering. The line-level pass: code fences and tag bodies are shielded so
-// Markdown can never rewrite a tool's JSON, then tables, headings and lists are
-// rebuilt line by line. Inline formatting is in `inline.ts`.
 import { inlineOutside } from "./inline";
 import { scanTagEnd } from "./tokenize";
 import {
@@ -11,14 +8,8 @@ import {
   isTagNameStartAt,
 } from "./scan";
 
-// Component tags whose bodies can span lines. Tables and headings are
-// prose-level and never counted; inline tags never span lines.
-/**
- * Tags whose body can span lines, and the ones among them the model writes as
- * prose. A plan step is something the user reads, so its markdown is normalized
- * like any other prose; a terminal or a diff stays raw on purpose, because a
- * shell script's `#` is a comment and not a heading.
- */
+// Prose bodies get markdown normalized; terminal and diff stay raw, since a
+// shell script's `#` is a comment, not a heading.
 const PROSE_TAGS = new Set(["thinking", "plan", "step", "warning", "error"]);
 
 const PAYLOAD_TAGS = new Set([
@@ -35,19 +26,11 @@ const PAYLOAD_TAGS = new Set([
 
 const SPANNING_TAGS = new Set([...PROSE_TAGS, ...PAYLOAD_TAGS]);
 
-/** One tag found in a line. */
 type Span = { name: string; close: boolean; self: boolean; end: number };
 
-/**
- * Every spanning tag in `line`, in order.
- *
- * A single pass with the same quote-aware scan the tokenizer uses, so a `>`
- * inside a quoted attribute — `command="ls > f"` — cannot end the tag early
- * and leave the rest of the line to be read as markup. The previous version
- * spelled this as one alternation; it is a scanner because it has to agree
- * with the tokenizer about where a tag ends, and two different answers to that
- * question is how a line ends up half-raw and half-formatted.
- */
+// Same quote-aware scan the tokenizer uses: a `>` inside `command="ls > f"`
+// must not end the tag early. Two answers about where a tag ends is how a line
+// ends up half-raw.
 function scanSpans(line: string): Span[] {
   const out: Span[] = [];
   let i = 0;
@@ -107,19 +90,6 @@ function trackTags(stack: string[], line: string): string[] {
   return next;
 }
 
-/**
- * Replace every complete single-line payload block with an opaque placeholder,
- * so prose normalization never rewrites its body — a backtick in a command
- * would otherwise break the arg parsing on the way back out, and a `#` in a
- * diff would turn into a heading.
- *
- * Prose bodies are deliberately left alone: those are the text the user is
- * meant to read, and it has to be normalized.
- *
- * A block is only shielded when its own closing tag is on the same line. A
- * payload that runs to the next line is handled by the depth tracker instead,
- * which has already put the following lines inside the body.
- */
 /** The language on a code-fence opener, or `null` if the line is not one. */
 function readFence(line: string): string | null {
   if (
@@ -142,8 +112,7 @@ function readFence(line: string): string | null {
   }
   const lang = line.slice(start, k);
 
-  // Nothing but spaces may follow, or this is prose that happens to start
-  // with three backticks.
+  // Nothing but spaces may follow, else it is prose.
   while (k < line.length) {
     if (isSpaceAt(line, k) && line.charCodeAt(k) !== 0x0a) {
       k++;
@@ -155,6 +124,8 @@ function readFence(line: string): string | null {
   return lang;
 }
 
+// Mask single-line payload blocks so prose normalization never rewrites a
+// tool's JSON. Multi-line payloads ride the depth tracker instead.
 function shieldLine(line: string): {
   text: string;
   restore: (s: string) => string;
@@ -234,11 +205,6 @@ function readTagName(
   };
 }
 
-/**
- * Escape the three characters that would otherwise read back as markup. A scan
- * rather than three chained replacements: a code fence is usually text with no
- * markup in it at all, and this returns it untouched without rebuilding it.
- */
 /** Put the shielded spans back, in one pass, without a regular expression. */
 function restorePlaceholders(s: string, saved: string[]): string {
   let at = s.indexOf("\u0000");
@@ -286,16 +252,7 @@ function escCode(s: string): string {
   return out;
 }
 
-/**
- * An ATX heading, per CommonMark 4.2: up to three spaces of indentation, one to
- * six `#`, then a space or the end of the line, with an optional closing run of
- * `#`.
- *
- * The indentation allowance is the fix for `# Heading` arriving indented — the
- * previous pattern anchored at column zero, so a heading a model indented by
- * one space or a tab fell through as literal text. Four spaces is a code block,
- * not a heading, which is why the allowance stops at three.
- */
+// Up to three spaces of indent: four is a code block, not a heading.
 type Heading = { level: number; text: string };
 
 function readHeading(line: string): Heading | null {
@@ -315,7 +272,6 @@ function readHeading(line: string): Heading | null {
   }
   if (hashes < 1 || hashes > 6) return null;
 
-  // The `#` must be followed by a space or tab, or be the whole line.
   const afterHash = i;
   let spaces = 0;
   while (i < line.length && isSpaceAt(line, i) && line.charCodeAt(i) !== 0x0a) {
@@ -340,10 +296,6 @@ function readHeading(line: string): Heading | null {
   return { level: hashes, text: line.slice(i, end) };
 }
 
-/**
- * Whether the `<` at `at` begins something that could still become a tag. A
- * `<` followed by a letter is one; `<1000` and `a < b` are not.
- */
 function isTagLike(line: string, at: number): boolean {
   return isTagNameStartAt(line, at + 1);
 }
@@ -401,12 +353,7 @@ function normalizeMdLine(line: string): string {
   return restore(inlineOutside(stripQuoteMarker(masked)));
 }
 
-/**
- * `<ul>/<ol>/<li>` rewritten as `- ` bullets.
- *
- * A model that writes a list as markup should still get a list. Returns the
- * line with the tags replaced, or `null` when the line has no list markup.
- */
+/** `<ul>/<ol>/<li>` rewritten as `- ` bullets, or `null` if none. */
 function readList(line: string): string | null {
   if (
     line.indexOf("<ul>") === -1 &&
@@ -451,13 +398,7 @@ function readList(line: string): string | null {
   return out;
 }
 
-/**
- * Split a table row into its cells, or `null` when the line is not a row.
- *
- * A row is a line that starts and ends with a pipe. Cells are split on pipes
- * and trimmed, which is what a GFM table means. A `\|` is an escaped pipe and
- * belongs to the cell, so it does not split.
- */
+/** Cells of a GFM row, or `null`. A `\|` is an escaped pipe and does not split. */
 function tableRow(line: string): string[] | null {
   let from = 0;
   while (from < line.length && isSpaceAt(line, from)) from++;
@@ -494,11 +435,6 @@ function unescapePipe(s: string): string {
   return s.indexOf("\\|") === -1 ? s : s.replaceAll("\\|", "|");
 }
 
-/**
- * The delimiter row under a header: pipes, colons, dashes and spaces only, and
- * at least one dash. Alignment is read from the colons, which is what they are
- * for.
- */
 function isDelimiterRow(line: string): boolean {
   let from = 0;
   while (from < line.length && isSpaceAt(line, from)) from++;
@@ -515,9 +451,6 @@ function isDelimiterRow(line: string): boolean {
       dashes++;
       continue;
     }
-    // Colons carry the alignment, pipes separate the cells, spaces are
-    // allowed between everything. Anything else means this is not a
-    // delimiter row at all.
     if (c === 0x3a || c === 0x7c || isSpaceAt(line, i)) continue;
     return false;
   }
@@ -525,15 +458,8 @@ function isDelimiterRow(line: string): boolean {
   return dashes > 0;
 }
 
-/**
- * Rebuild a table starting at line `i`, returning the XML and the index of the
- * first line that is not part of it.
- *
- * A table is only built once its delimiter row has arrived. While the table is
- * still streaming, the row that will become the header is a paragraph until
- * then — rendering a table that later turns out not to be one is worse than
- * showing the text and correcting it on the next line.
- */
+/** A table needs its delimiter row before it is a table; before that the header
+ *  line stays a paragraph. */
 function tryTable(
   lines: string[],
   i: number,
@@ -628,21 +554,9 @@ export function normalizeMd(
       continue;
     }
 
-    // A line whose `<` has not found its `>` yet is passed through raw, for
-    // that line only.
-    //
-    // It is tempting to hold the line back on a live turn until the tag
-    // closes. Do not: a `<` with a letter after it is extremely common in
-    // ordinary prose ("use <b> for bold", "the route is a -> b"), and holding
-    // cost the rest of the message every time one appeared — a model writing
-    // `a < b` early in an answer left everything after it unrendered until the
-    // turn ended, which is what made the chat look like it had stopped parsing
-    // and then fixed itself on reload.
-    //
-    // Passing the line through is safe because the whole buffer is re-read on
-    // the next delta. The line is examined again with more of the message
-    // behind it, formats correctly if the tag turns out to have closed, and
-    // costs at worst a brief flash of raw text on the one line mid-tag.
+    // A `<` with no `>` yet passes through raw, for that line only. Never hold the
+    // line back waiting for the tag: `a < b` in prose is common and holding
+    // cost the rest of the message. The buffer is re-read next delta anyway.
     const line = lines[k];
     const lt = line.indexOf("<");
 

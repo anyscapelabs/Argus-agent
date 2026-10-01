@@ -2,10 +2,8 @@ use rusqlite::Connection;
 use serde::Serialize;
 
 /// A turn is one user message and the assistant messages up to the next one.
-/// The rule below is the one `ChatTranscript.tsx` uses for its "Worked for"
-/// labels, so the weekly total and the per-turn labels cannot disagree: it
-/// starts at the first assistant message with real text (or the user's, if
-/// there is not one yet) and ends at the last assistant message of the turn.
+/// Same rule as `ChatTranscript.tsx` uses for its "Worked for" labels, so the
+/// total and the per-turn labels cannot disagree.
 const TURNS: &str = "
     SELECT u.session_id, u.seq, u.created_at,
       COALESCE(

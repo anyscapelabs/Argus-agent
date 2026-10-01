@@ -1,10 +1,6 @@
-// The tool catalog and the prompt text that describes it.
-//
-// These are the two halves of "what the model is told it can do": the JSON
-// schemas go out as function definitions, and the prose below goes out as the
-// in-band instructions. They live together because they drift apart when they
-// do not — a tool that exists in one and not the other is a tool the model
-// will call and cannot run, or one it never hears about.
+// The tool catalog and the prompt text that describes it. Both halves of "what
+// the model is told it can do", kept together because they drift apart when
+// they do not.
 
 use std::fmt::Write as _;
 
@@ -17,8 +13,8 @@ use super::notepad;
 use super::profile;
 use super::{ToolCallStyle, ToolMeta, MAX_OUT, TOOLS, WEB_TOOLS};
 
-// One catalog line. `write!` appends in place; `push_str(&format!(..))`
-// allocates a throwaway String per tool, per prompt, per step.
+// `write!` appends in place; a `format!` throwaway costs one String per tool,
+// per prompt, per step.
 fn spec_line(s: &mut String, t: &ToolMeta) {
     let _ = writeln!(s, "- {} — {}. args: {}", t.name, t.desc, t.args);
 }
@@ -284,21 +280,12 @@ retry once with different wording, or switch engine.\n",
     s
 }
 
-/// The default turn discipline.
+/// The default turn discipline. How the model calls a tool is the provider's
+/// business — it was handed the schemas. Only how a turn *ends* has to survive
+/// into the text, which no API expresses.
 ///
-/// How the model calls a tool is the provider's business, not prose's: it was
-/// handed the schemas on the request and it calls them through the API. The
-/// only thing that has to survive into the text is how a turn *ends`, which no
-/// API expresses — hence `<final/>`.
-///
-/// `protocol_section` is the older in-band syntax. It survives only for the
-/// degraded path in `router`, where a provider rejected the tools payload and
-/// the text channel is all that is left.
-///
-/// `style` agrees with the model's own template instead of fighting it: some
-/// templates order the model to emit XML, and forbidding that in prose only
-/// teaches the model to hide it. Native models get the short form; template
-/// models get the exact grammar plus the empty-key ban.
+/// `style` agrees with the model's own template rather than fighting it: some
+/// templates order XML, and forbidding that in prose only teaches it to hide.
 pub fn section(web: bool, style: ToolCallStyle) -> String {
     let calling = match style {
         ToolCallStyle::Native =>

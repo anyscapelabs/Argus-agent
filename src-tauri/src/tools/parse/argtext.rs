@@ -12,16 +12,14 @@ pub(super) const ARG_VALUE: &str = "<arg_value>";
 pub(super) const ARG_VALUE_CLOSE: &str = "</arg_value>";
 
 /// The pairs come in three shapes. Closed, they are
-/// `<arg_key>k</arg_key><arg_value>v</arg_value>`. Open — a stream cut
-/// mid-call, or a model that simply omits the closes — they run
-/// `<arg_key>k<arg_value>v<arg_key>k2<arg_value>v2`, where the next key is
-/// the only thing that ends a value. And with the value opener missing
-/// entirely, `<arg_key>k</arg_key>v`, which is what GLM emits under load.
+/// `<arg_key>k</arg_key><arg_value>v</arg_value>`. Open — a stream cut mid-call,
+/// or a model that omits the closes — they run
+/// `<arg_key>k<arg_value>v<arg_key>k2<arg_value>v2`, where the next key is the
+/// only thing that ends a value. And with the value opener missing entirely,
+/// `<arg_key>k</arg_key>v`, which is what GLM emits under load.
 ///
-/// Reading only the closed shape is how a whole tool call reached the reader
-/// as raw text. Reading only the first two is worse: a dropped opener
-/// discarded the arguments AND the call, so the model was told nothing, ran
-/// nothing, and tried the same thing again.
+/// Reading only the closed shape is how a whole tool call reached the reader as
+/// raw text. Dropping the third shape discarded the arguments AND the call.
 pub(super) fn arg_pairs(body: &str) -> (serde_json::Map<String, Value>, usize) {
     let mut out = serde_json::Map::new();
     let mut rest = body;
@@ -32,9 +30,9 @@ pub(super) fn arg_pairs(body: &str) -> (serde_json::Map<String, Value>, usize) {
         let v = tail.find(ARG_VALUE);
         let key_end = tail.find(ARG_KEY_CLOSE);
 
-        // A key ends at its own closer, or at the value tag that follows it,
-        // whichever comes first. Only when the value tag never opened does the
-        // closer become the whole story: `command</arg_key>cargo test`.
+        // A key ends at its own closer, or at the value tag that follows it.
+        // Only when the value tag never opened does the closer end it:
+        // `command</arg_key>cargo test`.
         let (key, after) = match v {
             Some(v) => {
                 let key = match key_end {
@@ -76,9 +74,9 @@ pub(super) fn first_of(hay: &str, needles: &[&'static str]) -> Option<(usize, &'
         .min_by_key(|(i, _)| *i)
 }
 
-/// How far a value runs past its `<arg_key>`, so the pair can be taken whole.
-/// Closed, it is the `</arg_value>` and what it wraps. Open, it is the next
-/// key, the closing wrapper, or the end of the line.
+/// How far a value runs past its `<arg_key>`, so the pair can be taken whole:
+/// the `</arg_value>` and what it wraps, or the next key, the closing wrapper,
+/// or the end of the line.
 pub(super) fn arg_value_len(after_key: &str) -> usize {
     let Some(v) = after_key.find(ARG_VALUE) else {
         return 0;
@@ -93,10 +91,8 @@ pub(super) fn arg_value_len(after_key: &str) -> usize {
     }
 }
 
-/// Whatever the salvage above could not read is still not something a reader
-/// should be shown, so it goes. This is the floor under the whole class: a
-/// protocol tag reaches the transcript only by becoming an action, or not at
-/// all.
+/// Whatever the salvage above could not read still must not reach a reader. A
+/// protocol tag gets into the transcript by becoming an action, or not at all.
 pub(super) fn strip_protocol(text: &str) -> String {
     const TAGS: &[&str] = &[
         "<tool_call>",
@@ -118,12 +114,11 @@ pub(super) fn strip_protocol(text: &str) -> String {
         let hit = TAGS.iter().find(|t| tail.starts_with(**t));
 
         if let Some(tag) = hit {
-            // Offsets here are tail-relative; `i` is added back when the span
-            // is recorded against `text`.
+            // Offsets are tail-relative; `i` is added back against `text`.
             let end = match tail[1..].find('>') {
                 Some(gt) => gt + 2,
-                // A tag with no `>` is the whole rest of the line. Take that
-                // and no more: the words after it are prose, not payload.
+                // A tag with no `>` takes the rest of the line and no more:
+                // the words after it are prose, not payload.
                 None => match tail.find('\n') {
                     Some(nl) => nl,
                     None => tail.len(),
@@ -132,9 +127,9 @@ pub(super) fn strip_protocol(text: &str) -> String {
 
             // A pair nobody claimed takes its value with it. Stripping the tag
             // and leaving `backgroundfalsecommandsed -n` behind trades one
-            // unreadable thing for another. A key with no value after it is
-            // not a pair at all — it is a `<` in prose, and eating that is
-            // the mistake this whole function exists to stop making.
+            // unreadable thing for another. A key with no value is not a pair —
+            // it is a `<` in prose, and eating that is the mistake this
+            // function exists to stop making.
             let end = if *tag == ARG_KEY {
                 let v = arg_value_len(&tail[end..]);
 
@@ -156,8 +151,8 @@ pub(super) fn strip_protocol(text: &str) -> String {
             continue 'outer;
         }
 
-        // Not one of ours. A `<` that opens nothing real is a literal, and so
-        // is everything after it that is not a tag we know.
+        // Not one of ours: a literal, and so is everything after it that is
+        // not a tag we know.
         let Some(gt) = tail[1..].find('>') else {
             break;
         };

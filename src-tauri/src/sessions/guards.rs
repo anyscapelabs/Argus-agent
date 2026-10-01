@@ -1,10 +1,5 @@
-// Loop guards: when to refuse a call because the agent is going in circles,
-// and how much of a turn's budget is left.
-//
-// These are pure functions over the turn's own history. Nothing here touches
-// the database, the channel, or the model, which is why the whole class is
-// testable without a harness and why a change to it cannot alter a tool's
-// side effects.
+// Loop guards: refuse a call when the agent is going in circles, and track how
+// much of a turn's budget is left.
 
 pub fn repeated(recent: &[(String, String)], key: &(String, String)) -> bool {
     if recent.iter().rev().take_while(|p| *p == key).count() >= 2 {
@@ -44,13 +39,13 @@ pub fn repeated(recent: &[(String, String)], key: &(String, String)) -> bool {
     recent.iter().rev().take_while(same_site).count() >= 2
 }
 
-// Args that vary without changing what the call does. Retries that differ
-// only here are the same attempt wearing a different timeout.
+// Args that vary without changing what the call does: a retry differing only
+// here is the same attempt in different clothes.
 //
 // `background` and `privilege` are deliberately NOT here. They are the two
 // moves the tool description tells the agent to make when a foreground call
-// keeps failing: background a long job, escalate a denied one. Erasing them
-// makes the guard refuse the exact recovery it exists to encourage.
+// keeps failing, and erasing them makes the guard refuse the exact recovery it
+// exists to encourage.
 const THRASH_VOLATILE: &[&str] = &["timeout", "label", "wake"];
 
 fn stable_args(args: &str) -> String {
@@ -65,10 +60,8 @@ fn stable_args(args: &str) -> String {
     }
 }
 
-// Keys carry the identity of a call; values carry its bulk. `fs.write` and
-// `doc.create` pair a long body with a one-token path, so comparing values
-// alone says every file is the same file. Each value contributes under its
-// own key, so a shared body cannot outvote the path that tells them apart.
+// Each value contributes under its own key: `fs.write` pairs a long body with a
+// one-token path, and a shared body must not outvote the path telling them apart.
 fn arg_tokens(stable: &str) -> std::collections::HashSet<String> {
     let mut toks = std::collections::HashSet::new();
 
@@ -113,9 +106,9 @@ fn arg_tokens(stable: &str) -> std::collections::HashSet<String> {
     toks
 }
 
-// No comparable tokens means no evidence, so two un-informative calls are
-// treated as different. Scoring emptiness as maximal similarity inverts the
-// safe direction: it blocked `{"background":true}` against `false`.
+// No comparable tokens is no evidence, so un-informative calls read as
+// different. Scoring emptiness as maximal similarity blocked
+// `{"background":true}` against `false`.
 fn jaccard(a: &std::collections::HashSet<String>, b: &std::collections::HashSet<String>) -> f64 {
     if a.is_empty() || b.is_empty() {
         return 0.0;
@@ -129,9 +122,8 @@ fn jaccard(a: &std::collections::HashSet<String>, b: &std::collections::HashSet<
     }
 }
 
-// The short argument that says *which* thing this call is about. A long body
-// cannot outvote these: `fs.write` on three different files with the same
-// content is three different files.
+// The short argument saying *which* thing this call is about. A long body
+// cannot outvote it: same content, three files, is three files.
 const IDENTITY_KEYS: &[&str] = &["path", "id", "name", "url", "pattern", "query", "file"];
 
 fn identity(stable: &str) -> Option<String> {
@@ -150,10 +142,8 @@ fn identity(stable: &str) -> Option<String> {
     None
 }
 
-/// One deliberate move that must never read as a retry of itself: the two
-/// things the tool description tells the agent to do when a call keeps
-/// failing. Structurally these only *add* a flag, so no similarity metric can
-/// tell them from churn — they are named instead.
+/// The one deliberate move that must never read as a retry of itself. It only
+/// *adds* a flag, so no similarity metric can tell it from churn.
 fn escalates(win: &[&str], proposed: &str) -> bool {
     let asked_for = |a: &str| {
         let v: serde_json::Value = match serde_json::from_str(a) {
@@ -169,10 +159,9 @@ fn escalates(win: &[&str], proposed: &str) -> bool {
     asked_for(proposed) && !win.iter().any(|a| asked_for(a))
 }
 
-/// Are these two attempts the same action? Growth counts: `ls` then `ls -la`
-/// is one call being refined, and refusing that is refusing the whole point of
-/// the guard. Divergence does not: four attempts that each barely resemble the
-/// last are four different ideas, and stopping the fourth protects the agent.
+/// Growth counts: `ls` then `ls -la` is one call being refined. Divergence
+/// does not: four barely-alike attempts are four ideas, and stopping the fourth
+/// protects the agent.
 fn same_action(a: &str, b: &str) -> bool {
     if let (Some(ia), Some(ib)) = (identity(a), identity(b)) {
         return ia == ib;
@@ -190,11 +179,10 @@ fn same_action(a: &str, b: &str) -> bool {
     jaccard(&ta, &tb) >= 0.5
 }
 
-// The semantic twin of `repeated`: same tool, failing streak, arguments that
-// are equal modulo volatile keys or a chain of near-identical variants —
-// `ls`, `ls -la`, `ls -la /tmp` dying the same death. Successes never trip
-// it: sequential similar calls that work are real multi-step work, not churn.
-// `hist`/`failed` hold completed attempts only; `key` is the one proposed.
+// Same tool, failing streak, arguments equal modulo volatile keys or a chain of
+// near-identical variants. Successes never trip it: sequential similar calls
+// that work are real multi-step work. `hist`/`failed` hold completed attempts
+// only; `key` is the one proposed.
 pub fn thrashing(hist: &[(String, String)], failed: &[bool], key: &(String, String)) -> bool {
     debug_assert_eq!(
         hist.len(),
@@ -222,15 +210,14 @@ pub fn thrashing(hist: &[(String, String)], failed: &[bool], key: &(String, Stri
     if escalates(&refs[..3], refs[3]) {
         return false;
     }
-    // Every step alike, and the last still recognisably the first: drift
-    // compounds, so neighbours alone let four unrelated attempts through.
+    // Every step alike, and the last still the first: drift compounds, so
+    // neighbours alone let four unrelated attempts through.
     refs.windows(2).all(|w| same_action(w[0], w[1])) && same_action(refs[0], refs[refs.len() - 1])
 }
 
-// A turn spends a bounded number of context tokens, the way a training run
-// spends a fixed wall clock: comparable runs, and a spiral becomes a verdict
-// instead of a cost. Sized off the model's own window so a 1M model is not
-// throttled like a 32k one.
+// Bounded context tokens per turn, so a spiral becomes a verdict instead of a
+// cost. Sized off the model's own window: a 1M model is not throttled like a
+// 32k one.
 const BUDGET_WINDOW_FRACTION: f64 = 0.25;
 pub const BUDGET_WARN_FRACTION: f64 = 0.7;
 const BUDGET_MIN: i64 = 32_000;
@@ -246,9 +233,8 @@ pub fn turn_budget(ctx_tokens: i64) -> i64 {
     scaled.clamp(BUDGET_MIN, BUDGET_MAX)
 }
 
-// Nudge at 70% (the model can still wind up), stop at 100% (nothing left to
-// spend). Enforced, never asked for politely: a warning a model ignores is
-// not a budget.
+// Nudge at 70%, stop at 100%. Enforced, not asked for politely: a warning a
+// model ignores is not a budget.
 pub fn budget_state(spent: i64, budget: i64) -> Budget {
     if budget <= 0 || spent < (BUDGET_WARN_FRACTION * budget as f64) as i64 {
         return Budget::Ok;

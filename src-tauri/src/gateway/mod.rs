@@ -21,8 +21,7 @@ use schema::{
     SyncStats,
 };
 
-/// Both transports, because one type collapses to whichever the caller has.
-/// A sink that can only name one goes silent on the other's events.
+/// A sink that names one transport goes silent on the other's events.
 #[derive(Clone)]
 pub enum EventSink {
     Channel(Channel<StreamEvent>),
@@ -36,8 +35,6 @@ impl EventSink {
         Self::Bus(tx)
     }
 
-    /// Same name and shape as `Channel::send`, so the call sites in `router`
-    /// read the same as before.
     pub fn send(&self, ev: StreamEvent) -> Result<(), String> {
         match self {
             Self::Channel(c) => c.send(ev).map_err(|err| err.to_string()),
@@ -52,26 +49,18 @@ pub const BUS_CAP: usize = 512;
 /// provider is slow but bounded.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Silence before a provider is presumed dead.
-///
-/// Sized well past any real inter-token gap, so a healthy stream never trips
-/// it. Long reasoning pauses and slow models sit far under this.
+/// Silence before a provider is presumed dead. Well past any real inter-token
+/// gap, so a slow-but-alive reply is never killed.
 pub const STALL_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// The client every provider call shares.
-///
-/// A provider can accept a request and then say nothing forever, and nothing
-/// downstream bounds that, so a stalled turn would park with no way out. The
-/// stall bound is per-read and resets on progress, which is what makes it safe
-/// on a long stream: a slow-but-alive reply is never killed, only one that
-/// stops talking. A total timeout would be wrong here, since it runs until the
-/// body finishes and would cap every long reply.
+/// Per-read stall bound, not a total timeout: a total one runs until the body
+/// finishes and would cap every long reply.
 pub fn http_client() -> Result<Client, reqwest::Error> {
     http_client_with(CONNECT_TIMEOUT, STALL_TIMEOUT)
 }
 
-/// Same client, explicit bounds. Split out so a test can prove the stall bound
-/// bites without waiting the production two minutes.
+/// Split out so a test can prove the stall bound bites without waiting two
+/// minutes.
 pub fn http_client_with(connect: Duration, stall: Duration) -> Result<Client, reqwest::Error> {
     Client::builder()
         .connect_timeout(connect)
@@ -124,8 +113,8 @@ impl Gateway {
             .unwrap_or(false)
     }
 
-    /// A set, not a slot: a sub-agent's own page is watched at the same time
-    /// as the chat that started it, and one must not take the other down.
+    /// A set, not a slot: a sub-agent's page and its parent chat are watched at
+/// the same time, and one must not take the other down.
     pub fn start_watching(&self, session_id: &str) {
         if let Ok(mut w) = self.watching.lock() {
             w.insert(session_id.to_string());
@@ -144,9 +133,8 @@ impl Gateway {
         }
     }
 
-    /// Is a window on this session right now — a tail, not necessarily a turn
-    /// somebody is typing into. A sub-agent's approvals are rendered in its
-    /// parent's window, so this is what says a human could actually answer.
+    /// A sub-agent's approvals render in its parent's window, so this is what says
+    /// a human could answer.
     pub fn attached(&self, session_id: &str) -> bool {
         self.events
             .lock()
@@ -178,7 +166,6 @@ impl Gateway {
         self.bus(session_id).0.subscribe()
     }
 
-    /// Cloneable and 'static, so a spawned task can emit without a borrow.
     pub fn term_tx(&self, session_id: &str) -> broadcast::Sender<StreamEvent> {
         self.bus(session_id).0
     }

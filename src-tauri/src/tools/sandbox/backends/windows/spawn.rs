@@ -46,9 +46,8 @@ impl RawChild {
         self.err.take().map(tokio::fs::File::from_std)
     }
 
-    // A Windows pipe is a synchronous handle, so the wait has to happen off the
-    // runtime. HANDLE is Copy but not Send, so it travels as the integer the
-    // kernel already treats it as.
+    // Wait off the runtime: the pipe is synchronous. HANDLE is Copy but not
+    // Send, so it travels as the integer the kernel treats it as.
     pub async fn wait(&self) -> i64 {
         let handle = self.process.0 as usize;
 
@@ -67,7 +66,7 @@ impl RawChild {
 fn wait_handle(h: usize) -> i64 {
     let h = HANDLE(h as *mut std::ffi::c_void);
 
-    // SAFETY: `h` is a live process handle, and every caller keeps the owning
+    // SAFETY: `h` is a live process handle; every caller keeps the owning
     // RawChild alive for the whole wait.
     unsafe {
         let _ = WaitForSingleObject(h, INFINITE);
@@ -125,8 +124,8 @@ fn into_file(h: HANDLE) -> std::fs::File {
     unsafe { std::fs::File::from_raw_handle(h.0 as *mut std::ffi::c_void) }
 }
 
-/// Grant, spawn suspended into the job, then revoke — including on every
-/// failure path, so a failed spawn never leaves an ACE behind.
+/// Grant, spawn suspended into the job, then revoke — on every failure path
+/// too, so a failed spawn never leaves an ACE behind.
 pub fn spawn_appcontainer(
     exe: &Path,
     args: &[String],
@@ -178,8 +177,7 @@ fn env_block(keep: Option<&[String]>) -> Vec<u16> {
         None => std::env::vars().collect(),
     };
 
-    // A sorted, case-insensitive block: Windows expects the variables in
-    // alphabetical order, and duplicates with different case are undefined.
+    // Windows expects alphabetical order, and case-duplicate keys are undefined.
     let mut vars = vars;
     vars.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
     vars.dedup_by(|a, b| a.0.to_lowercase() == b.0.to_lowercase());
@@ -226,8 +224,8 @@ fn spawn_inner(
         lpAttributeList: LPPROC_THREAD_ATTRIBUTE_LIST(std::ptr::null_mut()),
     };
 
-    // The attribute list must outlive CreateProcessW, and it names the only
-    // three handles the child is allowed to inherit.
+    // Must outlive CreateProcessW, and names the only three handles the child
+    // inherits.
     let std_handles = [in_pipe.read, out_pipe.write, err_pipe.write];
     let attrs = AttrList::new(caps, &std_handles)?;
     info.lpAttributeList = attrs.as_ptr();
@@ -261,8 +259,8 @@ fn spawn_inner(
         )
     };
 
-    // stdin write end goes now so the child sees EOF instead of hanging.
-    // SAFETY: each handle is closed exactly once here.
+    // stdin write ends now so the child sees EOF instead of hanging.
+    // SAFETY: each handle closed exactly once.
     unsafe {
         let _ = CloseHandle(in_pipe.write);
         let _ = CloseHandle(in_pipe.read);

@@ -20,9 +20,8 @@ const COLS: &str = "id, name, instructions, reach_all, \
                     (SELECT COUNT(*) FROM profile_grants g \
                        WHERE g.profile_id = agent_profiles.id), created_at";
 
-/// The default first, then newest. A profile with no name reads as "Default"
-/// in the UI rather than as a blank row, so it belongs at the top where it is
-/// the answer to "which one am I on".
+/// The default first, then newest: the default reads as "Default" in the UI, so
+/// it belongs at the top.
 pub fn list(conn: &Connection) -> Result<Vec<Profile>, String> {
     let mut stmt = conn
         .prepare(&format!(
@@ -81,8 +80,7 @@ pub fn edit(
     name: Option<&str>,
     instructions: Option<&str>,
 ) -> Result<Profile, String> {
-    // Loud on a profile that is not there, rather than a silent no-op that
-    // reads in the UI as "saved".
+    // Loud on a missing profile, not a silent no-op that reads as "saved".
     get(conn, id)?;
 
     if let Some(n) = name {
@@ -111,8 +109,8 @@ pub fn delete(conn: &Connection, id: &str) -> Result<(), String> {
         return Err("the default profile cannot be deleted".into());
     }
 
-    // Refuse while it still owns work, and say which work, so the user is not
-    // left wondering what happened to the chat they just opened.
+    // Refuse while it still owns work, so the user is not left wondering what
+    // happened to the chat they just opened.
     let owners: Vec<String> = {
         let mut stmt = conn
             .prepare("SELECT id FROM sessions WHERE profile_id = ?1 LIMIT 5")
@@ -167,9 +165,9 @@ pub fn of_session(conn: &Connection, session_id: &str) -> Result<Option<String>,
     .map_err(|err| err.to_string())
 }
 
-/// Which profile the picker was left on. Survives a restart, because
-/// re-opening the app and finding a different personality than the one you
-/// closed it with is its own small annoyance every single time.
+/// Which profile the picker was left on. Survives a restart: finding a
+/// different personality than the one you closed the app with is its own
+/// annoyance every single time.
 pub fn active(conn: &Connection) -> String {
     gw_store::kv_get(conn, "profile.active")
         .filter(|id| !id.is_empty())
@@ -181,9 +179,8 @@ pub fn set_active(conn: &Connection, id: &str) -> Result<(), String> {
     gw_store::kv_set(conn, "profile.active", id)
 }
 
-/// What this profile may reach. Read on demand rather than shipped with every
-/// `list()` — a full matrix is sixty cells and the settings list does not draw
-/// them.
+/// Read on demand, not shipped with `list()`: a full matrix is sixty cells and
+/// the settings list does not draw them.
 pub fn reach(conn: &Connection, id: &str) -> Result<Reach, String> {
     let p = get(conn, id)?;
 
@@ -221,8 +218,7 @@ pub fn set_reach(
             return Err(format!("unknown capability: {}", g.capability));
         }
 
-        // A profile is not a target of itself. Whatever it may do to others, it
-        // does not get a second, unchecked copy of the same permissions.
+        // No second, unchecked copy of the same permissions.
         if g.target_id == id {
             return Err("a profile cannot be granted access to itself".into());
         }
@@ -236,8 +232,7 @@ pub fn set_reach(
     )
     .map_err(|err| err.to_string())?;
 
-    // Replaced wholesale. Editing one cell should not be a diff the caller has
-    // to get right, and a half-sent matrix would be a half-revoked one.
+    // Replaced wholesale: a half-sent matrix would be a half-revoked one.
     conn.execute(
         "DELETE FROM profile_grants WHERE profile_id = ?1",
         params![id],
@@ -245,8 +240,7 @@ pub fn set_reach(
     .map_err(|err| err.to_string())?;
 
     for g in &grants {
-        // INSERT OR IGNORE, because a matrix is a set of cells and a double
-        // click is not a request for two permissions.
+        // A matrix is a set of cells: a double click is not a second grant.
         conn.execute(
             "INSERT OR IGNORE INTO profile_grants (profile_id, capability, target_id) \
              VALUES (?1, ?2, ?3)",

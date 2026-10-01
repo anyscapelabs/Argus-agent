@@ -1,19 +1,8 @@
-// The playbook: what the harness has learned about a model, and about this
-// machine, from what it actually observed.
+// What the harness has learned about a model, and about this machine.
 //
-// Two rules shape everything here.
-//
-// 1. A lesson must be a fact with evidence, never a scolding. "This model
-//    sends `{}` and needs the call re-sent with arguments" is a fact the model
-//    can act on. "You keep forgetting" is a scolding, and a system that
-//    learns to scold degrades into noise the model learns to ignore. Every
-//    lesson below is phrased about the situation, never about the model
-//    having been wrong.
-//
-// 2. Nothing here is generated. Each signal maps to a fixed sentence in
-//    code. A model that writes its own lessons is a model that can rewrite
-//    the rules it is judged by, which is the failure mode this whole module
-//    exists to avoid.
+// Two rules: a lesson is a fact with evidence, never a scolding, and nothing
+// here is generated — each signal maps to a fixed sentence in code, so a model
+// cannot rewrite the rules it is judged by.
 pub mod schema;
 pub mod store;
 
@@ -25,9 +14,7 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
     schema::migrate(conn)
 }
 
-/// The sentence for a signal, and the stable key it accumulates evidence
-/// under. Returns `None` for a signal with no lesson worth teaching — a fact
-/// with nothing to do is still worth recording, but not worth prompt budget.
+/// The sentence for a signal and the stable key it accumulates evidence under.
 fn lesson_for(kind: Kind) -> (&'static str, &'static str) {
     match kind {
         Kind::EmptyArgs => (

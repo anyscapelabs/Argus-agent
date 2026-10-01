@@ -1,10 +1,4 @@
-// The loop itself. `Turn` and its mutable state are in `mod.rs`; the steps that
-// surround the loop — building the request, watching the budget, classifying
-// the reply, persisting it — are one file each.
-//
-// The split is by decision, not by length: each helper answers exactly one
-// question the loop asks, and none of them can reach the loop's locals. What is
-// left here is the part that genuinely has to be read top to bottom.
+// The loop itself; every step around it is one file each.
 use rusqlite::params;
 use tauri::{AppHandle, Manager};
 
@@ -20,9 +14,8 @@ use crate::sessions::schema::NewMsg;
 use crate::sessions::{blocks, guards, reflect, sink, store};
 use crate::tools;
 use crate::tools::ToolCallStyle;
-/// Run the loop to completion. `perm`, `web`, `allow_hosts`, and
-/// `turn_budget` are fixed for the whole turn, so they arrive as
-/// parameters; everything the loop itself changes is on `self`.
+/// Run the loop to completion. `perm`, `web`, `allow_hosts`, and `turn_budget`
+/// are fixed for the whole turn, so they arrive as parameters.
 #[allow(clippy::too_many_arguments)]
 impl Turn {
     pub async fn run<R: tauri::Runtime>(
@@ -40,8 +33,7 @@ impl Turn {
         for _step in 0..MAX_STEPS {
             let req = self.build_request(gw, session_id)?;
 
-            // Checked before the call, not after: at Stop the turn is over and the
-            // model never gets to spend what is left of the budget.
+            // Before the call, not after: at Stop the turn is over.
             if self.budget_stopped(gw, session_id, sink, turn_budget) {
                 break;
             }
@@ -49,10 +41,8 @@ impl Turn {
             if !self.budget_warned
                 && guards::budget_state(self.tok_in_sum, turn_budget) == guards::Budget::Warn
             {
-                // A contract break already queued its own correction and is more
-                // urgent than a heads-up, so the budget warning waits one step
-                // rather than overwriting it. Latched only once actually queued,
-                // or it would be lost and never re-fires.
+                // Waits one step so it cannot overwrite a contract break's own
+                // correction. Latched only once queued, or it never re-fires.
                 if self.nudge.is_none() {
                     self.budget_warned = true;
                     self.nudge = Some(format!(
@@ -71,9 +61,8 @@ impl Turn {
                 if self.empty_retries < 1 {
                     self.empty_retries += 1;
                     self.nudge = Some(EMPTY_CONT.into());
-                    // Whitespace arrived and is being thrown away, so it is
-                    // never persisted. Nothing downstream will clear it, and
-                    // the retry streams onto whatever is still in the buffer.
+                    // Whitespace is dropped and never persisted, so the retry
+                    // would stream on top of it.
                     sink.emit(StreamEvent::Reset);
                     continue;
                 }
@@ -83,17 +72,14 @@ impl Turn {
 
             let normalized = blocks::sanitize_tags(&tools::normalize_actions(&stats.text));
             let (closed, base_text) = tools::split_commit(&normalized);
-            // Degraded replies have no API channel, so the text must execute
-            // regardless of style. Otherwise the resolved style decides: native
-            // prose is never executed, template text is decoded.
+            // Degraded replies have no API channel, so their text must execute
+            // whatever the style says.
             let style = Turn::resolve_style(gw, &stats, &base_text);
             let mut pending =
                 tools::build_executions_styled(&base_text, &stats.tool_calls, self.act_base, style);
 
             let done = pending.is_empty();
-            // Native turns persist prose only: the event rows own what ran, so no
-            // record markup is stored to be re-parsed later. Degraded and template
-            // turns keep the text blocks — they are the only record those have.
+            // Native turns persist prose only: the event rows own what ran.
             let mut text = if style == ToolCallStyle::Native && !stats.degraded {
                 tools::strip_actions(&base_text)
             } else {
@@ -112,15 +98,9 @@ impl Turn {
             let (asst, said_again) =
                 self.persist_assistant(gw, session_id, &text, &model_id, &stats, calls_json)?;
 
-            // The step boundary, and it belongs to the persist rather than to
-            // the work that follows it. `Step` is what tells the frontend its
-            // text buffer is spent, and this is the instant that becomes true.
-            //
-            // Emitted further down, it only covered the paths that run tools.
-            // A nudge, a truncation retry or a reflection all `continue` past
-            // that point, so the buffer was never cleared and the next step
-            // streamed on top of a reply that was already a row — the same
-            // words shown twice, once from the row and once from the buffer.
+            // `Step` says the text buffer is spent. Emitted here, not below:
+            // the continue paths skip it, and the next step would then stream
+            // on top of a reply that is already a row.
             sink.emit(StreamEvent::Step);
 
             let mut trunc_overflow = false;
@@ -132,9 +112,8 @@ impl Turn {
             }
 
             if !stats.truncated && done {
-                // Asked of what the model actually wrote, not of the text the
-                // transcript shows: a fragment too broken to run is cut out of the
-                // answer, and the model still has to be told to say it again.
+                // Asked of what the model wrote, not the transcript text: an
+                // unrunnable fragment is cut out, and the model must say it again.
                 let orphaned = tools::has_orphaned_action_block(&stats.text);
 
                 if !closed
@@ -172,8 +151,7 @@ impl Turn {
                         );
                         let _ = store::mark_final(&conn, &asst.id);
                     }
-                    // "Send continue to retry" is a promise, so the retry has to
-                    // find out what was attempted.
+                    // "Send continue" is a promise; the retry needs the history.
                     blocks::save_resume(gw, session_id, &self.turn_actions);
 
                     self.finished = true;
@@ -188,8 +166,8 @@ impl Turn {
                     });
                 }
 
-                // A self.finished turn closes its own resume: leaving one behind would
-                // tell the next turn there is unfinished work that is not.
+                // A finished turn closes its own resume: a leftover one claims
+                // unfinished work that is not.
                 if let Ok(conn) = gw.conn.lock() {
                     crate::sessions::resume::clear(&conn, session_id);
                 }
@@ -245,9 +223,8 @@ impl Turn {
                         let gw = app4.state::<Gateway>();
                         crate::learning::learn_pending(&gw).await;
 
-                        // Curating is a lookup and an upsert per kind, with the
-                        // sentences fixed in code — no model call, so it cannot
-                        // stall a turn or cost anything.
+                        // No model call, so it cannot stall a turn or cost
+                        // anything.
                         let conn = gw.conn.lock().ok();
                         if let Some(conn) = conn {
                             let _ = crate::playbook::curate(&conn, &mid, Some(&sid));
@@ -300,17 +277,16 @@ impl Turn {
 
                 let pre_failed = exec.status.is_terminal();
                 let mut denied = false;
-                // Set on the gate path below, read by the single observation site
-                // after it. A pre-failed exec never trips the guard, so it starts
-                // false rather than reading a stale value from the last exec.
+                // Read by the single observation site below. A pre-failed exec
+                // never trips the guard, so it starts false rather than reading
+                // a stale value from the last exec.
                 let mut thrashed = false;
                 let code: i64;
 
                 if pre_failed {
                     code = -1;
-                    // Recorded here because the gate below is skipped, but the
-                    // outcome itself is pushed once for every exec further down,
-                    // so both histories stay aligned and failure-first.
+                    // The gate below is skipped, but the history push further
+                    // down is not, so push here to keep both aligned.
                     self.recent.push((exec.tool.clone(), exec.args.clone()));
                 } else {
                     if exec.tool_call_id.is_some() {
@@ -330,10 +306,8 @@ impl Turn {
                     thrashed = guards::thrashing(&self.recent, &self.recent_out, &key);
                     self.recent.push(key);
 
-                    // A guard trip is not an approval question, so it never opens
-                    // the Run/Deny card: showing it and then failing the call
-                    // anyway asks the user to approve something already refused.
-                    // The user is the escape hatch, and the guard is advisory.
+                    // A guard trip never opens the Run/Deny card: the call fails
+                    // either way. The user is the escape hatch, not the guard.
                     let mut allow = !needs_ask && !looped && !thrashed;
                     let needs_ask = needs_ask && !looped && !thrashed;
 
@@ -456,20 +430,16 @@ impl Turn {
                 );
                 let status = exec.result_status();
                 let body = exec.result_body().to_string();
-                // Outcome for the semantic guard. One push per exec, on every path
-                // including pre-failed ones that never ran: the caller pushes to
-                // `self.recent` unconditionally too, and the two must stay the same
-                // length for the window slices to mean anything.
+                // One push per exec, every path, so it stays the same length as
+                // `self.recent` and the window slices mean anything.
                 let exec_failed = exec.status == tools::ToolStatus::Failed
                     || exec.status == tools::ToolStatus::Cancelled;
                 self.recent_out.push(exec_failed);
                 self.turn_actions
                     .push((blocks::exec_label(exec, is_term), !exec_failed));
 
-                // A failure is the one moment worth learning from, so it is
-                // observed here rather than at each site that could fail. A
-                // dropped signal costs a lesson; a spurious one costs prompt
-                // budget, and neither is worth a turn's outcome.
+                // One site, not one per failure mode: a dropped signal costs a
+                // lesson, a spurious one costs prompt budget.
                 if exec_failed {
                     if let Ok(conn) = gw.conn.lock() {
                         blocks::observe_exec(&conn, &stats.model_id, exec, thrashed);
@@ -477,8 +447,7 @@ impl Turn {
                 }
 
                 if is_browser {
-                    // Extract the generation now; the body itself is never
-                    // needed again, so it is not cloned into the candidate.
+                    // Pull the generation now; the body is not needed again.
                     let gen = tools::browser::shown_gen_in(&body);
                     shown_candidates.push((exec.args.clone(), status, gen));
                 }
@@ -503,10 +472,9 @@ impl Turn {
                     )?;
                 }
 
-                // The structured twin of the text block below. Same execution, so
-                // the card, the history, and the audit can never disagree. A lost
-                // row falls back to text (the turn must never fail over logging)
-                // and is counted in connector_logs under service `sessions`.
+                // The structured twin of the text block below: same execution, so
+                // card, history, and audit cannot disagree. A lost row falls back
+                // to text — the turn must never fail over logging.
                 let ev = crate::sessions::events::from_execution(exec, &asst.id, session_id);
                 let ev_err = match gw.conn.lock() {
                     Ok(conn) => store::add_event(&conn, &ev).err(),
@@ -622,16 +590,12 @@ impl Turn {
                 }
             }
 
-            // Native turns keep prose only: events own the records (written
-            // above), so splicing text blocks would resurrect the markup the
-            // structured path exists to delete. A lost event row falls back to
-            // text so the work stays visible. Degraded turns have no events
-            // worth reading, so their text blocks stay.
+            // Splicing text blocks into a native turn resurrects the markup the
+            // structured path exists to delete.
             if (!edits.is_empty() || !append_blocks.is_empty())
                 && blocks::needs_text_blocks(style, stats.degraded, events_ok)
             {
-                // `text` is dead after this splice (reflection already read it
-                // above), so take it instead of cloning the whole transcript.
+                // `text` is dead after this splice (reflection read it above).
                 let mut updated = std::mem::take(&mut text);
 
                 for (s, end, blk) in edits.into_iter().rev() {

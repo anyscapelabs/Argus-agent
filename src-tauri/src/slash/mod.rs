@@ -5,9 +5,8 @@ use crate::Gateway;
 
 pub mod usage;
 
-/// What a command does when it runs. `Local` answers here and costs nothing;
-/// `Prompt` expands to text and goes to the model like any other message;
-/// `Client` is the app's own — it lives in the window, not in this process.
+/// `Local` answers here and costs nothing, `Prompt` expands to text for the
+/// model, `Client` lives in the window.
 #[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
 pub enum Kind {
@@ -28,8 +27,7 @@ pub struct Cmd {
     pub tpl: Option<&'static str>,
 }
 
-/// The whole registry. The menu and the dispatcher read these same rows, so a
-/// command the help text describes is a command that exists.
+/// The menu and the dispatcher read these same rows.
 pub const CMDS: &[Cmd] = &[
     Cmd {
         name: "usage",
@@ -103,19 +101,14 @@ fn find(name: &str) -> Option<&'static Cmd> {
     CMDS.iter().find(|c| c.name == name)
 }
 
-/// Commands the app answers by itself, with no model and no tokens. A turn of
-/// one of these is stored in the chat and kept out of what the model is told, so
-/// this list is what decides whether such a line can be written at all.
-///
-/// Not the same question as `Kind::Local`: `/compact` is local in the sense
-/// that it runs in this process, but it costs a model call and is not a turn.
+/// No model, no tokens, so no turn is stored for it. Not the same question as
+/// `Kind::Local`: `/compact` runs here but costs a model call.
 pub fn answered_locally(name: &str) -> bool {
     matches!(name, "usage")
 }
 
-/// The line a local turn is stored as. The name and the argument are checked
-/// before the row is written: a turn that can never render is worse than a
-/// refusal, because it looks like the feature randomly not working.
+/// Check before the row is written: a turn that can never render looks like the
+/// feature randomly not working.
 pub fn local_turn_text(name: &str, arg: &str) -> Result<String, String> {
     if !answered_locally(name) {
         return Err(format!("/{name} is not answered by the app itself."));
@@ -151,15 +144,13 @@ pub async fn slash_run(
 
     let arg = arg.unwrap_or_default().trim().to_string();
 
-    // The window handles these before they get here. A backend that answered
-    // one would be claiming an effect it cannot have.
+    // The window handles these first; answering here would claim an effect we
+    // cannot have.
     if cmd.kind == Kind::Client {
         return Err(format!("/{name} is handled by the app, not the backend."));
     }
 
-    // A macro's argument goes into the text it expands to, so an empty one
-    // produces a prompt about nothing. A local command supplies its own
-    // default, so it is never refused here.
+    // An empty macro arg produces a prompt about nothing. Locals supply a default.
     if cmd.kind == Kind::Prompt && arg.is_empty() {
         return Err(format!(
             "/{} needs an argument: {}",

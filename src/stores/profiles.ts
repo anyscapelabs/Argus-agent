@@ -23,7 +23,7 @@ export function profileLabel(p: { name: string }): string {
   return p.name.trim() === "" ? "Default" : p.name.trim();
 }
 
-// Weakest rung first, and the label is what a person is agreeing to.
+// Weakest rung first. The label is what a person is agreeing to.
 export const CAPABILITIES: { key: Grant["capability"]; label: string; note: string }[] = [
   {
     key: "see_activity",

@@ -16,10 +16,8 @@ function parseArgs(raw: string): Record<string, unknown> {
 
 // How often the text parser still carries a turn. `suspicious` means the
 // session has event rows yet a message fell back to markup — the shape the
-// structured path exists to delete. `legacy` means a pre-events session,
-// expected until old chats age out. Counts persist under
-// `argus.metrics.fallback`; read that key when deciding whether the template
-// text splice can be deleted.
+// structured path exists to delete. `legacy` is a pre-events session.
+// Read this key when deciding whether the template text splice can go.
 const COUNT_KEY = "argus.metrics.fallback";
 const counted = new Set<string>();
 
@@ -96,10 +94,8 @@ export function noteFallback(
   }
 }
 
-// Steps built from event rows, not by re-parsing message text. Labels,
-// details, and codes arrive computed; this maps them onto the card shapes
-// the work panel already renders. Text parsing remains only for rows that
-// predate events (legacy) and degraded turns (no usable API channel).
+// Steps from event rows, not by re-parsing message text. Labels, details, and
+// codes arrive computed; this maps them onto the shapes the work panel renders.
 export function eventStep(ev: ToolEvent): ToolStep {
   const durationMs = ev.elapsed_ms > 0 ? ev.elapsed_ms : undefined;
   const output = ev.output.length > 0 ? ev.output : undefined;
@@ -155,9 +151,9 @@ export function eventsFor(
   return list !== undefined && list.length > 0 ? list : null;
 }
 
-// A DocumentCard for a document event. This parses the backend's own
-// `key=value` result lines — a stable internal format, not model prose —
-// because the card predates events and still reads BlockNodes.
+// A DocumentCard for a document event. Parses the backend's own `key=value`
+// result lines — a stable internal format, not model prose — because the card
+// predates events and still reads BlockNodes.
 export function docBlockFor(ev: ToolEvent): BlockNode | null {
   if (ev.kind !== "document") return null;
 

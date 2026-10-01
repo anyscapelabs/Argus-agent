@@ -7,7 +7,7 @@ use crate::gateway::schema::StreamEvent;
 use crate::gateway::{EventSink, Gateway};
 use crate::sessions::chat::{
     approval_id, ask_approval, run_skill_reflection, DENIED_CODE, EMPTY_CONT, HARD_STEPS,
-    MAX_CLAIM_NUDGES, MAX_STEPS, NUDGE, RESULT_CLIP, SUMMARY_DEMAND,
+    MAX_CLAIM_NUDGES, MAX_STEPS, MIN_CLOSE_CHARS, NUDGE, RESULT_CLIP, SUMMARY_DEMAND,
 };
 use crate::sessions::schema::NewMsg;
 use crate::sessions::{blocks, guards, reflect, sink, store};
@@ -112,12 +112,18 @@ impl Turn {
                 // Asked of the model's raw text: an unrunnable fragment is cut
                 // out, so the model must say it again.
                 let orphaned = tools::has_orphaned_action_block(&stats.text);
+                let faked = reflect::fakes_output(&text);
+                let faux = reflect::has_faux_sandbox(&text);
 
-                if !closed
-                    || reflect::fakes_output(&text)
-                    || reflect::has_faux_sandbox(&text)
-                    || orphaned
-                {
+                // A complete answer missing only its close marker is finished,
+                // not broken: sending it back resends the whole answer.
+                let unclosed_answer = !closed
+                    && !orphaned
+                    && !faked
+                    && !faux
+                    && text.trim().chars().count() >= MIN_CLOSE_CHARS;
+
+                if (!closed || faked || faux || orphaned) && !unclosed_answer {
                     if self.claim_nudges < MAX_CLAIM_NUDGES {
                         self.claim_nudges += 1;
                         self.nudge = Some(NUDGE.into());

@@ -296,6 +296,7 @@ function renderTree(
   let wIdx = 0;
   let aIdx = 0;
   let tIdx = 0;
+  const seen = new Set<string>();
 
   const actFor = (idx: number): LiveAction | undefined =>
     liveTerm === undefined
@@ -321,6 +322,24 @@ function renderTree(
     if (hideTools === true && blockRole(blk.tag) === "work") {
       i++;
       continue;
+    }
+
+    // A retried turn resends the whole answer in one buffer. Second copy out.
+    if (blk.kind === "paragraph" || blk.kind === "heading") {
+      const norm = blk.children
+        .map((c) => c.value)
+        .join("")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      if (norm.length > 0) {
+        if (seen.has(norm)) {
+          i++;
+          continue;
+        }
+
+        seen.add(norm);
+      }
     }
 
     if (blk.tag === "action" && WEB_ACTIONS.has(blk.attrs.tool ?? "")) {

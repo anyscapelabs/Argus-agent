@@ -66,16 +66,21 @@ async fn headless_send_tags_system_role_without_frontend() {
     assert!(out.is_err(), "no model is configured, the turn must fail");
 
     let conn = gw.conn.lock().unwrap();
-    let (role, content): (String, String) = conn
-        .query_row(
-            "SELECT role, content FROM messages WHERE session_id = ?1 ORDER BY seq DESC LIMIT 1",
-            [sid],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+    let rows: Vec<(String, String)> = conn
+        .prepare(
+            "SELECT role, content FROM messages WHERE session_id = ?1 ORDER BY seq DESC LIMIT 2",
         )
+        .unwrap()
+        .query_map([sid], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<Result<Vec<_>, rusqlite::Error>>()
         .unwrap();
 
-    assert_eq!(role, "system");
-    assert_eq!(content, "scheduled tick");
+    assert_eq!(rows.len(), 2, "user tick plus a visible assistant error");
+    assert_eq!(rows[1].0, "system");
+    assert_eq!(rows[1].1, "scheduled tick");
+    assert_eq!(rows[0].0, "assistant");
+    assert!(rows[0].1.contains("<error"), "got: {}", rows[0].1);
 }
 
 #[tokio::test]

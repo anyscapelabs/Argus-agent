@@ -144,6 +144,11 @@ fn stable_layer(
         }
     }
 
+    // Volatile by design, so dead last in the main prompt: it must never push
+    // stable rules down.
+    s.push_str("\n\n");
+    s.push_str(&user_context());
+
     Ok(s)
 }
 
@@ -194,6 +199,50 @@ fn profile_section(conn: &Connection, profile_id: Option<&str>) -> Option<String
 const PAST_INDEX_MAX: usize = 12;
 const PAST_LINE_CHARS: usize = 90;
 
+/// Fresh per turn: the user's own clock, so calendar, email, scheduling and
+/// "today/tomorrow" reasoning never ask for it. UTC fallback — a missing
+/// zone must not fail the prompt.
+fn user_context() -> String {
+    let now = chrono::Local::now();
+    let zone = iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".into());
+    let stamp = now.format("%A %Y-%m-%d %H:%M").to_string();
+    let offset = now.format("%:z").to_string();
+
+    format!(
+        "<user-context>\n\
+         The user's local time is {stamp} ({zone}, UTC{offset}).\n\
+         Use this for calendar events, email timestamps, scheduling, and any \
+         \"today/tomorrow/yesterday\" reasoning. Never ask the user for the \
+         current date, time, or timezone.\n\
+         </user-context>"
+    )
+}
+
+/// Models that narrate instead of closing get the close rule restated last,
+/// with an example. Recency beats the buried middle. Matched by substring,
+/// like the compression thresholds.
+fn format_section(model_id: Option<&str>) -> Option<String> {
+    let m = model_id?;
+
+    if !m.to_lowercase().contains("glm") {
+        return None;
+    }
+
+    Some(
+        "<turn-format>\n\
+         Close every reply one of exactly two ways, no exceptions: a tool call, \
+         or the final answer with <final/> alone on its own last line.\n\
+         While working (any tool call in the reply): at most one short status line, \
+         then the calls. No findings, no tables, no conclusions.\n\
+         A reply that ends with neither comes back to you — do not resend it. \
+         Just reply with <final/> on its own last line and nothing else.\n\
+         A close looks like this:\n\
+         The file says hello.\n\
+         <final/>\n\
+         </turn-format>"
+            .into(),
+    )
+}
 fn clip_line(s: &str, n: usize) -> String {
     let t = s.trim().replace(['\n', '\r'], " ");
     if t.chars().count() <= n {
@@ -338,6 +387,12 @@ pub fn project(
     if let Some(index) = past_index(conn, session_id) {
         system.push_str("\n\n");
         system.push_str(&index);
+    }
+
+    // Last word, on purpose: the close rule is what a narrating model drops.
+    if let Some(fmt) = format_section(model_id.as_deref()) {
+        system.push_str("\n\n");
+        system.push_str(&fmt);
     }
 
     // `local = 0` keeps out lines the app answered itself.

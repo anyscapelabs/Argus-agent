@@ -350,15 +350,19 @@ async fn turn<R: tauri::Runtime>(
     };
     let turn_budget = {
         let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-        let row: (Option<String>, i64) = conn
+        // Sized off the model's own window, never off `sessions.ctx_tokens`:
+        // that column holds the previous turn's summed spend, so basing the
+        // budget on it collapsed every turn after the first to the floor and
+        // cut long runs off after two or three steps.
+        let model_id: Option<String> = conn
             .query_row(
-                "SELECT model_id, ctx_tokens FROM sessions WHERE id = ?1",
+                "SELECT model_id FROM sessions WHERE id = ?1",
                 params![session_id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| r.get(0),
             )
-            .unwrap_or((None, 0));
-        let window = crate::prompt::config::context_window(&conn, row.0.as_deref());
-        guards::turn_budget(if row.1 > 0 { row.1 } else { window })
+            .unwrap_or(None);
+        let window = crate::prompt::config::context_window(&conn, model_id.as_deref());
+        guards::turn_budget(window)
     };
 
     let mut turn = super::turn::Turn::new();

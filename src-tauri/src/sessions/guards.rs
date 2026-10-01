@@ -199,12 +199,15 @@ pub fn thrashing(hist: &[(String, String)], failed: &[bool], key: &(String, Stri
     refs.windows(2).all(|w| same_action(w[0], w[1])) && same_action(refs[0], refs[refs.len() - 1])
 }
 
-// Bounded context tokens per turn, sized off the model's own window: a 1M
-// model is not throttled like a 32k one.
-const BUDGET_WINDOW_FRACTION: f64 = 0.25;
+// Bounded spend per turn, sized off the model's own window — and off the way
+// the meter works. `tok_in_sum` adds up every step's full prompt (history is
+// re-sent each step), so one long turn legitimately spends many multiples of
+// a single prompt. The budget must cover a whole MAX_STEPS turn; the step
+// limit and compaction are the real bounds, this is only the backstop.
+const BUDGET_WINDOW_FRACTION: f64 = 2.0;
 pub const BUDGET_WARN_FRACTION: f64 = 0.7;
-const BUDGET_MIN: i64 = 32_000;
-const BUDGET_MAX: i64 = 200_000;
+const BUDGET_MIN: i64 = 200_000;
+const BUDGET_MAX: i64 = 2_000_000;
 
 pub fn turn_budget(ctx_tokens: i64) -> i64 {
     let base = if ctx_tokens > 0 {

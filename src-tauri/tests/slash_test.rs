@@ -44,6 +44,36 @@ fn say(conn: &rusqlite::Connection, sid: &str, role: &str, content: &str, mins_a
     .unwrap();
 }
 
+/// A row in the history, timestamped a given number of minutes ago.
+///
+/// Minutes, not "one hour": a fixed hour offset is only inside today when the
+/// clock is past it, so every one of these fixtures went stale for the first
+/// hour of every day. That is not hypothetical — it failed a CI run at 00:05.
+fn log_at(
+    conn: &rusqlite::Connection,
+    model: &str,
+    status: &str,
+    tok_in: i64,
+    tok_out: i64,
+    cost: f64,
+    mins_ago: i64,
+) {
+    conn.execute(
+        "INSERT INTO request_log (ts, model_id, provider_id, status, tok_in, tok_out, cost)
+         VALUES (datetime('now', ?6), ?1, 'p', ?2, ?3, ?4, ?5)",
+        rusqlite::params![
+            model,
+            status,
+            tok_in,
+            tok_out,
+            cost,
+            format!("-{mins_ago} minutes"),
+        ],
+    )
+    .unwrap();
+}
+
+/// The common case: a request that just happened, unambiguously inside today.
 fn log(
     conn: &rusqlite::Connection,
     model: &str,
@@ -52,12 +82,7 @@ fn log(
     tok_out: i64,
     cost: f64,
 ) {
-    conn.execute(
-        "INSERT INTO request_log (ts, model_id, provider_id, status, tok_in, tok_out, cost)
-         VALUES (datetime('now', '-1 hour'), ?1, 'p', ?2, ?3, ?4, ?5)",
-        rusqlite::params![model, status, tok_in, tok_out, cost],
-    )
-    .unwrap();
+    log_at(conn, model, status, tok_in, tok_out, cost, 0);
 }
 
 #[test]
@@ -90,14 +115,21 @@ fn a_bare_slash_is_the_default_window_rather_than_an_error() {
 // The window is a SQLite modifier, and `0 days` is a no-op rather than
 // "midnight" — it asked for the instant the query ran, so every request in the
 // history fell outside it and the Today tab drew its empty state.
+//
+// The two rows bracket the boundary and are anchored so the test cannot depend
+// on the hour it runs: the recent row is stamped now, which is always inside
+// today, and the other is 30 hours back, which is always before midnight since
+// midnight is at most 24 hours ago. A window measured from "now" would count
+// both and call it today.
 #[test]
 fn today_counts_from_midnight_rather_than_from_now() {
     let (conn, _sid) = db();
     log(&conn, "opus", "ok", 100, 50, 1.0);
+    log_at(&conn, "opus", "ok", 100, 50, 1.0, 60 * 30);
 
     let out = usage::report(&conn, "today").unwrap();
 
-    assert_eq!(out.requests, 1, "{out:?}");
+    assert_eq!(out.requests, 1, "yesterday's row is not today: {out:?}");
 }
 
 #[test]

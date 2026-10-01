@@ -12,6 +12,11 @@ const ENV_ID: &str = "ARGUS_GITHUB_CLIENT_ID";
 const ENV_SECRET: &str = "ARGUS_GITHUB_CLIENT_SECRET";
 const APP_FILE: &str = "github-oauth.json";
 
+// Baked at compile time from the build environment, so release builds carry
+// the secrets CI injects. A shipped app has no build environment to read.
+const BAKED_ID: Option<&str> = option_env!("ARGUS_GITHUB_CLIENT_ID");
+const BAKED_SECRET: Option<&str> = option_env!("ARGUS_GITHUB_CLIENT_SECRET");
+
 pub fn load() -> Result<GithubCfg, String> {
     if let Ok(Some(id)) = crate::mcp::vault::get_client("github") {
         if !id.trim().is_empty() {
@@ -30,6 +35,15 @@ pub fn load() -> Result<GithubCfg, String> {
             return Ok(GithubCfg {
                 client_id: id,
                 client_secret: std::env::var(ENV_SECRET).unwrap_or_default(),
+            });
+        }
+    }
+
+    if let Some(id) = BAKED_ID {
+        if !id.trim().is_empty() {
+            return Ok(GithubCfg {
+                client_id: id.into(),
+                client_secret: BAKED_SECRET.unwrap_or_default().into(),
             });
         }
     }

@@ -16,9 +16,10 @@ The version lives in four files and CI fails if they disagree:
 
 The scheme is semver with a pre-release suffix:
 
-- **`0.2.0-alpha.N`** — the private loop. Built from `master`, released to
+- **`0.1.0-alpha.N`** — the private loop. Built from `master`, released to
   people we can talk to directly. Marked as a GitHub **prerelease**, so it is
-  visually distinct from anything we stand behind.
+  visually distinct from anything we stand behind. Every alpha of a version
+  shares its code name; the name changes with the minor version.
 - **`0.3.0`** — the public cut. The first release we ask strangers to install.
 
 A tag with a `-alpha` suffix becomes a prerelease automatically; there is no
@@ -30,8 +31,8 @@ separate flag to remember.
 # 1. Bump all four files to the new version, and say so in CHANGELOG.md.
 # 2. Make sure CI is green on master.
 git checkout master && git pull
-git tag v0.2.0-alpha.1
-git push origin v0.2.0-alpha.1
+git tag v0.1.0-alpha.2
+git push origin v0.1.0-alpha.2
 ```
 
 Pushing the tag is the entire trigger. `.github/workflows/release.yml` builds

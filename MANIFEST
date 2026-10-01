@@ -1,43 +1,43 @@
 # Argus — Release Manifest
 
 - **Agent:** Argus
-- **Version:** 0.2.0-alpha.1
-- **Code name:** Sphinx
+- **Version:** 0.1.0-alpha.1
+- **Code name:** Panoptes
 
 ## Code name origin
 
-**Sphinx** (Greek: Σφίγξ, *Sphínx* — "the strangler") sat at the road into
-Thebes and asked one question of everyone who passed: *what walks on four legs
-in the morning, two at noon, and three in the evening?* Only those who
-answered correctly were allowed through. The rest did not die — they were
-simply not admitted, and were left to find another road.
+**Panoptes** (Ancient Greek: Πανόπτης, *Panoptēs* — "the All-Seeing") was the
+hundred-eyed giant of Greek myth. With eyes covering his entire body, he
+never had to fully sleep: while some eyes rested, others stayed open, so
+nothing ever escaped his watch. Hera set him to guard the heifer Io, and
+not even Hermes, messenger of the gods, could slip past him unnoticed —
+he had to lull *every single eye* shut first.
 
-Argus is named for Argus Panoptes, the hundred-eyed giant. Sphinx is the other
-half of that story: Panoptes sees everything, and Sphinx **asks** — it examines
-what it sees before it lets it act.
+Argus Panoptes is the namesake of the word *panoptic* — seeing everything.
 
 **Every release of Argus takes the code name of a watcher from myth and
-legend.** v0.1.0 began at the source with **Panoptes**, the all-seeing
-process monitor. v0.2.0 moves to the one who asks.
+legend.** v0.1.0 starts at the source: **Panoptes, the original all-seeing
+process monitor** — the first daemon that never sleeps. The alpha builds
+(`0.1.0-alpha.N`) share the code name with the release they lead to; it changes
+when the minor version does.
 
-For devs: v0.2.0 is the release where the agent does more than look, so the
-question shifts from *did it see the right thing?* to *should it be allowed to
-act on it?* An agent that reads your screen tree, watches your windows, drives
-your browser, and keeps working while you look away needs two properties, in
-order — it must never lose track of what it is looking at (Panoptes), and it
-must never act on something it has not been asked about (Sphinx). The second
-is the harder one, because the first is a matter of perception and the second
-is a matter of refusal.
+For devs: an agent that reads your screen tree, watches your windows, drives
+your browser, and keeps working while you look away needs exactly one property
+above all others — it must never lose track of what it is looking at. That is
+the whole of Panoptes, and it is why the name starts here.
 
 ## Status
 
-**0.2.0-alpha is a testing release, not a public one.** Alpha builds go to
+**0.1.0-alpha is a testing release, not a public one.** Alpha builds go to
 GitHub as prereleases for people installing the app to find what is broken.
 The public release is **0.3.0**. Alpha builds are signed with self-signed
 certificates, which means every platform will show a warning on first launch —
 that is expected and is not evidence of a tampered download.
 
-## Features in Sphinx (v0.2.0)
+## Features in Panoptes (v0.1.0)
+
+This is the first build of Argus — there is no earlier release to diff
+against, so everything below is new.
 
 - **Agent chat** — persistent sessions, `ask`/`never` permission modes,
   streaming tool output, compacting summaries.
@@ -58,20 +58,17 @@ that is expected and is not evidence of a tampered download.
   execution, failing closed when a policy cannot be enforced.
 - **Local-first** — SQLite + OS keyring; your data stays on your machine.
 
-### Changed since Panoptes (v0.1.0)
+### How it is built and shipped
 
-- **Signed release builds for every platform** — macOS, Windows, Linux, on both
-  macOS architectures. See `docs/developer-guide/releasing.md`.
+- **Signed release builds for every platform** — macOS (both architectures),
+  Windows, and Linux. See `docs/developer-guide/releasing.md`.
 - **CI on every push and pull request** — format, clippy with `-D warnings`, the
   full backend suite, typecheck, and a production frontend build.
-- **Scrollable sidebar** — the chat list scrolls independently, matching the
-  model list's thumb.
 
-### Removed since Panoptes (v0.1.0)
+### Not in this build
 
-- **Voice input.** Local dictation shipped in this cycle and was removed before
-  the first alpha. The transcript is indistinguishable from typing, so a
-  misheard instruction becomes an executed one, and the read-back path wanted
-  cloud text-to-speech — which breaks the offline promise for a feature nobody
-  asked for twice. The capability is documented as a possible v0.4 addition,
-  not a v0.2 one.
+- **Voice input.** Local dictation was built and removed before the first
+  alpha. A transcript is indistinguishable from typing, so a misheard
+  instruction becomes an executed one, and the read-back half wanted cloud
+  text-to-speech — which breaks the offline promise. Possible later, not
+  something this build claims.

@@ -1,6 +1,6 @@
 # Argus
 
-![version](https://img.shields.io/badge/version-0.2.0--alpha.1-blue)
+![version](https://img.shields.io/badge/version-0.1.0--alpha.1-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![Rust](https://img.shields.io/badge/Rust-1.0-CE422B?logo=rust&logoColor=white)

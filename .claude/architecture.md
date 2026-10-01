@@ -1,4 +1,4 @@
-# Architecture — Argus (v0.2.0-alpha.1 Sphinx)
+# Architecture — Argus (v0.1.0-alpha.1 Panoptes Alpha 1)
 
 Source: `docs/developer-guide/architecture.md`, `src-tauri/src/lib.rs`, `MANIFEST`. Do not guess paths.
 

@@ -92,7 +92,7 @@ jobs:
           test "$pkg" = "$tauri" || { echo "::error::version mismatch: tauri.conf.json is $tauri, package.json is $pkg"; exit 1; }
           test "$pkg" = "$cargo" || { echo "::error::version mismatch: Cargo.toml is $cargo, package.json is $pkg"; exit 1; }
           # Shields.io escapes a dash as a double dash inside a badge label, so
-          # `0.2.0-alpha.1` renders as `0.2.0--alpha.1`.
+          # `0.1.0-alpha.1` renders as `0.1.0--alpha.1`.
           badge=${pkg//-/--}
           grep -q "version-$badge" README.md || { echo "::error::README badge is stale: expected version-$badge"; exit 1; }
 

@@ -73,10 +73,8 @@ pub fn context_window(conn: &Connection, model_id: Option<&str>) -> i64 {
         .unwrap_or(DEFAULT_CONTEXT)
 }
 
-// First native+text duplicate promotes an unknown model to the template
-// style. One noisy turn classifies it for good; never demotes back, so one
-// clean turn cannot flap it. Failures are silent: a missed upgrade retries
-// next turn, a missed turn must never fail.
+// One noisy turn promotes a model to the template style, for good: it never
+// demotes back, so one clean turn cannot flap it. Failures are silent.
 pub fn upgrade_tool_style(conn: &Connection, model_id: &str) {
     let caps: Option<String> = conn
         .query_row(
@@ -99,8 +97,7 @@ pub fn upgrade_tool_style(conn: &Connection, model_id: &str) {
     );
 }
 
-// Per-model tool dialect. Absent row, absent key, or bad JSON all mean Native:
-// an unknown model is handled by the duplication upgrade in chat, not here.
+// Absent row, absent key, or bad JSON all mean Native.
 pub fn tool_style(conn: &Connection, model_id: Option<&str>) -> crate::tools::ToolCallStyle {
     let Some(m) = model_id else {
         return crate::tools::ToolCallStyle::Native;

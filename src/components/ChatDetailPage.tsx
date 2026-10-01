@@ -14,9 +14,8 @@ export default function ChatDetailPage({ sessionId, onOpenAgent }: Props) {
   const { sessions } = st;
   const [draft, setDraft] = useState("");
 
-  // The store decides what "busy" means, so the composer and the transcript
-  // cannot disagree about it. A parent waiting on sub-agents is busy even
-  // though its own turn is over, and the stop button has to be there for it.
+  // A parent waiting on sub-agents is busy even though its own turn is over,
+  // and the stop button has to be there for it.
   const running = isWorking(st, sessionId);
 
   const { models } = useChatModels();
@@ -45,8 +44,7 @@ export default function ChatDetailPage({ sessionId, onOpenAgent }: Props) {
           onStop={() => sessionStore.stop(sessionId)}
           onSubmit={() => {
             const txt = draft.trim();
-            // A message of only files is a message. The backend writes the
-            // attachment note, so an empty body is not an empty turn.
+            // An empty body with chips on it is not an empty turn.
             const bare = txt.length === 0 && attachStore.payload().length === 0;
             if (bare || running) {
               return;
@@ -56,8 +54,7 @@ export default function ChatDetailPage({ sessionId, onOpenAgent }: Props) {
             void sessionStore.send(sessionId, txt);
           }}
           onSlash={(name, arg) => {
-            // `/usage` is a turn the app answers itself, so it goes in as one
-            // rather than as a note: it survives a reload and the model is
+            // Goes in as a real turn: it survives a reload and the model is
             // never told about it.
             if (name === "usage") {
               void sessionStore.runLocal(sessionId, name, arg).catch((err) => {
@@ -79,8 +76,7 @@ export default function ChatDetailPage({ sessionId, onOpenAgent }: Props) {
                   return;
                 }
 
-                // A prompt macro reuses the send path rather than growing a
-                // second one: it is an ordinary turn with different words.
+                // An ordinary turn with different words.
                 if (out.model !== null) {
                   void sessionStore.send(sessionId, out.model);
                 }

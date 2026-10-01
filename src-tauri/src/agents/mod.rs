@@ -9,13 +9,10 @@ use crate::gateway::Gateway;
 use crate::sessions::chat;
 use crate::sessions::store;
 
-/// How many a parent may have in the air at once. Past this it is waiting on
-/// more than it can read, and the fan-out stops being parallelism and starts
-/// being noise.
+/// Past this the fan-out is noise, not parallelism.
 pub const MAX_CHILDREN: usize = 4;
 
-/// What the parent is handed back. The full exchange stays in the child
-/// session; a summary that cost 40k tokens to produce is not a summary.
+/// The transcript stays in the child session.
 pub const SUMMARY_MAX: usize = 1_500;
 
 const NAME_MAX: usize = 40;
@@ -33,14 +30,13 @@ pub struct AgentRun {
     pub created_at: String,
 }
 
-/// One line. For a name or a title, which have no room for structure.
+/// Flattened to one line.
 fn flat(s: &str, n: usize) -> String {
     let t = s.trim().replace(['\n', '\r'], " ");
     t.chars().take(n).collect()
 }
 
-/// Structure kept. A report is markdown, and flattening its newlines turns a
-/// document into one unreadable wall of text.
+/// Keeps newlines: a report is markdown.
 fn clip(s: &str, n: usize) -> String {
     s.trim().chars().take(n).collect()
 }
@@ -59,9 +55,7 @@ fn run_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<AgentRun> {
     })
 }
 
-/// A child's answer is the one big block of prose it wrote, not whatever it
-/// said last. A turn that ends on "already delivered that above" would
-/// otherwise hand the parent 300 characters of nothing.
+/// The biggest block the child wrote, not whatever it said last.
 const COLS: &str = "s.id, s.parent_id, s.agent_name, s.title, s.agent_state, \
                     (SELECT content FROM messages m WHERE m.session_id = s.id \
                        AND m.role = 'assistant' AND m.active = 1 \
@@ -94,8 +88,7 @@ pub fn get(conn: &rusqlite::Connection, id: &str) -> Result<AgentRun, String> {
     .map_err(|_| format!("no sub-agent {id}"))
 }
 
-/// The tail of a child's answer, which is the part a caller actually needs when
-/// the head was a summary. The head is what gets cut, not the tail.
+/// The head is what gets cut, not the tail.
 pub fn tail(run: &AgentRun, max: usize) -> Result<String, String> {
     let full = run
         .result
@@ -120,10 +113,8 @@ fn running_count(conn: &rusqlite::Connection, parent_id: &str) -> Result<i64, St
     .map_err(|e| e.to_string())
 }
 
-/// Record how a child ended and report whether it was the last one in. Both
-/// happen under one lock on purpose: settle-then-count as two steps lets two
-/// children finishing together both see an empty chair and both call the
-/// parent back.
+/// One lock on purpose: settle-then-count as two steps lets two children
+/// finishing together both see an empty chair and both call the parent back.
 pub fn settle(conn: &rusqlite::Connection, child_id: &str, parent_id: &str, state: &str) -> bool {
     let _ = store::set_agent_state(conn, child_id, state, None);
     running_count(conn, parent_id).unwrap_or(0) == 0
@@ -136,14 +127,11 @@ pub struct Spec {
     pub prompt: String,
     pub model_id: Option<String>,
     pub permission: String,
-    /// Call the parent back when this is the last one still running. Without
-    /// it a fan-out ends in silence: the parent says it will report when they
-    /// finish, the turn closes, and nothing ever asks it again.
+    /// Without it a fan-out ends in silence.
     pub wake: bool,
 }
 
-/// Create the child, start its turn, detach. The caller gets the card back the
-/// moment the row exists and never waits on the work.
+/// Create the row, start the turn detached.
 pub fn spawn<R: tauri::Runtime>(
     app: &AppHandle<R>,
     gw: &Gateway,
@@ -219,9 +207,7 @@ pub fn spawn<R: tauri::Runtime>(
     get(&conn, &child_id)
 }
 
-/// What the parent is told. A child that failed halfway has usually written
-/// plenty — dropping the reason because there was an answer to show is how a
-/// turn dies with nobody able to say why.
+/// Keep the reason even when the child already said something.
 pub fn report(answer: &Option<String>, outcome: &Result<(), String>, verdict: &str) -> String {
     let said = match answer {
         Some(a) => clip(a, SUMMARY_MAX),
@@ -237,8 +223,6 @@ pub fn report(answer: &Option<String>, outcome: &Result<(), String>, verdict: &s
     }
 }
 
-/// Everything a supervised child needs. Nine loose parameters became one
-/// named bundle; the spawn site moves it instead of threading references.
 struct Supervise<R: tauri::Runtime> {
     app: AppHandle<R>,
     child_id: String,
@@ -274,8 +258,7 @@ async fn supervise<R: tauri::Runtime>(job: Supervise<R>) {
         parent_id: parent_id.clone(),
     };
 
-    // The child does not wait for a slot: a parent that fans out must not
-    // block on the first one before starting the second.
+    // A parent that fans out must not block on the first child.
     let outcome = crate::tools::shell::CANCEL
         .scope(
             cancel,
@@ -298,8 +281,6 @@ async fn supervise<R: tauri::Runtime>(job: Supervise<R>) {
         Err(_) => "did not finish",
     };
 
-    // Settle the state and ask whether this was the last one in one lock, or
-    // two children can both see an empty chair and both call the parent back.
     let last = if let Ok(conn) = gw.conn.lock() {
         settle(&conn, &child_id, &parent_id, state)
     } else {
@@ -317,8 +298,6 @@ async fn supervise<R: tauri::Runtime>(job: Supervise<R>) {
         crate::sessions::blocks::esc_attr(&title)
     );
 
-    // The last one out calls the parent back, so the turn that fanned out
-    // gets to finish the job it said it would. Every other one just lands.
     if wake && last {
         chat::announce(&app, gw.inner(), &parent_id, &body, true);
     } else {
@@ -377,7 +356,6 @@ pub fn kill(gw: &Gateway, id: &str) -> Result<bool, String> {
     }
 }
 
-/// Children that were mid-flight when the app died.
 pub fn reconcile(conn: &rusqlite::Connection) -> Result<usize, String> {
     conn.execute(
         "UPDATE sessions SET agent_state = 'interrupted' WHERE agent_state = 'running'",
@@ -386,16 +364,13 @@ pub fn reconcile(conn: &rusqlite::Connection) -> Result<usize, String> {
     .map_err(|e| e.to_string())
 }
 
-/// How many finished children a conversation keeps before the oldest go. Their
-/// transcripts are read back through the card, so this is the depth of the
-/// paper trail. `KEEP_ALL` is what the user picks when they want all of it.
+/// `KEEP_ALL` is what the user picks when they want all of it.
 pub const KEEP_DEFAULT: usize = 200;
 pub const KEEP_ALL: usize = 0;
 
 const KEEP_KEY: &str = "agents.keep";
 
-/// The retention the user chose. Defaults rather than zeroing, so a db that
-/// predates the setting still prunes rather than growing forever.
+/// Defaults rather than zeroing, so a db that predates the setting still prunes.
 pub fn keep(conn: &rusqlite::Connection) -> usize {
     crate::gateway::store::kv_get(conn, KEEP_KEY)
         .and_then(|v| v.trim().parse::<i64>().ok())
@@ -406,13 +381,9 @@ pub fn set_keep(conn: &rusqlite::Connection, n: usize) -> Result<(), String> {
     crate::gateway::store::kv_set(conn, KEEP_KEY, &n.min(100_000).to_string())
 }
 
-/// Drop the oldest finished children of any conversation that has more than
-/// `keep` of them. Running children are never touched, and the cap is counted
-/// per parent — a busy conversation never prunes a quiet one's history.
-/// `keep == KEEP_ALL` keeps everything and only collects orphans.
+/// Per parent, never touching running children.
 pub fn cleanup(conn: &rusqlite::Connection, keep: usize) -> Result<usize, String> {
-    // A child whose parent is gone is unreachable from the sidebar and from
-    // every card, so nothing else will ever remove it. Age means nothing here.
+    // Orphaned: unreachable from the sidebar and from every card.
     let orphans = conn
         .execute(
             "DELETE FROM sessions WHERE parent_id IS NOT NULL

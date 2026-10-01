@@ -22,8 +22,7 @@ type ChatInputProps = {
   value: string;
   onChange: (next: string) => void;
   onSubmit: () => void;
-  /// A line that is a command. Absent means commands are sent as text, which
-  /// is what a box with no registry behind it wants.
+  /// Absent means commands go out as text.
   onSlash?: (name: string, arg: string) => void;
   placeholder?: string;
   model?: ChatModel | null;
@@ -68,8 +67,8 @@ export default function ChatInput({
   const [cmds, setCmds] = useState<SlashCmd[]>([]);
   const selected = model ?? picked;
 
-  // The command list lives here, not in the menu, because the box has to know
-  // whether the menu has something to offer before it lets go of Enter.
+  // The box has to know whether the menu has something before it lets go of
+  // Enter.
   useEffect(() => {
     let live = true;
     void slashList()
@@ -94,8 +93,7 @@ export default function ChatInput({
       textarea.scrollHeight > MAX_HEIGHT ? "auto" : "hidden";
   }, [value]);
 
-  // A drop carries real paths, same as the dialog does, so both land in the
-  // store and the cap and the copy happen in one place.
+  // A drop carries real paths, same as the dialog, so both land in the store.
   useEffect(() => {
     const webview = getCurrentWebview();
     const pending = webview.onDragDropEvent((event) => {
@@ -117,8 +115,7 @@ export default function ChatInput({
 
   const { items } = useAttachments();
 
-  // Files alone are worth sending: the backend writes the attachment note, so
-  // an empty box with chips on it is not an empty turn.
+  // Chips alone are not an empty turn; the backend writes the note.
   const empty = value.trim().length === 0 && items.length === 0;
 
   // A `/` only opens the menu at the start of the line and with no newline
@@ -159,16 +156,14 @@ export default function ChatInput({
     },
   ];
 
-  // Completing a command fills the box with its name and leaves the caret
-  // after it. The argument stays a hint in the menu: pasting "today | week |
-  // month" into the box would send a window called that.
+  // The argument stays a hint in the menu: pasting "today | week | month" into
+  // the box would send a window called that.
   const accept = (cmd: SlashCmd) => {
     onChange(`/${cmd.name} `);
     textareaRef.current?.focus();
   };
 
-  // The menu can tell the line is already the whole command, which the
-  // textarea cannot: it never sees the keystroke the menu took.
+  // The textarea never sees the keystroke the menu took.
   const run = (cmd: SlashCmd) => {
     onChange("");
     onSlash?.(cmd.name, "");
@@ -251,8 +246,7 @@ export default function ChatInput({
             onChange(event.target.value);
           }}
           onKeyDown={(event) => {
-            // The menu takes Enter and Tab while it has something to complete,
-            // and it stops them at the document, so this only sees the rest.
+            // The menu takes Enter and Tab while it has something to complete.
             if (event.key !== "Enter" || event.shiftKey || hit) {
               return;
             }

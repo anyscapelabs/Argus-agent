@@ -46,10 +46,7 @@ type Props = {
 
 type TurnGroup = { usr: MsgRow | null; agent: MsgRow[] };
 
-// Stored as a JSON string, because a TEXT column cannot hold a list. A row
-// written before attachments existed has nothing, which is not a failure. A
-// file is identified by its path now, and by its library id before that, so
-// either one makes it a real file.
+// No attachments is not a failure — rows predating the feature have none.
 function parseFiles(row: MsgRow | null): Attachment[] {
   const raw = row?.attachments;
   if (raw === null || raw === undefined) {
@@ -75,9 +72,7 @@ function parseFiles(row: MsgRow | null): Attachment[] {
   }
 }
 
-// The window a stored `/usage` was asked for, so reopening a chat lands on the
-// tab that was chosen rather than on whatever the default is now. The backend
-// refuses anything else, so an unrecognised word can only mean the bare form.
+// The backend takes only these, so an unrecognised word is the bare form.
 function localWindow(content: string): UsageWindow {
   const arg = /^\/usage\s+(\S+)/i.exec(content)?.[1] ?? "";
 
@@ -145,25 +140,19 @@ export default function ChatTranscript({
 
   const rows = msgs[sessionId] ?? [];
   const turn = turns[sessionId];
-  // Events by owning message. A message with rows here was written after
-  // events landed, so its steps render from rows and its text is prose.
+  // A message with event rows here was written after events landed, so its
+  // steps render from rows and its text is prose.
   const eventMap = new Map<string, ToolEvent[]>();
   for (const ev of st.events[sessionId] ?? []) {
     const list = eventMap.get(ev.message_id) ?? [];
     list.push(ev);
     eventMap.set(ev.message_id, list);
   }
-  // Two different questions, and conflating them is what caused both the
-  // missing stop button and the sub-agent that looked finished mid-answer.
-  //
-  // `answering` is whether this chat is still producing text. A sub-agent
-  // counts: its turn ends before its run settles, and in that gap the turn is
-  // gone while the summary is still being written, so the animation stopped and
-  // the vote row appeared over an answer that was not finished.
+  // A sub-agent counts: its turn ends before its run settles, and in that gap
+  // the animation stopped and a vote row landed over an unfinished answer.
   const answering = turn !== undefined && turn.err === null;
   const running = answering || isSubAgentRunning(st, sessionId);
-  // Children still running, shown as the waiting line under a parent that has
-  // already handed out the work.
+  // Children still running under a parent that handed out the work.
   const waiting = answering
     ? 0
     : (st.sessions.find((s) => s.id === sessionId)?.running_agents ?? 0);
@@ -283,10 +272,8 @@ export default function ChatTranscript({
     >
       <div className="mx-auto flex w-full min-w-0 max-w-[700px] flex-col gap-3">
         {groups.map((group, gi) => {
-          // A line the app answered itself. It is a real turn in the
-          // transcript and the model was never asked, so there is no
-          // assistant row under it, no work label, and nothing to retry —
-          // just the line and what it drew.
+          // The app answered this line itself, so there is no assistant row
+          // under it and nothing to retry.
           if (group.usr?.local === true) {
             return (
               <div key={group.usr.id} className="flex flex-col gap-3">
@@ -301,9 +288,8 @@ export default function ChatTranscript({
             );
           }
 
-          // A wake — a sub-agent or a job reporting back — is stored as
-          // `system`. It is the app speaking, not the model, but it is still
-          // something the user was told and has to be able to read.
+          // A wake is stored as `system`: the app speaking, but still something
+          // the user was told and has to be able to read.
           const assistants: MsgRow[] = [];
 
           for (const a of group.agent) {
@@ -311,10 +297,8 @@ export default function ChatTranscript({
               continue;
             }
 
-            // A model asked to try again and answering the same way used to
-            // land as a second copy of the same message. The backend stops that
-            // now; this keeps the chats that already have it from reading as
-            // three answers. Keep the last of a run, so `final` survives.
+            // Older chats hold a duplicated retry answer. Keep the last of a run
+            // so `final` survives.
             const prev = assistants[assistants.length - 1];
 
             if (prev !== undefined && prev.content === a.content) {
@@ -325,11 +309,8 @@ export default function ChatTranscript({
             assistants.push(a);
           }
           const live = running && gi === groups.length - 1;
-          // Narrower than `live`, and deliberately so. `live` also covers a sub-agent
-          // between its turn ending and its run settling, where the text is already
-          // written and is not going to change — holding a fragment back there would
-          // hide content that will never be followed by more. Only a turn that is
-          // actually still arriving gets the streaming treatment.
+          // Narrower than `live` on purpose: a settling sub-agent's text is already
+          // written, so holding a fragment back hides content nothing follows.
           const streaming = answering && gi === groups.length - 1;
           const sessionHasEvents = eventMap.size > 0;
           const buildWorkSteps = (
@@ -342,9 +323,8 @@ export default function ChatTranscript({
             for (const m of msgs) {
               const isLive = liveIds.has(m.id);
 
-              // Events own the turn when the backend wrote them: steps come
-              // from rows, and document cards from the event, with no text
-              // parsing. Legacy and degraded rows fall through to the parser.
+              // Events own the turn: steps from rows, doc cards from the event, no
+              // text parsing. Legacy rows fall through to the parser.
               if (!isLive) {
                 const owned = eventsFor(eventMap, m.id);
 
@@ -362,9 +342,8 @@ export default function ChatTranscript({
 
               let blocks;
               try {
-                // A live turn's text is still arriving, so the parser holds
-                // back a tag that has not finished coming. A written message
-                // is final and anything unterminated in it is prose.
+                // Live text is still arriving, so the parser holds back an
+                // unfinished tag. In a written message it is prose.
                 blocks = parseCached(m.content, { final: !isLive });
               } catch {
                 continue;
@@ -469,20 +448,14 @@ export default function ChatTranscript({
             );
           }
 
-          // `streaming`, not `live`: a live row only exists while a turn is
-          // actually producing text. A sub-agent that is settling has no live
-          // row, and treating its last stored message as still-arriving would
-          // hold back a fragment that nothing is ever going to follow.
+          // `streaming`, not `live`: a settling sub-agent has no live row.
           const workSteps = buildWorkSteps(
             last ? [...prior, last] : prior,
             streaming && last ? new Set([last.id]) : new Set<string>(),
           );
           const showSummary = !live && workSteps.length > 0;
-          // The parent's turn ended when it handed the work out, so nothing in
-          // the store says the conversation is unfinished — the children still
-          // running are the only thing that knows. The last bubble holds the
-          // thinking animation instead of a vote row for an answer the model
-          // itself has not finished giving.
+          // Nothing in the store says the conversation is unfinished once the parent
+          // handed out work. The running children are the only signal.
           const holdOpen = !live && gi === groups.length - 1 && waiting > 0;
           const allText = assistants.map((a) => a.content).join("\n\n");
 
@@ -497,10 +470,8 @@ export default function ChatTranscript({
               continue;
             }
 
-            // A sub-agent's card is not prose to be collapsed away. It is the
-            // only record of what was spawned and how it went, so a message
-            // carrying one is kept whole — reduced to paragraphs it vanished,
-            // taking the user's way back into the work with it.
+            // A sub-agent card is the only record of what was spawned, so a message
+            // carrying one is kept whole.
             if (
               blocks.some((b) => b.tag === "agent" || b.tag === "agent-done")
             ) {
@@ -685,13 +656,6 @@ export default function ChatTranscript({
             {note.text}
           </div>
         ))}
-        {running && turn?.status != null && (
-          <div className="text-xs text-text-tertiary">
-            {turn.status.attempt > 1
-              ? `Retrying — ${turn.status.providerId}, attempt ${turn.status.attempt}`
-              : `Asking ${turn.status.providerId}`}
-          </div>
-        )}
         {turn?.err !== undefined && turn !== undefined && turn.err !== null && (
           <div
             className={

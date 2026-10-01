@@ -1,9 +1,4 @@
-// Attribute and record builders: how a tool call becomes the XML the
-// model reads back, and how a finished tool call becomes a message.
-//
-// Everything here is string-in/string-out. The ordering of the replacements
-// matters and is not incidental: `&` has to go first or the ampersands
-// introduced by the later steps get escaped a second time.
+// Replacement order matters: `&` first, or later steps get escaped twice.
 
 use std::sync::OnceLock;
 
@@ -14,7 +9,7 @@ use crate::tools;
 use super::store;
 
 pub fn esc_attr(s: &str) -> String {
-    // A value can legally contain all of these; the tag cannot survive them raw.
+    // A value can legally contain all of these; the tag cannot.
     s.replace('&', "&amp;")
         .replace('"', "&quot;")
         .replace('<', "&lt;")
@@ -117,26 +112,18 @@ pub fn attach_shots(msgs: &mut [WireMsg]) {
             continue;
         }
 
-        // Extend, not replace: a message can carry an image the user attached
-        // and a screenshot the model took, and the second is not a reason to
-        // drop the first.
+        // Extend, not replace: a user image is no reason to drop a screenshot.
         m.images.extend(paths);
         left -= 1;
     }
 }
 
-// Text blocks are the legacy record format. Fresh native turns persist prose
-// only and read rows instead — unless the row write failed, in which case the
-// text is the only record left and must stay. Degraded turns never have rows
-// worth reading. One predicate so the rule cannot drift between callers.
+// One predicate so the rule cannot drift between callers.
 pub fn needs_text_blocks(style: tools::ToolCallStyle, degraded: bool, events_ok: bool) -> bool {
     style != tools::ToolCallStyle::Native || degraded || !events_ok
 }
 
-/// Record where the turn stopped, so the next one resumes instead of
-/// re-deriving. The goal is the task as first asked, not the word that
-/// resumed it: on a `continue` the current message says "continue", and a
-/// resume claiming that is worse than no resume.
+/// The goal is the task as first asked, not the word that resumed it.
 pub fn save_resume(gw: &Gateway, session_id: &str, actions: &[(String, bool)]) {
     let Ok(conn) = gw.conn.lock() else {
         return;
@@ -145,14 +132,8 @@ pub fn save_resume(gw: &Gateway, session_id: &str, actions: &[(String, bool)]) {
     super::resume::save(&conn, session_id, &goal, actions);
 }
 
-/// What one finished execution tells the playbook. One place, so a new failure
-/// mode is recorded by adding a line here rather than by remembering seven
-/// scattered call sites.
-///
-/// Each check matches a string Argus itself wrote about its own behaviour —
-/// an error message from this crate, a note the sandbox layer attached. A
-/// model cannot talk its way into a lesson, because model prose never reaches
-/// these comparisons.
+/// Each check matches a string Argus itself wrote, so a model cannot talk its
+/// way into a lesson.
 pub fn observe_exec(
     conn: &rusqlite::Connection,
     model_id: &str,
@@ -191,14 +172,8 @@ pub fn observe_signals(
     }
 }
 
-/// A sandbox refusal is appended after the command's own output, so it is the
-/// tail of the body. Checking the tail rather than the whole body means a
-/// file the agent read containing these words is not mistaken for a refusal.
-///
-/// The residual is honest: a command could print the exact trailing string. It
-/// would cost one host lesson about a sandbox, and closing it properly needs a
-/// per-run nonce shared between the sandbox and the chat loop, which is not
-/// worth the coupling for a note that is already in the model's context.
+/// A refusal is appended after the command's own output, so it is the tail.
+/// Residual: a command could print the exact string, costing one host lesson.
 pub fn denial_in_output(exec: &tools::ToolExecution) -> bool {
     const TAIL_MAX: usize = 200;
 
@@ -210,14 +185,12 @@ pub fn denial_in_output(exec: &tools::ToolExecution) -> bool {
     body.len() - at <= TAIL_MAX
 }
 
-/// Phrases this crate writes about its own behaviour. Matching on them is what
-/// makes a signal unforgeable: the model cannot emit them into a place we read.
+/// Phrases this crate writes about itself. Matching on them is what makes a
+/// signal unforgeable: the model cannot emit them into a place we read.
 const EMPTY_ARGS_ERR: &str = "arrived with empty arguments";
 const MISSING_CWD_ERR: &str = "project profile needs cwd";
 
-/// What the resume says ran. Read from `exec.args` at record time, not from
-/// the args the model proposed: a user-approved edit rewrites them, and a
-/// resume that misreports the approved command is worse than no command.
+/// Read at record time: a user-approved edit rewrites `exec.args` later.
 pub fn exec_label(exec: &tools::ToolExecution, is_term: bool) -> String {
     if is_term {
         let v: serde_json::Value = serde_json::from_str(&exec.args).unwrap_or_default();
@@ -265,15 +238,11 @@ pub fn sanitize_tags(s: &str) -> String {
         .replace("<a>", "<link>")
         .replace("</a>", "</link>");
 
-    // Compiled once, not per message. The `regex` crate's own docs call
-    // compiling inside a function an anti-pattern: it costs microseconds to
-    // milliseconds each time, and this runs on every assistant message.
+    // Compiled once: this runs on every assistant message.
     static DROP_TAGS: OnceLock<regex::Regex> = OnceLock::new();
     static BR: OnceLock<regex::Regex> = OnceLock::new();
 
-    // `expect` rather than a `None` fallback: a pattern that fails to compile
-    // is a bug in this source file, not bad input, and a silent skip would
-    // leave the tags in the transcript with no signal that anything went wrong.
+    // Loud fail: a silent skip leaves the tags in the transcript with no signal.
     let drop_tags = DROP_TAGS.get_or_init(|| {
         regex::Regex::new(r"(?i)</?(p|div|span|command|output|think)[^>]*>")
             .expect("drop-tag pattern")

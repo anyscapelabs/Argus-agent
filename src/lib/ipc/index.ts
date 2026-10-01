@@ -1,13 +1,6 @@
-// The typed edge to the backend. Every `#[tauri::command]` in Rust has exactly
-// one wrapper here, and nothing else in the app calls `invoke` directly.
-//
-// Split by domain so a wrapper is found next to its siblings: `sessions.ts`
-// holds every `sess_*` call, `connectors.ts` every OAuth one. The command names
-// themselves live in `commands.ts`; a rename on the Rust side is a one-line
-// change there.
-//
-// Re-exported wholesale, so `import { sessListSessions } from "../lib/ipc"`
-// keeps working exactly as before.
+// The typed edge to the backend: every `#[tauri::command]` in Rust has exactly
+// one wrapper here, and nothing else calls `invoke` directly. Command names live
+// in `commands.ts`, split by domain.
 
 export * from "./agents";
 export * from "./commands";

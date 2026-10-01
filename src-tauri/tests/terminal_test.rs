@@ -1,4 +1,7 @@
-use argus_lib::tools::shell::{auth_agent_hint, default_timeout_for, detect, kill_process_group};
+use argus_lib::tools::shell::{
+    auth_agent_hint, default_timeout_for, detect, kill_process_group, timeout_from,
+};
+use std::time::Duration;
 
 #[cfg(unix)]
 #[tokio::test]
@@ -17,13 +20,28 @@ async fn detect_finds_runnable_shell() {
 }
 
 #[test]
-fn timeout_categories_split_quick_and_long() {
-    assert_eq!(default_timeout_for("git status"), 120);
-    assert_eq!(default_timeout_for("ls ~/Documents"), 120);
-    assert_eq!(default_timeout_for("cargo build --release"), 600);
-    assert_eq!(default_timeout_for("bun install"), 600);
-    assert_eq!(default_timeout_for("rm -rf /tmp/cache"), 600);
-    assert_eq!(default_timeout_for("find / -name '*.log'"), 600);
+fn the_default_timeout_is_one_number_and_the_agent_owns_the_rest() {
+    // No substring table. It read `git status` and `git clone` the same way,
+    // so a real clone got cut off at the two-minute mark while `pip install`
+    // got ten. The agent sets what it needs; this is only where it starts.
+    assert_eq!(default_timeout_for(), 120);
+}
+
+#[test]
+fn a_timeout_the_agent_sets_is_the_one_that_runs() {
+    let clone = serde_json::json!({"command": "git clone x", "timeout": 900});
+    assert_eq!(timeout_from(&clone), Duration::from_secs(900));
+
+    let none = serde_json::json!({"command": "git clone x"});
+    assert_eq!(timeout_from(&none), Duration::from_secs(120));
+
+    // Clamped at both ends, so neither a stray zero nor an optimistic number
+    // turns into a one-second command or an hour-long turn.
+    let over = serde_json::json!({"command": "sleep 1", "timeout": 999_999});
+    assert_eq!(timeout_from(&over), Duration::from_secs(1800));
+
+    let under = serde_json::json!({"command": "sleep 1", "timeout": 1});
+    assert_eq!(timeout_from(&under), Duration::from_secs(10));
 }
 
 #[cfg(unix)]
@@ -74,6 +92,11 @@ async fn timeout_kills_the_whole_tree() {
 
     assert_eq!(code, -1);
     assert!(out.contains("timed out after 10s"), "got: {out}");
+    // The message has to name the way out. A bare "timed out" reads as a
+    // failure, and the turn ends there instead of the agent running it again
+    // with a bigger number.
+    assert!(out.contains("larger timeout"), "no way out in: {out}");
+    assert!(out.contains("1800"), "no ceiling in: {out}");
     assert!(
         start.elapsed().as_secs() < 20,
         "timeout path hung past its cap"

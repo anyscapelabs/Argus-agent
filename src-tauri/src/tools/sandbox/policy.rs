@@ -148,10 +148,8 @@ pub fn resolve(profile: Profile, ctx: &PolicyCtx) -> Policy {
             Policy {
                 profile,
                 fs: FsPolicy::Scoped(fs),
-                // Deliberately not the user's port list. This is the profile
-                // for code nobody has vouched for, and a ports setting that
-                // reached it would be a way to widen the tightest profile
-                // from the settings page.
+                // Never the user's port list: a settings entry must not widen the
+                // tightest profile.
                 net: NetPolicy::None,
                 limits: Limits {
                     wall_secs: Some(120),
@@ -200,9 +198,7 @@ pub fn resolve(profile: Profile, ctx: &PolicyCtx) -> Policy {
             Policy {
                 profile,
                 fs: FsPolicy::Scoped(fs),
-                // The user's setting, not a constant. It used to be hardcoded
-                // to 80/443 here, so the ports editable in Settings changed
-                // nothing at all.
+                // The user's setting, not a constant.
                 net: NetPolicy::Ports(ctx.net_allow.to_vec()),
                 limits: Limits {
                     wall_secs: Some(900),

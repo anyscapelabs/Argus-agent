@@ -11,11 +11,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
-use tauri::ipc::Channel;
 
-use crate::gateway::schema::StreamEvent;
 use crate::gateway::store::{kv_get, kv_set};
-use crate::gateway::Gateway;
+use crate::gateway::{EventSink, Gateway};
 use crate::tools::shell;
 
 pub use plan::{SandboxError, SandboxResult};
@@ -60,12 +58,8 @@ fn rank(p: Profile) -> u8 {
     }
 }
 
-/// Keep the tighter of two profiles.
-///
-/// This is the whole of the model's authority over the sandbox. The user's
-/// setting is a ceiling and the model may drop below it, never climb above it —
-/// otherwise a prompt that says "run this with profile=host" would be the same
-/// thing as the user having chosen Host.
+/// Keep the tighter of two. Security boundary: the user's setting is the
+/// ceiling and the model may only tighten.
 pub fn tighten(requested: Profile, ceiling: Profile) -> Profile {
     if rank(requested) >= rank(ceiling) {
         requested
@@ -74,12 +68,8 @@ pub fn tighten(requested: Profile, ceiling: Profile) -> Profile {
     }
 }
 
-/// The profile a call actually runs under.
-///
-/// The model's `profile` argument is a request, not a decision: it is clamped
-/// to the user's ceiling and to `Restricted` when the content came from
-/// somewhere the user has not vouched for. Asking for `host` is how a prompt
-/// injection would try to escape, so the answer is the ceiling, not an error.
+/// The model's `profile` arg is a request. Asking for `host` is how an
+/// injection escapes, so the answer is the ceiling, not an error.
 pub fn effective_profile(
     args: &Value,
     ceiling: Profile,
@@ -89,9 +79,8 @@ pub fn effective_profile(
     let asked = parse_profile(args, ceiling)?;
     let mut eff = tighten(asked, ceiling);
 
-    // An empty allowlist is silence, not refusal. Treating "the user never
-    // said" as "nothing is trusted" would confine every `git clone` on a
-    // fresh install, which is a working default the user did not ask to lose.
+    // An empty allowlist is silence, not refusal: "never said" must not confine
+    // every `git clone`.
     if !allow_hosts.is_empty() {
         if let Some(o) = origin {
             if classify(o, allow_hosts) == Trust::Untrusted {
@@ -103,17 +92,7 @@ pub fn effective_profile(
     Ok(eff)
 }
 
-/// The user's saved default, which is the loosest any call may run at.
-///
-/// Unset reads as `Host`, because that is how a terminal behaved before the
-/// setting was ever consulted, and a user who has not opened the Sandbox page
-/// has not asked to be confined. `Restricted` is one click away and is what
-/// `config()` reports, so the page and the enforcement agree.
-///
-/// A lock failure also lands on `Host`. That is the one place this could hide
-/// a real preference, and it is deliberate: a panic-poisoned database has
-/// stopped the app anyway, and returning `Restricted` there would confine
-/// every command to a scratch directory on the way down.
+/// Unset, or a lock failure, reads as `Host` — pre-setting behaviour.
 pub fn default_profile(gw: &Gateway) -> Profile {
     let Ok(conn) = gw.conn.lock() else {
         return Profile::Host;
@@ -148,9 +127,8 @@ fn workdir(cwd: Option<&str>) -> PathBuf {
     }
 }
 
-// Project without cwd silently confines to the launch directory, and the
-// model burns turns on bare "Permission denied" before falling back to host.
-// Refuse up front with the fix attached instead.
+// Project without cwd silently confines to the launch directory, and the model
+// burns turns on bare "Permission denied".
 pub fn project_root_check(profile: Profile, cwd: Option<&str>) -> Option<SandboxError> {
     let given = cwd.map(str::trim).is_some_and(|s| !s.is_empty());
 
@@ -162,12 +140,8 @@ pub fn project_root_check(profile: Profile, cwd: Option<&str>) -> Option<Sandbox
     None
 }
 
-// A bare denial burns turns: stat works but listing does not, and the model
-// retries instead of rescoping. Name the allowed root when the output shows
-// the confinement failing, and mark it as harness note, not command output.
-/// Prefixed to a denial so it is distinguishable from a command that happened
-/// to print the same words. The chat loop matches on this to record that the
-/// environment refused, not the model.
+// A bare denial burns turns, so name the allowed root. The prefix marks this a
+// harness note: the chat loop matches it to record the refusal as the sandbox's.
 pub const DENIAL_NOTE: &str = "Argus note, not command output";
 
 pub fn denial_hint(isolated: bool, exit: i64, combined: &str, root: &str) -> Option<String> {
@@ -199,10 +173,7 @@ pub fn allow_hosts(gw: &Gateway) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Ports the user allows an isolated profile to reach.
-///
-/// Empty means no network, not every network: a backend that adds no rules
-/// for an empty list leaves the profile's own deny in place.
+/// Empty means no network, not every network — the profile's own deny stands.
 pub fn net_allow(gw: &Gateway) -> Vec<u16> {
     let Ok(conn) = gw.conn.lock() else {
         return Vec::new();
@@ -257,7 +228,7 @@ fn audit(gw: &Gateway, r: &ExecutionRecord) {
 pub async fn run(
     gw: &Gateway,
     req: Request<'_>,
-    on_term: Option<(&Channel<StreamEvent>, u32)>,
+    on_term: Option<(&EventSink, u32)>,
 ) -> SandboxResult<Outcome> {
     if let Some(err) = project_root_check(req.profile, req.cwd) {
         return Err(err);
@@ -293,10 +264,8 @@ pub async fn run(
 
         let (b, a) = wrap_argv(&plan, binary.clone(), &args, req.command)?;
 
-        // Windows cannot confine a tokio Command: the AppContainer token only
-        // exists if CreateProcessW is given the security capabilities, and
-        // tokio offers no hook that reaches that call. It refuses rather than
-        // dropping to an unconfined process.
+        // Windows: tokio has no hook into CreateProcessW, so no AppContainer token.
+        // Refuse rather than drop to an unconfined process.
         #[cfg(target_os = "windows")]
         {
             if let plan::Plan::Windows(jp) = &plan {
@@ -364,7 +333,7 @@ async fn finish(
     req: &Request<'_>,
     policy: &Policy,
     child: shell::Child,
-    on_term: Option<(&Channel<StreamEvent>, u32)>,
+    on_term: Option<(&EventSink, u32)>,
     backend: &'static str,
 ) -> SandboxResult<Outcome> {
     let (idx, chan) = match on_term {
@@ -375,7 +344,7 @@ async fn finish(
     let asked = req
         .timeout_secs
         .or(policy.limits.wall_secs)
-        .unwrap_or_else(|| shell::default_timeout_for(req.command));
+        .unwrap_or_else(shell::default_timeout_for);
 
     let ceiling = if req.background {
         crate::jobs::DEADMAN_MAX

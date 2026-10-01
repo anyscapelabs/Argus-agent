@@ -8,8 +8,8 @@ import ReachMatrix, { type GrantCell } from "./ReachMatrix";
 const DEFAULT_ID = "default";
 const NAME_MAX = 40;
 
-// A matrix is a set of cells, so a reorder is not a change. Comparing the
-// arrays directly would leave a Save button with nothing behind it.
+// Cells are a set: a reorder is not a change, and array equality would invent
+// a dirty diff.
 function sameGrants(a: GrantCell[], b: GrantCell[]): boolean {
   return (
     a.length === b.length &&
@@ -42,9 +42,8 @@ export default function ProfileDetail({ id, onBack }: Props) {
     void profileStore.loadReach(id);
   }, [id]);
 
-  // Seed the staged copy from the store once its answer lands. `reachFor` is
-  // the guard: a slow read for a profile you have already navigated away from
-  // must not repopulate the form you are looking at now.
+  // `reachFor` is the guard: a slow read for a profile you navigated away from
+  // must not repopulate the form you are looking at.
   useEffect(() => {
     if (reachFor !== id) {
       return;
@@ -63,8 +62,8 @@ export default function ProfileDetail({ id, onBack }: Props) {
   }
 
   const isDefault = p.id === DEFAULT_ID;
-  // Until this profile's own matrix has landed, `reach` holds whatever was
-  // loaded last and comparing against it would invent a diff.
+  // Until this matrix has landed, `reach` holds the last profile's and comparing
+  // against it would invent a diff.
   const loaded = reachFor === id;
   const reachDirty =
     loaded &&

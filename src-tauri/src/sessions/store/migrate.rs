@@ -1,5 +1,4 @@
-// The one schema for every table this crate owns. Applied once at boot;
-// every later read assumes it ran.
+// Applied once at boot; every later read assumes it ran.
 use rusqlite::{params, Connection};
 
 pub fn migrate(conn: &Connection) -> Result<(), String> {
@@ -96,8 +95,8 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
             .map_err(|err| err.to_string())?;
     }
 
-    // The table is named per entry, not assumed: a column check against the
-    // wrong table always passes and the ALTER then fails on boot.
+    // Table named per entry: a check against the wrong table always passes and
+    // the ALTER then fails on boot.
     for (table, col, ddl) in [
         (
             "sessions",
@@ -144,9 +143,7 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
         }
     }
 
-    // The default is a real row rather than "a null profile means default",
-    // so the picker has one list and never branches on a null. Chats that
-    // predate profiles are pointed at it, so nothing existing has to migrate.
+    // A real row, so the picker never branches on a null.
     conn.execute(
         "INSERT OR IGNORE INTO agent_profiles (id, name) VALUES ('default', '')",
         [],

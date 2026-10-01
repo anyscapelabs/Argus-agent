@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use reqwest::Client;
 use rusqlite::Connection;
+use tauri::ipc::Channel;
 use tauri::State;
 use tokio::sync::{broadcast, oneshot, Notify};
 
@@ -20,32 +21,41 @@ use schema::{
     SyncStats,
 };
 
+#[derive(Clone)]
+pub enum EventSink {
+    Channel(Channel<StreamEvent>),
+    Bus(broadcast::Sender<StreamEvent>),
+}
+
+impl EventSink {
+    pub fn null() -> Self {
+        let (tx, _rx) = broadcast::channel(1);
+        Self::Bus(tx)
+    }
+
+    pub fn send(&self, ev: StreamEvent) -> Result<(), String> {
+        match self {
+            Self::Channel(c) => c.send(ev).map_err(|err| err.to_string()),
+            Self::Bus(tx) => tx.send(ev).map(|_| ()).map_err(|err| err.to_string()),
+        }
+    }
+}
+
 pub const BUS_CAP: usize = 512;
 
-/// TCP connect budget. Generous, because a cold TLS handshake to a distant
-/// provider is slow but bounded.
+/// Generous: a cold TLS handshake to a distant provider is slow but bounded.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Silence before a provider is presumed dead.
-///
-/// Sized well past any real inter-token gap, so a healthy stream never trips
-/// it. Long reasoning pauses and slow models sit far under this.
+/// Well past any real inter-token gap, so a slow-but-alive reply is not killed.
 pub const STALL_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// The client every provider call shares.
-///
-/// A provider can accept a request and then say nothing forever, and nothing
-/// downstream bounds that, so a stalled turn would park with no way out. The
-/// stall bound is per-read and resets on progress, which is what makes it safe
-/// on a long stream: a slow-but-alive reply is never killed, only one that
-/// stops talking. A total timeout would be wrong here, since it runs until the
-/// body finishes and would cap every long reply.
+/// Per-read stall bound, not a total timeout: a total one would cap every long
+/// reply.
 pub fn http_client() -> Result<Client, reqwest::Error> {
     http_client_with(CONNECT_TIMEOUT, STALL_TIMEOUT)
 }
 
-/// Same client, explicit bounds. Split out so a test can prove the stall bound
-/// bites without waiting the production two minutes.
+/// Split out so a test can prove the bound bites without waiting two minutes.
 pub fn http_client_with(connect: Duration, stall: Duration) -> Result<Client, reqwest::Error> {
     Client::builder()
         .connect_timeout(connect)
@@ -98,8 +108,8 @@ impl Gateway {
             .unwrap_or(false)
     }
 
-    /// A set, not a slot: a sub-agent's own page is watched at the same time
-    /// as the chat that started it, and one must not take the other down.
+    /// A set, not a slot: a sub-agent's page and its parent are watched at once,
+    /// and one must not take the other down.
     pub fn start_watching(&self, session_id: &str) {
         if let Ok(mut w) = self.watching.lock() {
             w.insert(session_id.to_string());
@@ -118,9 +128,8 @@ impl Gateway {
         }
     }
 
-    /// Is a window on this session right now — a tail, not necessarily a turn
-    /// somebody is typing into. A sub-agent's approvals are rendered in its
-    /// parent's window, so this is what says a human could actually answer.
+    /// A sub-agent's approvals render in its parent's window, so this says a human
+    /// could answer.
     pub fn attached(&self, session_id: &str) -> bool {
         self.events
             .lock()
@@ -150,6 +159,10 @@ impl Gateway {
 
     pub fn subscribe(&self, session_id: &str) -> broadcast::Receiver<StreamEvent> {
         self.bus(session_id).0.subscribe()
+    }
+
+    pub fn term_tx(&self, session_id: &str) -> broadcast::Sender<StreamEvent> {
+        self.bus(session_id).0
     }
 
     pub fn go_live(&self, session_id: &str) {
@@ -304,7 +317,8 @@ pub async fn gw_chat_stream(
     req: ChatReq,
     on_event: tauri::ipc::Channel<schema::StreamEvent>,
 ) -> Result<(), String> {
-    router::stream_run(&gw, req, &on_event).await.map(|_| ())
+    let sink = EventSink::Channel(on_event);
+    router::stream_run(&gw, req, &sink).await.map(|_| ())
 }
 
 async fn sync_from_models_dev(gw: &Gateway) -> Result<SyncStats, String> {

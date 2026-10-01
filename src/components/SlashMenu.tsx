@@ -36,9 +36,7 @@ export default function SlashMenu({
       ?.scrollIntoView({ block: "nearest" });
   }, [at]);
 
-  // The caret is in the textarea, not here, so the keys are taken at the
-  // document. The menu is a completion list, and a completion list that needs
-  // the mouse is not one.
+  // The caret is in the textarea, so the keys are taken at the document.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowDown") {
@@ -61,9 +59,8 @@ export default function SlashMenu({
 
         e.preventDefault();
 
-        // A local command answers without an argument, so a line that already
-        // spells its name in full is the whole command. Completing it would ask
-        // for a second Enter to say what the first one already said.
+        // A line that already spells the name in full is the whole command.
+        // Completing it would want a second Enter to say what the first said.
         if (e.key === "Enter" && query === hit.name && hit.kind === "local") {
           onRun(hit);
           return;

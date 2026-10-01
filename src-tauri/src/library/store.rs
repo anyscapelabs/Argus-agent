@@ -12,8 +12,8 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(super::schema::MIGRATE)
         .map_err(|err| err.to_string())?;
 
-    // `CREATE TABLE IF NOT EXISTS` leaves an existing table alone, so a
-    // library written before this column existed never gets it.
+    // `IF NOT EXISTS` leaves an existing table alone, so an older library never
+    // gets the column.
     let has_sha = conn
         .query_row(
             "SELECT COUNT(*) FROM pragma_table_info('library') WHERE name = 'sha'",
@@ -141,13 +141,9 @@ pub fn add(conn: &Connection, dir: &Path, item: &NewLibItem) -> Result<LibItem, 
     get(conn, dir, &id)
 }
 
-/// Same bytes, same session, same name — the same document. A model that
-/// re-issues a call it already had answered gets the document it already has
-/// back, instead of a second file whose only difference is a `-2` suffix.
-///
-/// Scoped to one session on purpose: two sessions asking for a file with the
-/// same name and content are two deliberate acts, and collapsing them would
-/// hide a document the user expected to find.
+/// Same bytes, same session, same name is the same document: a re-issued call
+/// gets the file it already has back instead of a `-2` copy. Scoped to one
+/// session on purpose — two sessions asking are two deliberate acts.
 fn same_content(
     conn: &Connection,
     dir: &Path,
@@ -280,8 +276,7 @@ pub fn get(conn: &Connection, dir: &Path, id: &str) -> Result<LibItem, String> {
     Ok(item)
 }
 
-/// The file behind an id, as the wire wants it. `None` once the library has
-/// lost it, which is also when `get` drops the row.
+/// `None` once the library has lost the file, which is when `get` drops the row.
 pub fn abs_of(conn: &Connection, dir: &Path, id: &str) -> Option<PathBuf> {
     get(conn, dir, id)
         .ok()

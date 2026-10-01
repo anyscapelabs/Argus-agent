@@ -17,12 +17,8 @@ const HRESULT_ALREADY_EXISTS: i32 = 0x8007_00B7u32 as i32;
 
 pub const PROFILE_NAME: &str = "com.argus.sandbox";
 
-// Owns the buffer a PSID points into, and remembers who has to free it.
-//
-// The two allocators are not interchangeable: `PSID::free` is FreeSid, which
-// only understands AllocateSid memory. A well-known SID lives in our own
-// buffer, and both AppContainer profile APIs hand back LocalAlloc memory, so
-// calling FreeSid on either is undefined behaviour.
+// `PSID::free` is FreeSid, which only understands AllocateSid memory. Both
+// AppContainer profile APIs return LocalAlloc memory, so FreeSid on it is UB.
 pub struct SidBuf {
     sid: PSID,
     local_alloc: bool,
@@ -82,7 +78,7 @@ fn net_capability() -> SandboxResult<SidBuf> {
     }
     .map_err(|err| fail("CreateWellKnownSid(internetClient)", err))?;
 
-    // into_boxed_slice does not reallocate, so the pointer stays valid.
+    // Does not reallocate, so the pointer stays valid.
     let sid = PSID(bytes.as_mut_ptr() as *mut c_void);
 
     Ok(ours(bytes.into_boxed_slice(), sid))
@@ -255,11 +251,9 @@ impl AttrList {
         }
         .map_err(|err| fail("UpdateProcThreadAttribute(SECURITY_CAPABILITIES)", err))?;
 
-        // bInheritHandle copies every inheritable handle in the process, not just
-        // the std ones. Argus holds its database and sockets on such handles, so
-        // a child that inherits them writes argus.db directly and the ACL
-        // boundary means nothing. The handle list narrows inheritance to exactly
-        // the three pipes.
+        // bInheritHandle copies every inheritable handle, so a child would
+        // inherit the database and sockets and the ACL boundary would mean
+        // nothing. This narrows inheritance to the three pipes.
         let handles = handles.to_vec();
 
         // SAFETY: handles outlives the CreateProcessW call, and the size is

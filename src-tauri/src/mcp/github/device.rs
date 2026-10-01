@@ -117,8 +117,15 @@ async fn poll(device_code: String, interval: u64) {
 
         if let Some(tok) = v.get("access_token").and_then(|t| t.as_str()) {
             let tok = tok.to_string();
+            // Expiring-token apps also return `refresh_token` + `expires_in`
+            // (8h access); permanent-token apps return neither.
+            let refresh = v.get("refresh_token").and_then(|t| t.as_str());
+            let expires = v.get("expires_in").and_then(|t| t.as_u64());
 
-            if super::tokens::save_token(&tok).await.is_ok() {
+            if super::tokens::save_tokens(&tok, refresh, expires)
+                .await
+                .is_ok()
+            {
                 outcome = "connected".to_string();
 
                 if let Ok(me) = super::authed_get(USER_URL).await {

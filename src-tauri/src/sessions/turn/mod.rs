@@ -1,17 +1,9 @@
-// The turn loop: one user message, run to completion, stop, or run out of
-// budget.
-//
-// The whole of a turn's mutable state is `Turn`. Nothing in here is on a hot
-// path in the sense of being called often — it runs once per user message, for
-// up to MAX_STEPS model calls — so the struct is plain and unshared, and the
-// loop is written to be read top to bottom: build the request, spend budget,
-// call the model, decide whether this is the last step, run the tools, record
-// what ran.
+// One user message, run to completion, stop, or run out of budget. All of a
+// turn's mutable state is `Turn`; the submodules cannot reach the loop's locals,
+// which is what makes the split free rather than a reshuffle.
 
 use crate::tools::sandbox::Origin;
 
-// Each of these answers one question the loop asks, and none of them can reach
-// the loop's locals — that is what makes the split free rather than a reshuffle.
 mod budget;
 mod persist;
 mod request;
@@ -32,8 +24,7 @@ enum Truncation {
     Finish,
 }
 
-/// Everything a single turn mutates. The loop reads and writes these across
-/// iterations; nothing else crosses a step boundary.
+/// Everything a single turn mutates. Nothing else crosses a step boundary.
 pub struct Turn {
     pub tok_in_sum: i64,
     pub act_base: usize,

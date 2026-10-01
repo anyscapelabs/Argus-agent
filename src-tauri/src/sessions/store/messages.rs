@@ -1,5 +1,4 @@
-// Message rows: the transcript. Everything the model later reads comes back
-// through `list_msgs`, in seq order, active rows only.
+// Message rows: the transcript.
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
@@ -40,9 +39,8 @@ pub fn mark_final(conn: &Connection, id: &str) -> Result<(), String> {
     Ok(())
 }
 
-// The newest assistant turn, whether or not it was already closed. A budget
-// stop writes its notice onto whatever the user last saw, so the warning
-// cannot land on a message the transcript no longer renders.
+// The newest assistant turn, closed or not: a budget stop writes its notice
+// onto whatever the user last saw.
 pub fn get_last_final(conn: &Connection, session_id: &str) -> Result<String, String> {
     conn.query_row(
         "SELECT id FROM messages
@@ -54,10 +52,8 @@ pub fn get_last_final(conn: &Connection, session_id: &str) -> Result<String, Str
     .map_err(|err| err.to_string())
 }
 
-/// The task as first asked. Later turns are the model's own attempts at it —
-/// nudges, `continue`, retries — and a resume built from those describes the
-/// attempt, not the job. Content, not a rendered line: the transcript strips
-/// tags, and this has to stay the user's own words.
+/// The task as first asked. Raw content, not a rendered line: the transcript
+/// strips tags.
 pub fn first_user_msg(conn: &Connection, session_id: &str) -> Option<String> {
     conn.query_row(
         "SELECT content FROM messages
@@ -76,9 +72,8 @@ pub fn add_msg(conn: &Connection, m: &NewMsg) -> Result<Msg, String> {
     insert(conn, m, false)
 }
 
-/// A line the app answered itself. It belongs to the conversation and not to
-/// what the model is told, and the flag is set here and nowhere else — the
-/// frontend cannot mark a message of its own as invisible.
+/// Set here and nowhere else: the frontend cannot mark a message of its own
+/// invisible.
 pub fn add_local_msg(conn: &Connection, session_id: &str, content: &str) -> Result<Msg, String> {
     let m = NewMsg {
         session_id: session_id.into(),
@@ -124,10 +119,8 @@ fn insert(conn: &Connection, m: &NewMsg, local: bool) -> Result<Msg, String> {
     get_msg(conn, &id)
 }
 
-/// A nudge rides the request, not the transcript, so a model asked to try
-/// again and answering the same way has said one thing twice — not two things.
-/// Overwrite the row it already wrote instead of stacking a copy under it, and
-/// say so, so the caller can stop asking.
+/// A nudge rides the request, not the transcript, so a model answering the same
+/// way twice said one thing twice. Overwrite the row; do not stack a copy.
 pub fn add_msg_dedup(conn: &Connection, m: &NewMsg) -> Result<(Msg, bool), String> {
     if m.role != "assistant" {
         return add_msg(conn, m).map(|msg| (msg, false));

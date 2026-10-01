@@ -13,8 +13,6 @@ pub mod sandbox;
 pub mod shell;
 pub mod specs;
 
-// The catalog and the prompt text behind it, re-exported so callers keep
-// reaching them at `tools::`.
 pub use dispatch::{exec, ExecIn};
 pub use parse::*;
 pub use specs::*;
@@ -36,7 +34,7 @@ pub struct ToolMeta {
 pub(crate) const TOOLS: &[ToolMeta] = &[
     ToolMeta {
         name: "terminal",
-        desc: "Execute commands on the user's computer. Use for: inspecting the system and files; creating or modifying files; running programs; builds and tests; Git; package managers; system administration. Use user privilege by default. Use admin privilege only when root access is required. Admin authentication is handled by the operating system. Never ask for or handle the user's sudo password. Set profile \"project\" to confine the command to this project's directory and its dependency caches, or \"restricted\" for code you do not trust. Set background true for anything that outlives a few minutes — a long build, a big download, a migration. A backgrounded call returns a job id at once instead of waiting; check on it with job.list and read what it printed with job.read. Do not background a command you need the answer from before you can continue.",
+        desc: "Execute commands on the user's computer. Use for: inspecting the system and files; creating or modifying files; running programs; builds and tests; Git; package managers; system administration. Use user privilege by default. Use admin privilege only when root access is required. Admin authentication is handled by the operating system. Never ask for or handle the user's sudo password. Set profile \"project\" to confine the command to this project's directory and its dependency caches, or \"restricted\" for code you do not trust. Commands are cut off after 120 seconds unless you set timeout, in seconds, up to 1800 — nothing picks that number for you, so judge it from the command you are about to run and raise it for a clone, a build or an install. Raise it before the run, not after: a command stopped by the timeout restarts from the beginning. Set background true for anything that outlives a few minutes — a long build, a big download, a migration. A backgrounded call returns a job id at once instead of waiting; check on it with job.list and read what it printed with job.read. Do not background a command you need the answer from before you can continue.",
         args: "{\"command\":\"...\",\"cwd\":\".\",\"label\":\"...\",\"privilege\":\"user\",\"profile\":\"host\",\"background\":false,\"timeout\":120}",
         mutating: true,
     },
@@ -192,9 +190,7 @@ pub struct Action {
 }
 
 // A text-channel call with `{}` is only breakage when the tool takes
-// arguments. Several tools document `{}` as their whole invocation —
-// browser.read, browser.close — so the empty-args guard asks the catalog
-// instead of rejecting them all.
+// arguments, so the guard asks the catalog instead of rejecting them all.
 pub(crate) fn takes_no_args(name: &str) -> bool {
     TOOLS
         .iter()
@@ -213,10 +209,9 @@ pub(crate) fn takes_no_args(name: &str) -> bool {
         })
 }
 
-// One redaction for every secret shape. The browser guard knew token patterns
-// (`sk-`, `ghp_`, …) and the connector log knew parameter names (`?key=`,
-// `client_secret=`); a credential matching only one list passed the other.
-// Both passes run here so no caller can pick the wrong half.
+// One redaction for every secret shape. Token patterns (`sk-`, `ghp_`) and
+// parameter names (`?key=`, `client_secret=`) both run here so no caller can
+// pick the wrong half.
 pub fn redact_secrets(s: &str) -> String {
     let patterned = match browser::guard::secret_re() {
         Some(re) => re.replace_all(s, "[redacted]").into_owned(),
@@ -243,10 +238,9 @@ pub fn redact_secrets(s: &str) -> String {
     out
 }
 
-// How a model speaks tools. One mechanism for all models; only this differs.
-// Native models call through the API and any text syntax is discarded.
-// GlmXml models were fine-tuned on an XML template that contradicts the API
-// instruction, so they emit both: the native call runs, the text is decoded.
+// How a model speaks tools. GlmXml models were fine-tuned on an XML template
+// that contradicts the API instruction, so they emit both: the native call
+// runs, the text is decoded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToolCallStyle {
     Native,

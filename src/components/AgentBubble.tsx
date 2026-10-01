@@ -55,11 +55,10 @@ type Props = {
   attachments?: BlockNode[];
   onOpenAgent?: (id: string) => void;
   /// The turn is over but the work is not: a parent that fanned out has not
-  /// finished saying it. The bubble keeps the thinking animation and drops the
-  /// vote row, because these actions belong to an answer that is complete.
+  /// finished saying it, so the actions row goes but the animation stays.
   waitingSubagents?: boolean;
-  /// Whether `text` is finished. False while it is still streaming, which is
-  /// the only case where an unterminated tag is held back rather than shown.
+  /// Whether `text` is finished. False while streaming, the only case where an
+  /// unterminated tag is held back rather than shown.
   final?: boolean;
 };
 
@@ -195,11 +194,8 @@ function renderBlk(
         />
       );
     case "agent-done":
-      // Title only. The card is a way in, not a place to read the work —
-      // the report belongs in the sub-agent's own chat, which is what the
-      // click opens. Dumping the children here also dumped them as raw
-      // pre-wrapped text, so a report that landed inside the tag lost its
-      // markdown entirely.
+      // Title only: the card is a way in, the report belongs in the sub-agent's
+      // own chat. Dumping children here rendered the report as raw text.
       return (
         <AgentCard
           key={key}
@@ -258,9 +254,8 @@ function renderBlk(
     case "error":
       return <AlertBanner key={key} block={blk} />;
     default:
-      // A tag nobody drew must not swallow what the model wrote inside it.
-      // `<agent-done>` carries a sub-agent's whole report: dropping it here
-      // loses the answer the parent was given.
+      // `<agent-done>` carries a sub-agent's whole report: dropping it loses the
+      // answer the parent was given.
       return (
         <div key={key} className="mt-2 flex flex-col gap-2 first:mt-0">
           {blk.children.map((c, ci) => (
@@ -479,11 +474,8 @@ export default function AgentBubble({
   waitingSubagents,
   final = true,
 }: Props) {
-  // `final` is false only while this text is still arriving. A tag that has
-  // not finished coming is held back until it has, rather than being rendered
-  // as raw markup — which is how a half-arrived `<terminal …>` ended up in the
-  // chat as literal text. A finished message is final, so anything
-  // unterminated in it is prose and shows as prose.
+  // While text is arriving, a half-arrived tag is held back: rendered as raw
+  // markup, a `<terminal …>` shows up in the chat as literal text.
   const tree: XmlTree | null = useMemo(
     () => (text !== undefined ? parse(text, { final }) : null),
     [text, final],

@@ -8,12 +8,9 @@ import {
   type LibItem,
 } from "../lib/ipc";
 
-// A message carries a handful of files, not a folder. Beyond this the chip
-// row stops being a row.
 export const MAX_FILES = 8;
 
-// An image goes to the model as base64 in the request body, so it costs more
-// than a document, which is text.
+// Images go as base64 in the request body, so they cost more than text.
 export const MAX_IMAGE_BYTES = 4_000_000;
 export const MAX_FILE_BYTES = 25_000_000;
 
@@ -64,8 +61,7 @@ class AttachStore {
     this.set({ items: [], err: null });
   }
 
-  // A send that never got off the ground. The files never left the disk, so
-  // the chips come back exactly as they were.
+  // The send never left the disk, so the chips come back as they were.
   restore(items: Attachment[]) {
     if (items.length === 0) return;
 
@@ -87,9 +83,8 @@ class AttachStore {
     this.set({ items: this.state.items.filter((it) => it.path !== path) });
   }
 
-  // Off the user's disk, the dialog or a drop. Each one is described where it
-  // stands and never copied: it is already the user's file, and the message
-  // carries the path that opens it.
+  // Never copied: it is already the user's file, and the message carries the
+  // path that opens it.
   async addPaths(paths: string[]) {
     const room = MAX_FILES - this.state.items.length;
     if (room <= 0) {
@@ -121,8 +116,7 @@ class AttachStore {
           src: isImage(info.ext) ? convertFileSrc(info.path) : null,
         });
       } catch (e) {
-        // The backend says why -- a name it refused, a file that moved, a
-        // disk that is full. "Could not be added" is none of those.
+        // The backend says why -- a refused name, a file that moved, a full disk.
         const why = e instanceof Error ? e.message : String(e);
         refused.push(`${name}: ${why}`);
       }
@@ -173,8 +167,7 @@ class AttachStore {
     });
   }
 
-  // What goes on the wire: the path that opens the file, and enough to render
-  // the chip. The display url is dropped, it is only good in this window.
+  // `src` is window-local and does not go on the wire.
   payload(): Attachment[] {
     return this.state.items.map(({ path, name, kind, sz }) => ({
       path,

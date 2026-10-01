@@ -1,16 +1,5 @@
-// Inline formatting, as a scanner.
-//
-// Markdown emphasis is a delimiter-matching problem, not a search problem:
-// `*` opens an emphasis only if a matching `*` follows, and which one it
-// matches is decided by the rule set, not by the first candidate. Expressing
-// that with regular expressions needs a pattern per construct plus lookaround
-// emulated with capture groups, and the result is a chain of passes that each
-// rebuild the whole line and can match across a boundary the previous pass
-// just created.
-//
-// A single pass with an explicit delimiter stack expresses the same rules
-// directly, cannot match a construct that spans a tag boundary, and visits
-// every character once.
+// Emphasis is delimiter matching, not search: a run opens only if a matching
+// closer follows, so a chain of regex passes can never match across a tag here.
 
 import { scanTagEnd } from "./tokenize";
 import {
@@ -31,23 +20,12 @@ const RPAREN = 0x29;
 const BANG = 0x21;
 const BACKSLASH = 0x5c;
 
-/**
- * A matched delimiter pair. `to` is where the body ends — the index the closing
- * run starts at — and `next` is where scanning resumes, past the whole run.
- * They differ whenever the closer is two characters wide, which is the normal
- * case for bold.
- */
+/** `next` is past the closing run, `to` is its start. */
 type Mark = { tag: string; from: number; to: number; next: number };
 
-/**
- * Format the inline spans of one run of prose.
- *
- * `s` must already be free of tags: `inlineOutside` splits on tag boundaries
- * first, so this never sees markup and can never wrap one.
- */
+/** Format the inline spans of one run of tag-free prose. */
 function inlineMd(s: string): string {
-  // A code span is literal to the end — no other construct applies inside it,
-  // so it is copied across whole and never rescanned.
+  // A code span is literal to the end, so copy it across whole.
   let out = "";
   let plain = 0;
   let i = 0;
@@ -112,7 +90,6 @@ function inlineMd(s: string): string {
   return out;
 }
 
-/** Escape the three characters that would otherwise read back as markup. */
 function esc(s: string): string {
   let out = "";
   for (let i = 0; i < s.length; i++) {
@@ -125,13 +102,7 @@ function esc(s: string): string {
   return out;
 }
 
-/**
- * The index of the closing run of `ch`, or `-1`.
- *
- * A run of three or more backticks closes on a run of the same length, which
- * is what lets a fenced span contain a single backtick. Anything else closes on
- * the next single one.
- */
+/** Index of the closing run of `ch`, or `-1`. A run closes on one of equal length. */
 function closingRun(s: string, open: number, ch: number): number {
   let run = 1;
   while (open + run < s.length && s.charCodeAt(open + run) === ch) run++;
@@ -150,16 +121,11 @@ function closingRun(s: string, open: number, ch: number): number {
 }
 
 /**
- * Whether the delimiter at `open` is emphasis, and where it closes.
- *
- * An opener must be followed by something that can open a span, and the closer
- * must be followed by something that cannot be part of a word — otherwise
- * `snake_case_name` and `a * b` would be turned into italics. The delimiter
- * also has to be the same one it opened with, so `_` cannot close a `*`.
+ * Whether the delimiter at `open` is emphasis, and where it closes. Without the
+ * flanking checks `snake_case_name` and `a * b` turn italic.
  */
 function matchEmphasis(s: string, open: number, ch: number): Mark | null {
-  // A run of two or more `*` or `_` opens the strong form. `~` is different:
-  // one tilde is not emphasis at all and two are a strikethrough, never bold.
+  // 2+ `*`/`_` is strong. `~` is never bold: one is not emphasis, two strike.
   let run = 1;
   while (open + run < s.length && s.charCodeAt(open + run) === ch) run++;
   if (run > 3) return null;
@@ -170,7 +136,6 @@ function matchEmphasis(s: string, open: number, ch: number): Mark | null {
 
   const after = open + run;
   if (after >= s.length) return null;
-  // A run of spaces after the opener is not an opener at all.
   if (isSpaceAt(s, after)) return null;
 
   for (let i = after; i < s.length; i++) {
@@ -241,7 +206,7 @@ function readLink(s: string, at: number): Link | null {
   if (end >= s.length) return null;
 
   const text = s.slice(at + 1, close);
-  // A title after the href is legal Markdown and is dropped, not rendered.
+  // A title after the href is legal Markdown; drop it.
   const href = s.slice(close + 2, end).split(" ")[0];
 
   return { text, alt: text, href, next: end + 1 };
@@ -268,9 +233,9 @@ function matchingBracket(s: string, at: number): number {
 }
 
 /**
- * A destination is only rendered as a link when it is one the app can open.
- * Anything else — a relative path, a `javascript:` URL — shows its text and
- * drops the target, so a model cannot put a live link in front of the user.
+ * Only http(s) destinations render as links. A relative path or a `javascript:`
+ * URL shows its text and drops the target, so a model cannot put a live link in
+ * front of the user.
  */
 function renderLink(text: string, href: string, isImage: boolean): string {
   const body = isImage ? "" : inlineMd(text);
@@ -287,13 +252,9 @@ function isHttpUrl(href: string): boolean {
 }
 
 /**
- * Markdown must never rewrite tag bodies: action JSON with backticks or
- * terminal output starting with `#` would corrupt commands and records.
- *
- * The line is walked once, and each span is either a tag — copied across
- * untouched — or prose, which is formatted. Splitting with a regular
- * expression meant building a match array and a map for every line, and could
- * not tell a tag that had not closed from prose containing `<`.
+ * Markdown must never rewrite tag bodies: backticks in action JSON would
+ * corrupt commands. Each span is a tag, copied across, or prose, which is
+ * formatted.
  */
 export function inlineOutside(line: string): string {
   let out = "";
@@ -308,7 +269,7 @@ export function inlineOutside(line: string): string {
 
     const scan = scanTagEnd(line, i + 1);
     if (scan.kind === "unterminated") {
-      // No `>` before the end of the line: a comparison, not a tag.
+      // No `>` before end of line: a comparison, not a tag.
       i++;
       continue;
     }
@@ -327,13 +288,9 @@ export function inlineOutside(line: string): string {
 }
 
 /**
- * Whether the text between `<` and `>` is a tag rather than an angle-bracketed
- * fragment of prose.
- *
- * Every well-formed tag is passed through untouched, not a chosen few: the
- * caller decides what a tag means, and this function's only job is to keep
- * Markdown from rewriting one. Whitelisting here would silently drop `<step>`
- * or `<terminal>` and leave their bodies as raw text in the chat.
+ * Whether the text between `<` and `>` is a tag rather than prose. No whitelist:
+ * the caller decides what a tag means, and dropping one leaves its body as raw
+ * text.
  */
 function isTagRegion(line: string, from: number, to: number): boolean {
   let i = from;
@@ -346,8 +303,7 @@ function isTagRegion(line: string, from: number, to: number): boolean {
   i++;
   while (i < to && isTagNameCharAt(line, i)) i++;
 
-  // Attributes may follow, and a `/` may close a self-closing tag. The scan
-  // already proved the region is quote-balanced, so walking it here is enough.
+  // The scan already proved the region quote-balanced, so walking it is enough.
   while (i < to) {
     const c = line.charCodeAt(i);
     if (isSpaceAt(line, i) || c === 0x2f) {
@@ -355,7 +311,6 @@ function isTagRegion(line: string, from: number, to: number): boolean {
       continue;
     }
     if (c === 0x3d) {
-      // `name="value"`: the name, the `=`, then a quoted value.
       i++;
       while (i < to && isSpaceAt(line, i)) i++;
       if (
@@ -368,7 +323,7 @@ function isTagRegion(line: string, from: number, to: number): boolean {
         if (i < to) i++;
         continue;
       }
-      // An unquoted value runs to the next space.
+      // Unquoted value runs to the next space.
       while (i < to && !isSpaceAt(line, i)) i++;
       continue;
     }

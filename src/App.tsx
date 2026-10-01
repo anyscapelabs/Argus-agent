@@ -50,8 +50,7 @@ function App() {
   const notified = useRef(new Set<string>());
   const viewRef = useRef(view);
   viewRef.current = view;
-  // Escape out of settings should put you back where you were, not on a
-  // fixed default view.
+  // Escape out of settings returns to where you were.
   const backView = useRef<View>("new-agent");
   const activeRef = useRef(activeId);
   activeRef.current = activeId;
@@ -159,8 +158,7 @@ function App() {
       webSearch,
     );
 
-    // The picker is the only place a profile is chosen, so a new chat starts
-    // on whatever it last had selected.
+    // New chat inherits whatever the picker last had selected.
     if (profileStore.getState().activeId !== DEFAULT_PROFILE) {
       await profileStore
         .setForSession(row.id, profileStore.getState().activeId)
@@ -172,9 +170,8 @@ function App() {
     sessionStore.send(row.id, text);
   };
 
-  // The same shape, for a command the app answers itself. It is a turn like
-  // any other, so it needs a chat to live in — and the chat is named for what
-  // is in it, so the sidebar does not read "New chat" on an empty conversation.
+  // An app-answered command is a turn like any other, so it needs a chat to
+  // live in — and the chat is named for it.
   const startLocal = async (
     name: string,
     arg: string,
@@ -218,8 +215,8 @@ function App() {
 
     const row = activeId === null ? undefined : sessions.find((s) => s.id === activeId);
 
-    // The chat on screen belongs to the profile just left, so the list no
-    // longer lists it. Leaving it open would show work that is not there.
+    // The chat on screen belongs to the profile just left. Leaving it open would
+    // show work the list no longer has.
     if (row === undefined || (row.profile_id ?? DEFAULT_PROFILE) === id) {
       return;
     }
@@ -271,8 +268,7 @@ function App() {
     }
   };
 
-  // The list answers to the profile you are on. A profile that owns half your
-  // work and shows none of it is a shelf, not a tool.
+  // The list answers to the profile you are on.
   const sidebarSessions: Session[] = sessions
     .filter((s) => s.status !== "archived")
     .filter((s) => (s.profile_id ?? DEFAULT_PROFILE) === profileActive)

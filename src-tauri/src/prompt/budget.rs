@@ -1,5 +1,5 @@
-// Budget accounting: how the assembled prompt breaks down, and what a request
-// must be cut down to when the model has a small context.
+// How the assembled prompt breaks down, and what a request must be cut down to
+// when the model has a small context.
 use super::config;
 use super::types::Projection;
 
@@ -35,8 +35,7 @@ pub fn budget(system: &str) -> Vec<(&'static str, i64)> {
 }
 
 pub fn tools_budget(web: bool) -> i64 {
-    // Budget baseline uses the Native wording; the template variant is the
-    // same order of magnitude and never worth a second code path here.
+    // Native wording; the template variant is the same order of magnitude.
     let section = crate::tools::section(web, crate::tools::ToolCallStyle::Native);
     let specs: i64 = crate::tools::tool_specs(web)
         .iter()
@@ -51,9 +50,7 @@ pub struct PromptBudget {
     pub tools: i64,
     pub preferences: i64,
     pub learned: i64,
-    /// Model lessons and environment facts, reported as one tier: both are
-    /// observed, both capped, and neither is worth its own line in the budget
-    /// view when they are usually empty.
+    /// Model lessons and environment facts, reported as one tier.
     pub playbook: i64,
     pub summary: i64,
     pub notepad: i64,

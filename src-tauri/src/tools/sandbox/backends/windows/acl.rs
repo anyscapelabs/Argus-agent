@@ -40,8 +40,8 @@ fn free(sd: PSECURITY_DESCRIPTOR) {
     }
 }
 
-// Merge into the existing DACL. Replacing it would drop the user's own
-// permissions on their own project directory.
+// Merge, never replace: replacing drops the user's own permissions on their
+// own project directory.
 fn patch(path: &Path, sid: PSID, mask: u32, grant: bool) -> SandboxResult<()> {
     let wide = w(path);
 
@@ -67,9 +67,8 @@ fn patch(path: &Path, sid: PSID, mask: u32, grant: bool) -> SandboxResult<()> {
         return Err(why("GetNamedSecurityInfoW", path, err));
     }
 
-    // Revoking with DENY_ACCESS would leave a deny ACE behind, breaking the
-    // next run. SET_ACCESS with a zero mask is what actually deletes the ACEs
-    // this trustee holds.
+    // Revoking with DENY_ACCESS leaves a deny ACE behind and breaks the next
+    // run. SET_ACCESS with a zero mask is what deletes them.
     let entry = EXPLICIT_ACCESS_W {
         grfAccessPermissions: match grant {
             true => mask,
@@ -140,8 +139,8 @@ pub fn grant(path: &Path, sid: PSID, mask: u32) -> SandboxResult<()> {
     patch(path, sid, mask, true)
 }
 
-// Not dropping this leaves the project readable by a stale SID after Argus
-// exits, and a hard kill skips every Drop that would have cleaned up.
+// Skip this and the project stays readable by a stale SID. A hard kill skips
+// every Drop that would have cleaned up.
 pub fn revoke(path: &Path, sid: PSID) -> SandboxResult<()> {
     patch(path, sid, 0, false)
 }

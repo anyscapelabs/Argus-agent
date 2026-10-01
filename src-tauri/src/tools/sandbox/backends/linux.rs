@@ -28,8 +28,7 @@ pub fn linux_plan(policy: &Policy) -> SandboxResult<Plan> {
     Ok(Plan::Linux(LinuxPlan {
         fs,
         net: policy.net.clone(),
-        // RLIMIT_NPROC counts every process of the real uid, so a per-sandbox
-        // budget is not expressible here; counting per tree needs cgroups.
+        // RLIMIT_NPROC counts every process of the real uid; per-tree needs cgroups.
         limits: Limits {
             procs: None,
             ..policy.limits
@@ -207,9 +206,8 @@ fn enter_sandbox(plan: &LinuxPlan, prog: Option<seccompiler::BpfProgram>) -> San
         });
     }
 
-    // ABI::V1 is the request; landlock narrows it to what the running kernel
-    // supports. Hand-picking a version from a probe is how rules silently
-    // differ between runs.
+    // A request, not a choice: hand-picking a version from a probe is how rules
+    // silently differ between runs.
     let abi = ABI::V1;
 
     let mut ruleset = Ruleset::default()
@@ -219,8 +217,7 @@ fn enter_sandbox(plan: &LinuxPlan, prog: Option<seccompiler::BpfProgram>) -> San
             why: format!("landlock fs access: {err}"),
         })?;
 
-    // Handling a class with no rules attached denies all of it, so an
-    // unrestricted policy must not handle the class at all.
+    // A class handled with no rules denies all of it, so Full must not handle it.
     let net_capped = !matches!(plan.net, NetPolicy::Full);
 
     if net_capped {
@@ -268,8 +265,7 @@ fn enter_sandbox(plan: &LinuxPlan, prog: Option<seccompiler::BpfProgram>) -> San
             FsAccess::Write => write_rights,
         };
 
-        // A missing path is filtered out by landlock; dropping it only tightens
-        // the policy.
+        // A missing path is filtered out; dropping it only tightens the policy.
         for rule in landlock::path_beneath_rules(&paths, rights).flatten() {
             created = created.add_rule(rule).map_err(|err| SandboxError::Apply {
                 backend: NAME,

@@ -1,7 +1,3 @@
-// Document generation, one file per format. `build()` dispatches on kind, the
-// writers stay unaware of each other, and `read.rs` is the only path that takes
-// a zip apart again.
-//
 // The split is by format because that is how these change: a new spreadsheet
 // producer is a new writer, not an edit to the PDF table.
 
@@ -19,8 +15,7 @@ pub use build::{build, BuiltDoc};
 pub use create::create;
 pub use read::{para_markdown, preview_docx, xml_decode};
 
-/// The document kind a filename implies, or `None` for a file we can only
-/// store, never generate.
+/// Or `None` for a file we can only store, never generate.
 pub fn kind_of(name: &str) -> Option<&'static str> {
     let ext = name.rsplit('.').next().unwrap_or("").trim().to_lowercase();
     match ext.as_str() {

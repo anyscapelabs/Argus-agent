@@ -22,7 +22,7 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
 use argus_lib::gateway::schema::{Provider, StreamEvent};
-use argus_lib::gateway::Gateway;
+use argus_lib::gateway::{EventSink, Gateway};
 use argus_lib::sessions::schema::{NewMsg, NewSession};
 use argus_lib::sessions::sink::ChatSink;
 use argus_lib::sessions::turn::Turn;
@@ -454,7 +454,7 @@ fn run_turn(
     session_id: &str,
     rec: &Recorder,
 ) -> Result<(), String> {
-    let model_chan = rec.chan();
+    let model_chan = EventSink::Channel(rec.chan());
     let mut turn = Turn::new();
 
     let rt = tokio::runtime::Builder::new_current_thread()

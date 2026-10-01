@@ -4,12 +4,12 @@ use crate::tools::sandbox::policy::{FsAccess, FsPolicy, NetPolicy, Policy, Profi
 
 pub const NAME: &str = "macos";
 
-// Apple deprecated this and shipped no successor. When it stops, isolated
-// profiles refuse rather than fall through to the host.
+// Deprecated with no successor. When it stops, isolated profiles refuse
+// rather than fall through to the host.
 pub const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 
-// Loader paths only. A blanket deny would make any command fail and look
-// like a working sandbox, so the probe runs twice.
+// Loader paths only. A blanket deny would make any command fail and look like
+// a working sandbox, so the probe runs twice.
 pub const CANARY_SYS: &[&str] = &[
     "/bin",
     "/usr/bin",
@@ -89,7 +89,7 @@ fn quote(s: &str) -> String {
 
     for c in s.chars() {
         match c {
-            // Unescaped, a quote closes the string and the rest parses as profile syntax.
+            // Unescaped, a quote closes the string and the rest parses as syntax.
             '"' | '\\' => {
                 out.push('\\');
                 out.push(c);

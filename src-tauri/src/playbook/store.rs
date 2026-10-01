@@ -7,8 +7,6 @@ pub const MAX_EVENTS_PER_KIND_SCOPE: i64 = 200;
 pub const MAX_LESSONS_PER_SCOPE: i64 = 8;
 pub const MIN_EVIDENCE_TO_TEACH: i64 = 2;
 
-/// What the harness saw. Every variant is an observation it can prove, and
-/// the scope says who the fact is about — the model, or this machine.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     /// The model sent a call whose arguments did not parse to anything.
@@ -40,9 +38,7 @@ impl Kind {
         }
     }
 
-    /// Parse back from storage. Unknown values are `None` rather than a
-    /// default: a signal this build does not understand must not become a
-    /// lesson phrased as one it does.
+    /// Unknown values are `None`, not a default.
     pub fn parse(s: &str) -> Option<Kind> {
         Some(match s {
             "empty_args" => Kind::EmptyArgs,
@@ -56,9 +52,6 @@ impl Kind {
         })
     }
 
-    /// Who the fact is about. Three of these are about the machine Argus runs
-    /// on, and calling them model behaviour would blame the model for a
-    /// sandbox it never controlled.
     pub fn scope(self) -> Scope {
         match self {
             Kind::EmptyArgs | Kind::Thrashing | Kind::StyleXml => Scope::Model,
@@ -132,13 +125,8 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(MIGRATE).map_err(|err| err.to_string())
 }
 
-/// Record one observation. Repeats of the same kind on the same scope bump a
-/// counter rather than appending, so a model that fails the same way a
-/// hundred times is one row, not a hundred.
-///
-/// A fact is one line of harness output. Truncated on a character boundary:
-/// slicing at a byte offset is a panic waiting for the first multi-byte
-/// character in a command.
+/// Clipped on a character boundary: slicing at a byte offset panics on the
+/// first multi-byte character in a command.
 const DETAIL_CAP: usize = 200;
 
 pub fn clip_detail(s: &str) -> String {
@@ -167,10 +155,8 @@ pub fn record(
     let detail = clip_detail(detail);
     let scope = kind.scope().as_str();
 
-    // Two statements, not one clever UPDATE-with-subquery: `query_row` on an
-    // UPDATE reports "no rows" in a way that reads like a failed match, and
-    // the failure is silent — every signal appends and the dedup quietly stops
-    // working. Select, then update by id.
+    // Two statements, not UPDATE-with-subquery: `query_row` on an UPDATE reports
+    // "no rows" like a failed match, so dedup silently stops working.
     let existing: Option<String> = conn
         .query_row(
             "SELECT id FROM protocol_events
@@ -206,8 +192,7 @@ pub fn record(
     )
     .map_err(|err| err.to_string())?;
 
-    // Trim by age, keeping the newest N for this kind+scope. A model that
-    // churns must not grow this table without bound.
+    // Keep the newest N overall.
     let _ = conn.execute(
         "DELETE FROM protocol_events WHERE id NOT IN (
            SELECT id FROM protocol_events ORDER BY created_at DESC, id DESC LIMIT ?1)",
@@ -252,15 +237,9 @@ pub fn signals_for(conn: &Connection, kind: Kind, scope_id: &str) -> Result<Vec<
         .map_err(|err| err.to_string())
 }
 
-/// Upsert a lesson and report its evidence count, so the caller can see
-/// whether it cleared the teaching bar. Repeated signals accumulate on the
-/// same sentence instead of minting near-duplicates.
-/// Store a lesson with the evidence count observed so far, and report it.
-///
-/// The count is set, not incremented: signals already keep their own `seen`
-/// total, and incrementing here would race the two counters — a lesson would
-/// teach itself on the second curation of a single occurrence. One occurrence
-/// means one unit of evidence, every time.
+/// Upsert a lesson, report its evidence count. Count is set, not incremented —
+/// signals keep their own `seen` total, and incrementing lets a lesson teach
+/// itself on a second curation of one occurrence.
 pub fn remember(
     conn: &Connection,
     scope: Scope,

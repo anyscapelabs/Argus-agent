@@ -1,5 +1,5 @@
-// Recall: FTS search over memories, messages, summaries, and files, then the
-// session rollup that turns hits into ranked past conversations.
+// FTS over memories, messages, summaries, files; then the rollup into ranked
+// past conversations.
 
 use std::collections::{HashMap, HashSet};
 
@@ -225,7 +225,7 @@ fn query_terms(query: &str) -> Vec<String> {
     out
 }
 
-/// Space in FTS5 MATCH is AND, so a whole sentence finds nothing. Fall back to OR.
+/// FTS5 MATCH space is AND, so a whole sentence finds nothing.
 fn fts_or_query(terms: &[String]) -> Option<String> {
     if terms.is_empty() {
         return None;
@@ -305,7 +305,6 @@ fn hits_to_past(
         .collect()
 }
 
-/// Past sessions matching `query`, best first. Cross-session by design.
 pub fn recall_sessions(
     conn: &Connection,
     query: &str,

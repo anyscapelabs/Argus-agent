@@ -1,16 +1,5 @@
-// Character classification, by lookup table rather than by regular
-// expression.
-//
-// Every scanner in this pipeline asks the same few questions about a single
-// character: is this a space, can it start a tag name, is it a hex digit? Those
-// are `charCodeAt` plus one array read. A regular expression cannot be used
-// for them without constructing a match object per call, and it cannot be
-// interrupted and resumed, which is the whole problem the streaming scanners
-// here have to solve.
-//
-// The table is built once from ranges rather than written out by hand: a
-// mistake in a 128-entry literal is invisible in review, whereas a range is
-// self-evidently the set of ASCII letters.
+// Lookup table, not a regex: a regex cannot be interrupted and resumed, which
+// is what the streaming scanners here need.
 
 const ASCII_LAST = 0x7f;
 
@@ -35,21 +24,20 @@ function build(): Uint8Array {
     for (let c = lo; c <= hi; c++) t[c] |= flag;
   };
 
-  add(0x09, 0x0d, Char.Space); // tab, lf, vt, ff, cr
+  add(0x09, 0x0d, Char.Space);
   add(0x20, 0x20, Char.Space);
-  add(0x28, 0x2b, Char.AttrEnd); // ( ) * +
-  add(0x2d, 0x2d, Char.TagName | Char.AttrName); // -
-  // Digits are name characters, not just value characters: `h2`, `h3` and
-  // `email-draft` all have digits in the name.
+  add(0x28, 0x2b, Char.AttrEnd);
+  add(0x2d, 0x2d, Char.TagName | Char.AttrName);
+  // Digits are name chars too: `h2`, `h3`, `email-draft`.
   add(
     0x30,
     0x39,
     Char.Digit | Char.HexDigit | Char.TagName | Char.AttrName | Char.AttrEnd,
   );
-  add(0x3a, 0x3a, Char.TagName | Char.AttrName | Char.AttrEnd); // :
+  add(0x3a, 0x3a, Char.TagName | Char.AttrName | Char.AttrEnd);
   add(0x3b, 0x3b, Char.AttrEnd);
-  add(0x3c, 0x3e, Char.AttrEnd); // < = >
-  add(0x3f, 0x3f, Char.TagName | Char.AttrName | Char.AttrEnd); // ?
+  add(0x3c, 0x3e, Char.AttrEnd);
+  add(0x3f, 0x3f, Char.TagName | Char.AttrName | Char.AttrEnd);
   add(
     0x41,
     0x5a,
@@ -62,7 +50,7 @@ function build(): Uint8Array {
   );
   add(0x5b, 0x5b, Char.AttrEnd);
   add(0x5d, 0x5d, Char.AttrEnd);
-  add(0x5f, 0x5f, Char.TagName | Char.AttrName | Char.AttrEnd); // _
+  add(0x5f, 0x5f, Char.TagName | Char.AttrName | Char.AttrEnd);
   add(
     0x61,
     0x7a,
@@ -79,16 +67,11 @@ function build(): Uint8Array {
 
 const TABLE = build();
 
-/**
- * The classification of `code`, or `Char.None` for anything outside ASCII.
- * Non-ASCII is never a tag or attribute character: a `<` followed by one is
- * prose (`<π`, `≤`) and must be left alone.
- */
+/** `Char.None` outside ASCII: a `<` followed by `π` or `≤` is prose. */
 export function classify(code: number): Char {
   return code <= ASCII_LAST ? TABLE[code] : Char.None;
 }
 
-/** Classify the character at `i`, without materialising a one-char string. */
 export function classifyAt(s: string, i: number): Char {
   return classify(s.charCodeAt(i));
 }
@@ -113,7 +96,6 @@ export function isAttrEndAt(s: string, i: number): boolean {
   return (classifyAt(s, i) & Char.AttrEnd) !== 0;
 }
 
-/** Index of the first character at or after `from` that is not a space. */
 export function skipSpaces(s: string, from: number, limit: number): number {
   let i = from;
   while (i < limit && isSpaceAt(s, i)) i++;
@@ -128,13 +110,6 @@ export function indexOfNewline(s: string, from: number, limit: number): number {
   return -1;
 }
 
-/**
- * A tag is never longer than this. A terminal command in an attribute can run
- * to a few hundred characters, but nothing legitimate runs to thousands, so a
- * `<` that has not closed within this budget is prose — a comparison written
- * with no `>`, or a stray character — and not a tag that is still arriving.
- *
- * Without this bound a single `<` with no partner would make the scanner hold
- * back the rest of the message waiting for a `>` that is never coming.
- */
+// A `<` unclosed past this budget is prose, not a tag still arriving. Without
+// the bound one stray `<` holds back the rest of the message.
 export const MAX_TAG_LEN = 4096;

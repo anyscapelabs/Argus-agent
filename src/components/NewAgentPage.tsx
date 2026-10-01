@@ -17,9 +17,8 @@ type NewAgentPageProps = {
     permission: string,
     webSearch: boolean,
   ) => void;
-  /// A command the app answers itself. It still needs a chat to live in, so
-  /// the page starts one and puts the turn in it rather than drawing a card
-  /// above a box that is not a conversation.
+  /// A command the app answers itself. It still needs a chat to live in, so the
+  /// page starts one and puts the turn in it.
   onRunLocal: (
     name: string,
     arg: string,
@@ -125,15 +124,13 @@ export default function NewAgentPage({
             return;
           }
 
-          // A turn the app answers itself still needs a chat to live in, so
-          // the page starts one and puts the turn in it.
+          // The turn needs a chat to live in.
           if (name === "usage") {
             onRunLocal(name, arg, model, permission, webSearch);
             return;
           }
 
-          // No session yet, so a macro has to start one — the same path a
-          // typed prompt takes.
+          // No session yet: the same path a typed prompt takes.
           void slashRun(name, null, arg)
             .then((out) => {
               if (out.text !== null) {

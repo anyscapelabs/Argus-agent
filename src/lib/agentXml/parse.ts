@@ -1,6 +1,4 @@
-// The entry point: normalize invisibles, tokenize, build the tree, and cache
-// the result. The cache exists because the chat re-renders the same finished
-// reply on every keystroke elsewhere in the view.
+// Cached: the chat re-renders the same finished reply on every keystroke.
 import { buildTree } from "./tree";
 import type { XmlTree } from "./tree";
 import { normalizeMd } from "./markdown";
@@ -9,15 +7,8 @@ import { tokenize } from "./tokenize";
 const PARSE_CAP = 1_000_000;
 
 /**
- * Every code point in here is invisible: zero-width joiners, soft hyphens, the
- * bidi overrides, and the word-joiner block. Nothing a model writes
- * legitimately contains them, and a model that emits one mid-tag will produce a
- * tag that does not close.
- *
- * A scan rather than a global regular expression, so the string is walked once
- * and returned untouched — which is the overwhelmingly common case — without
- * rebuilding it. A `.replace` with no match still allocates a copy in some
- * engines, and this runs on every delta of every turn.
+ * A model emits one of these mid-tag and the tag never closes. A scan, not a
+ * regex: this runs on every delta.
  */
 const INVISIBLE = new Set([
   0x200b, 0x200c, 0x200d, 0xfeff, 0x00ad, 0x200e, 0x200f, 0x202a, 0x202b,
@@ -46,17 +37,10 @@ function findInvisible(s: string, from: number): number {
   return -1;
 }
 
-/**
- * `final` says whether more text can still arrive. See `TokenizeOpts`.
- *
- * A live turn passes `false` so a tag that has not finished arriving is held
- * back instead of flashing as raw markup; everything read back from the
- * database passes the default `true`.
- */
+/** `false` on a live turn holds an unfinished tag back instead of flashing raw markup. */
 export function parse(buf: string, opts: { final?: boolean } = {}): XmlTree {
   const final = opts.final !== false;
-  // Belt and braces: Rust strips these before storage, but streamed text
-  // reaches here first.
+  // Rust strips these too, but streamed text lands here first.
   const clean = stripInvisible(buf);
   const src = clean.length > PARSE_CAP ? clean.slice(0, PARSE_CAP) : clean;
 

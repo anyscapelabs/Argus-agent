@@ -1,16 +1,11 @@
-// Writing the assistant's turn to the transcript.
-
 use super::Turn;
 use crate::gateway::router;
 use crate::gateway::Gateway;
 use crate::sessions::schema::{Msg, NewMsg};
 use crate::sessions::store;
 
-/// Write the assistant's turn to the transcript.
-///
-/// `add_msg_dedup` reports whether this step merely repeated the previous
-/// one, which the caller needs because a repeat is not a truncation and
-/// must not be reported as one.
+/// `add_msg_dedup` reports whether this step merely repeated the previous one,
+/// which the caller needs because a repeat is not a truncation.
 impl Turn {
     pub(super) fn persist_assistant(
         &self,

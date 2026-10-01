@@ -17,7 +17,7 @@ Code: `src-tauri/src/connectors/{mod.rs,store.rs,log.rs}`, `src-tauri/src/mcp/{m
 | # | Service | Dir | Auth |
 |---|---|---|---|
 | 1 | Google (Gmail/Calendar/Drive/Docs/Sheets) | `mcp/google/{mod,oauth,tokens,config,gmail,calendar,drive,docs,sheets}` + `google_status/connect_url/disconnect` | loopback `127.0.0.1` OAuth, refresh in `argus-google`, `ARGUS_GOOGLE_CLIENT_ID/SECRET` |
-| 2 | GitHub (repos/issues/prs/actions) | `mcp/github/{mod,device,tokens,config,issues,prs,repos,actions}` + `github_status/connect/disconnect` | device-code poll, `argus-github`, `ARGUS_GITHUB_CLIENT_ID/SECRET` |
+| 2 | GitHub (repos/issues/prs/actions) | `mcp/github/{mod,device,tokens,config,issues,prs,repos,actions}` + `github_status/connect/disconnect` | device-code poll, `argus-github` keyring (access + refresh + login); expiring-token apps auto-refresh (8h access, rotating refresh), permanent-token apps skip refresh; `authed()` retries once on 401 |
 | 3 | GitLab | `mcp/gitlab/{mod,config}` | PAT, `ARGUS_GITLAB_URL` self-host |
 | 4 | Slack | `mcp/slack/mod.rs` | `xoxb-` bot token in vault |
 | 5 | Notion | `mcp/notion/mod.rs` | internal integration token (must share pages/DBs) |

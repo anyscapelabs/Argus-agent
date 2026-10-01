@@ -231,15 +231,18 @@ fn a_success_at_any_window_position_blocks_the_trip() {
     }
 }
 
-// Budget: a quarter of the window, so a 1M model is not throttled like a 32k
-// one, and never so small that ordinary work cannot finish.
+// Budget: sized off the model's window (a 1M model is not throttled like a
+// 128k one), and large enough to cover a whole multi-step turn — the meter
+// sums every step's full prompt, so a fraction of one window would cut long
+// runs off after two or three steps. Never so small that ordinary work cannot
+// finish.
 #[test]
 fn budget_scales_with_the_window() {
-    assert_eq!(turn_budget(0), 32_000, "unknown window gets the floor");
-    assert_eq!(turn_budget(128_000), 32_000);
-    assert_eq!(turn_budget(400_000), 100_000);
-    assert_eq!(turn_budget(8_000_000), 200_000, "capped");
-    assert!(turn_budget(200_000) >= 32_000);
+    assert_eq!(turn_budget(0), 256_000, "unknown window uses the default");
+    assert_eq!(turn_budget(128_000), 256_000);
+    assert_eq!(turn_budget(400_000), 800_000);
+    assert_eq!(turn_budget(8_000_000), 2_000_000, "capped");
+    assert!(turn_budget(200_000) >= 200_000);
 }
 
 #[test]

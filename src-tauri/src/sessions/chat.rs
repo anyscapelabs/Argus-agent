@@ -6,7 +6,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::gateway::router;
 use crate::gateway::schema::{ChatReq, StreamEvent, WireMsg};
-use crate::gateway::Gateway;
+use crate::gateway::{EventSink, Gateway};
 use crate::prompt::{compressor, project};
 use crate::tools;
 
@@ -23,6 +23,9 @@ pub const RESULT_CLIP: usize = 4000;
 const TERM_TIMEOUT: u64 = 300;
 
 const WATCH_IDLE: std::time::Duration = std::time::Duration::from_millis(150);
+
+/// The turn is already over; this only bounds the relay wait.
+const FWD_DRAIN: std::time::Duration = std::time::Duration::from_secs(5);
 
 const WAKE_SLOTS: u32 = 240;
 const WAKE_SLOT_MS: u64 = 500;
@@ -70,9 +73,8 @@ pub fn approval_id() -> String {
     format!("ap{}", uuid::Uuid::new_v4().as_simple())
 }
 
-/// Put a message in a conversation without running a turn for it, and tell
-/// whoever is looking at that conversation to re-read it. This is how a card
-/// gets into the middle of a chat the agent is already answering.
+/// Post a message without running a turn, then tell the open chat to re-read.
+/// This is how a card lands mid-answer.
 pub fn post(gw: &Gateway, session_id: &str, role: &str, body: &str) {
     if let Ok(conn) = gw.conn.lock() {
         let _ = store::add_msg(
@@ -138,9 +140,8 @@ pub fn announce<R: tauri::Runtime>(
                     session_id: sid.clone(),
                 };
 
-                // A turn nobody asked for still has a person reading it, or
-                // the open chat. Without this the wake refuses every step
-                // that needs approving, because it thinks it is alone.
+                // Without this the wake refuses every step needing approval:
+                // it thinks it is alone.
                 gw.go_live(&sid);
 
                 let _ = crate::tools::shell::CANCEL
@@ -244,9 +245,9 @@ pub async fn run_skill_reflection<R: tauri::Runtime>(app: &AppHandle<R>, session
         r
     };
 
-    let null_chan = Channel::<StreamEvent>::new(|_| Ok(()));
+    let quiet = EventSink::null();
 
-    let Ok(stats) = router::stream_run(&gw, req, &null_chan).await else {
+    let Ok(stats) = router::stream_run(&gw, req, &quiet).await else {
         return;
     };
 
@@ -281,6 +282,30 @@ pub async fn send<R: tauri::Runtime>(
     sink: &dyn sink::ChatSink,
     role: &str,
 ) -> Result<(), String> {
+    let out = turn(gw, app, session_id, content, attachments, sink, role).await;
+
+    // The forwarder only releases the session lock on TurnEnd, so this cannot
+    // sit behind a `?`.
+    if let Err(err) = &out {
+        sink.emit(StreamEvent::Err { msg: err.clone() });
+    }
+
+    sink.emit(StreamEvent::TurnEnd {
+        session_id: session_id.into(),
+    });
+
+    out
+}
+
+async fn turn<R: tauri::Runtime>(
+    gw: &Gateway,
+    app: &AppHandle<R>,
+    session_id: &str,
+    content: &str,
+    attachments: Option<&str>,
+    sink: &dyn sink::ChatSink,
+    role: &str,
+) -> Result<(), String> {
     {
         let conn = gw.conn.lock().map_err(|err| err.to_string())?;
         let dupe = store::has_unreplied_duplicate(&conn, session_id, content).unwrap_or(false);
@@ -301,15 +326,11 @@ pub async fn send<R: tauri::Runtime>(
                 },
             )?;
         }
-        // The previous turn's resume is deliberately left in place: it is the
-        // whole point of a resume, and the first `project()` below is the only
-        // reader. It is overwritten on every unfinished stop and cleared the
-        // moment a turn finishes, so it can never describe work the model has
-        // already moved past.
+        // The previous turn's resume stays in place; the first `project()` below
+        // is its only reader, and it is overwritten on every unfinished stop.
     }
 
-    let null_chan = Channel::<StreamEvent>::new(|_| Ok(()));
-    let model_chan: &Channel<StreamEvent> = sink.term_chan().unwrap_or(&null_chan);
+    let model_chan = sink.event_sink().unwrap_or_else(EventSink::null);
 
     let (perm, web) = {
         let conn = gw.conn.lock().map_err(|err| err.to_string())?;
@@ -329,15 +350,19 @@ pub async fn send<R: tauri::Runtime>(
     };
     let turn_budget = {
         let conn = gw.conn.lock().map_err(|err| err.to_string())?;
-        let row: (Option<String>, i64) = conn
+        // Sized off the model's own window, never off `sessions.ctx_tokens`:
+        // that column holds the previous turn's summed spend, so basing the
+        // budget on it collapsed every turn after the first to the floor and
+        // cut long runs off after two or three steps.
+        let model_id: Option<String> = conn
             .query_row(
-                "SELECT model_id, ctx_tokens FROM sessions WHERE id = ?1",
+                "SELECT model_id FROM sessions WHERE id = ?1",
                 params![session_id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| r.get(0),
             )
-            .unwrap_or((None, 0));
-        let window = crate::prompt::config::context_window(&conn, row.0.as_deref());
-        guards::turn_budget(if row.1 > 0 { row.1 } else { window })
+            .unwrap_or(None);
+        let window = crate::prompt::config::context_window(&conn, model_id.as_deref());
+        guards::turn_budget(window)
     };
 
     let mut turn = super::turn::Turn::new();
@@ -346,7 +371,7 @@ pub async fn send<R: tauri::Runtime>(
         app,
         session_id,
         sink,
-        model_chan,
+        &model_chan,
         &perm,
         web,
         &allow_hosts,
@@ -359,8 +384,7 @@ pub async fn send<R: tauri::Runtime>(
     let recent = turn.recent;
 
     {
-        // `recent` is dead after the turn; move the names out instead of
-        // cloning them for a summary the model never sees.
+        // `recent` is dead after the turn; move the names out, no clone.
         let tools_seen: Vec<String> = recent.into_iter().map(|(t, _)| t).collect();
         let mut ep =
             crate::memory::session_memory::session_memory_from_turn(content, &tools_seen, finished);
@@ -425,10 +449,6 @@ pub async fn send<R: tauri::Runtime>(
         serde_json::json!({"session_id": session_id, "kind": "turn-done"}),
     );
 
-    sink.emit(StreamEvent::TurnEnd {
-        session_id: session_id.into(),
-    });
-
     Ok(())
 }
 
@@ -484,7 +504,8 @@ pub async fn sess_chat_stream(
         out = crate::tools::shell::CANCEL.scope(notify.clone(), crate::tools::notepad::SESSION_ID.scope(Some(session_id.clone()), send(&gw, &app, &session_id, &content, attachments.as_deref(), &sink, "user"))) => out,
     };
 
-    let _ = fwd.await;
+    // A bus busier than BUS_CAP can lag the last event away, so drain it.
+    let _ = tokio::time::timeout(FWD_DRAIN, fwd).await;
 
     if let Ok(mut tasks) = gw.tasks.lock() {
         tasks.remove(&session_id);

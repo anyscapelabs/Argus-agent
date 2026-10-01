@@ -1,11 +1,5 @@
-// Turning a reply into tokens: open tags, close tags, and the text between
-// them. Nothing here knows what a tag *means* — that is the schema's job — so
-// this file stays a pure scanner and never rejects a tag it does not recognise.
-//
-// Every loop here is a hand-written single pass over character codes. A regular
-// expression cannot be used for the parts that matter: `tokenize` has to be
-// able to stop at the end of a stream and report "this tag has not closed
-// yet", which is a statement about a position, not about a match.
+// Hand-written single pass: `tokenize` must report "not closed yet", a position
+// rather than a match.
 import { isKnownTag } from "./schema";
 import {
   Char,
@@ -21,13 +15,8 @@ import {
 } from "./scan";
 
 /**
- * `final` says whether more text can still arrive.
- *
- * The default is `true`, which is right for everything read back from the
- * database: a message that has been written is finished, so an unterminated
- * tag in it is prose and belongs in the output. A live turn passes `false`, and
- * the one difference is that a tag still arriving is held back instead of
- * being shown as raw markup.
+ * `final: false` on a live turn holds an unterminated tag back instead of
+ * showing it as raw markup. Stored messages are finished, so `true`.
  */
 export type TokenizeOpts = { final?: boolean };
 
@@ -49,16 +38,7 @@ const HASH = 0x23;
 const LOWER_X = 0x78;
 const UPPER_X = 0x58;
 
-/**
- * Decode the HTML entities the backend emits when it escapes a value into an
- * attribute or a tag body.
- *
- * A scan rather than three chained replacements: the text is walked once, and
- * a `&` that does not begin a well-formed entity is copied through untouched
- * without the whole string being rebuilt around it. The common case in a reply
- * is text with no entities in it at all, and this returns the input unchanged
- * without allocating.
- */
+/** Decode the HTML entities the backend emits when it escapes a value. */
 function decodeEntities(str: string): string {
   const amp = str.indexOf("&");
   if (amp === -1) return str;
@@ -129,8 +109,7 @@ function decodeOneEntity(
       return null;
     }
 
-    // A code point outside the valid range would throw; the reference is
-    // untrusted, so it is dropped rather than allowed to stop the render.
+    // Out-of-range would throw; untrusted ref, drop it.
     if (value < 0 || value > 0x10ffff) return null;
 
     try {
@@ -157,11 +136,8 @@ function c2(s: string, i: number): number {
 }
 
 /**
- * Whether a quoted attribute value ends at the quote just found.
- *
- * A quote only closes the value when what follows is the next attribute or the
- * end of the tag. `echo "hi" > f` carries quotes that are not the end of
- * anything, and stopping at one truncates the command.
+ * A quote only closes the value when a whole attribute name and `=` follows, or
+ * the tag ends. `echo "hi" > f` has quotes that close nothing.
  */
 function quoteClosesValue(raw: string, after: number): boolean {
   const i = skipSpaces(raw, after, raw.length);
@@ -170,7 +146,6 @@ function quoteClosesValue(raw: string, after: number): boolean {
   if (raw.charCodeAt(i) === 0x2f) return true; // `/` closes a self-closing tag
   if (!isAttrNameCharAt(raw, i)) return false;
 
-  // It has to be a whole attribute name, then `=`, for this to be the close.
   let k = i;
   while (k < raw.length && isAttrNameCharAt(raw, k)) k++;
   k = skipSpaces(raw, k, raw.length);
@@ -250,28 +225,19 @@ function parseAttributes(raw: string): Record<string, string> {
   return out;
 }
 
-/** Why a scan for a tag's end stopped. The distinction is the whole point. */
+/** Why a scan for a tag's end stopped. */
 export type TagScan =
   /** The `>` that closes the tag is at this index. */
   | { kind: "closed"; end: number }
   /**
-   * No `>` arrived before the end of the input, or before a newline, or before
-   * the length budget. On a finished document this is prose. On a stream it is
-   * a tag that is still arriving, and the caller must hold it back rather than
-   * show it.
+   * No `>` before end of input, newline, or the length budget. Prose on a
+   * finished document; on a stream, hold it back.
    */
   | { kind: "unterminated" };
 
 /**
- * Where the tag ends, which is the `>` that closes it and not the first one in
- * sight. A terminal command is full of them — `2>&1`, `-gt`, `->` — and cutting
- * a tag at one drops the rest of the command into the chat as prose.
- *
- * A single pass with an explicit quote state, so a `>` inside a quoted
- * attribute value cannot end the tag. There is no regular expression here
- * because this has to be interruptible: the caller needs to know that the scan
- * ran out of input rather than that the tag was invalid, and only a scanner
- * that is holding its own position can tell those apart.
+ * The `>` that closes the tag, not the first one in sight — a terminal command
+ * is full of them. Quote-aware, so `command="ls > f"` does not end early.
  */
 export function scanTagEnd(buf: string, from: number): TagScan {
   let quote = 0;
@@ -280,8 +246,7 @@ export function scanTagEnd(buf: string, from: number): TagScan {
   for (let k = from; k < limit; k++) {
     const ch = buf.charCodeAt(k);
 
-    // A newline ends the tag region. A tag never spans lines, and without
-    // this a `>` many lines later would swallow everything between.
+    // A tag never spans lines; without this a later `>` swallows everything.
     if (ch === 0x0a) return { kind: "unterminated" };
 
     if (quote !== 0) {
@@ -315,7 +280,6 @@ function isWellFormedTagName(tag: string): boolean {
   return true;
 }
 
-/** Index of the first space in `s`, or `-1`. */
 function firstSpace(s: string): number {
   for (let k = 0; k < s.length; k++) {
     if (isSpaceAt(s, k)) return k;
@@ -333,14 +297,6 @@ export function tokenize(buf: string, opts: TokenizeOpts = {}): Token[] {
     toks.push({ kind: "text", value: decodeEntities(buf.slice(start, end)) });
   };
 
-  /**
-   * Hold back a tag that is still arriving, without losing what came before it.
-   *
-   * Everything in front of `at` is complete — that is the whole reason the
-   * hold is safe — so it is emitted as text now. Only the fragment from `at`
-   * onwards is withheld; the next call sees a longer buffer, the tag closes,
-   * and it is emitted then.
-   */
   const hold = (at: number) => {
     flush(at);
     start = at;
@@ -354,11 +310,7 @@ export function tokenize(buf: string, opts: TokenizeOpts = {}): Token[] {
 
     const next = buf.charCodeAt(i + 1);
 
-    // A `<` only opens a tag when one could actually be there. Prose is full
-    // of them — `if a < b and c > d`, a comparison — and each of those used to
-    // be read as markup: the first rendered as `<bold>` with the words between
-    // it eaten, the second swallowed a whole line into a garbage tag. A tag
-    // has a name right after the `<`.
+    // Prose is full of `<` — `if a < b and c > d`. A tag has a name after it.
     if (!isTagNameStartAt(buf, i + 1) && next !== 0x2f) {
       i++;
       continue;
@@ -367,19 +319,8 @@ export function tokenize(buf: string, opts: TokenizeOpts = {}): Token[] {
     const scan = scanTagEnd(buf, i + 1);
 
     if (scan.kind === "unterminated") {
-      // The frontier. On a finished document there is nothing more coming, so
-      // an unterminated tag is prose and belongs in the text. On a stream it may
-      // be a tag whose closing `>` has not arrived yet, and showing the fragment
-      // is what put `<terminal id="a1" command="cd ~ && ls` in the chat as
-      // literal text.
-      //
-      // Hold it only when it could still change. A tag never spans a line, so
-      // while a message is streaming every line but the last is already final
-      // and nothing in front of a newline is ever going to grow. An
-      // unterminated tag with a line break after it is prose that will stay
-      // prose, and holding it hides everything after it for good — which is
-      // what made a single `a < b` early in an answer blank the rest of the
-      // chat until the turn ended and it all came back on reload.
+      // Hold only what could still change. A tag never spans a line, so holding
+      // prose there blanks the rest of the reply for good.
       if (
         opts.final === false &&
         isTagNameStartAt(buf, i + 1) &&
@@ -432,8 +373,8 @@ export function tokenize(buf: string, opts: TokenizeOpts = {}): Token[] {
     }
 
     if (tag === "br") {
-      // A line break is a text token, not a mutation of the buffer: rewriting
-      // `buf` here would shift every offset the scanner is holding.
+      // A text token, not a buffer rewrite: rewriting shifts every offset the
+      // scanner holds.
       if (i > start) {
         toks.push({ kind: "text", value: decodeEntities(buf.slice(start, i)) });
       }

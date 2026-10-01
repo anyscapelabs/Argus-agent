@@ -2,7 +2,7 @@
 #
 # Triggered by pushing a version tag, not by a release being published:
 #
-#   git tag v0.2.0-alpha.1 && git push origin v0.2.0-alpha.1
+#   git tag v0.1.0-alpha.1 && git push origin v0.1.0-alpha.1
 #
 # The tag is the version. Nothing reads it from anywhere else.
 name: release
@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Tag to build, e.g. v0.2.0-alpha.1
+        description: Tag to build, e.g. v0.1.0-alpha.1
         required: true
 
 permissions:
@@ -38,8 +38,12 @@ jobs:
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           tag="$TAG"
+          # A dash anywhere after the leading `v` means a semver prerelease:
+          # v0.1.0-alpha.1, v0.1.0-rc.2, v1.0.0-beta. Matching the digit-dash
+          # instead would miss every real tag — the dash follows a dot, not a
+          # digit — and publish a test build as a stable release.
           case "$tag" in
-            v[0-9]*-[0-9]*) prerelease=true ;;
+            v[0-9]*-*) prerelease=true ;;
             *) prerelease=false ;;
           esac
           echo "tag=$tag prerelease=$prerelease"

@@ -8,12 +8,12 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use serde_json::Value;
-use tauri::ipc::Channel;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::watch;
 
 use crate::gateway::schema::StreamEvent;
+use crate::gateway::EventSink;
 
 pub use detect::{ShellConfig, ShellKind};
 
@@ -61,7 +61,7 @@ struct Budget {
 async fn pump<R>(
     rd: R,
     idx: u32,
-    chan: Option<Channel<StreamEvent>>,
+    chan: Option<EventSink>,
     buf: Buf,
     eof: watch::Sender<usize>,
     budget: Arc<Budget>,
@@ -356,7 +356,7 @@ pub struct RawRun {
 pub async fn run_child(
     mut child: Child,
     idx: u32,
-    chan: Option<&Channel<StreamEvent>>,
+    chan: Option<&EventSink>,
     hard: Duration,
     cap: usize,
     log: Option<LogSink>,
@@ -467,7 +467,7 @@ pub fn timeout_from(args: &Value) -> Duration {
 pub async fn run_stream(
     args: &Value,
     idx: u32,
-    chan: Option<&Channel<StreamEvent>>,
+    chan: Option<&EventSink>,
 ) -> Result<(String, i64), String> {
     let cmd = args["command"].as_str().ok_or("terminal needs a command")?;
     let elevated = args.get("privilege").and_then(|v| v.as_str()) == Some("admin");

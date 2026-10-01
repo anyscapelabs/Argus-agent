@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use reqwest::Client;
 use rusqlite::Connection;
+use tauri::ipc::Channel;
 use tauri::State;
 use tokio::sync::{broadcast, oneshot, Notify};
 
@@ -19,6 +20,40 @@ use schema::{
     Avail, ChatModel, ChatReq, ChatResp, ModelEntry, Provider, ProviderModel, StreamEvent,
     SyncStats,
 };
+
+/// Where a turn's events go.
+///
+/// Two transports, because a turn runs two ways: a caller that hands over a
+/// Tauri channel, and the chat path, which publishes onto the session bus and
+/// lets a watcher relay it. This used to be a bare `&Channel<StreamEvent>`
+/// threaded down from the sink, which quietly assumed the first: only a raw
+/// `Channel` could supply one, so in the chat path every streaming reply and
+/// every byte of a running command's output went to a null channel. Naming the
+/// two transports makes the caller pick, and `BusSink` can finally answer.
+#[derive(Clone)]
+pub enum EventSink {
+    /// Straight to the webview that asked for this turn.
+    Channel(Channel<StreamEvent>),
+    /// Onto the session bus, for anyone watching it.
+    Bus(broadcast::Sender<StreamEvent>),
+}
+
+impl EventSink {
+    /// Somewhere harmless to put events the caller does not want.
+    pub fn null() -> Self {
+        let (tx, _rx) = broadcast::channel(1);
+        Self::Bus(tx)
+    }
+
+    /// Same name and shape as `Channel::send`, so the call sites in `router`
+    /// read the same as before.
+    pub fn send(&self, ev: StreamEvent) -> Result<(), String> {
+        match self {
+            Self::Channel(c) => c.send(ev).map_err(|err| err.to_string()),
+            Self::Bus(tx) => tx.send(ev).map_err(|err| err.to_string()),
+        }
+    }
+}
 
 pub const BUS_CAP: usize = 512;
 
@@ -150,6 +185,14 @@ impl Gateway {
 
     pub fn subscribe(&self, session_id: &str) -> broadcast::Receiver<StreamEvent> {
         self.bus(session_id).0.subscribe()
+    }
+
+    /// A clone of the session's sender, for anything that has to emit from a
+    /// spawned task. `broadcast::Sender` is `Clone + Send + Sync + 'static`, so
+    /// this is what lets a running command's output reach the bus even though
+    /// the caller only ever holds a borrow.
+    pub fn term_tx(&self, session_id: &str) -> broadcast::Sender<StreamEvent> {
+        self.bus(session_id).0
     }
 
     pub fn go_live(&self, session_id: &str) {
@@ -304,7 +347,8 @@ pub async fn gw_chat_stream(
     req: ChatReq,
     on_event: tauri::ipc::Channel<schema::StreamEvent>,
 ) -> Result<(), String> {
-    router::stream_run(&gw, req, &on_event).await.map(|_| ())
+    let sink = EventSink::Channel(on_event);
+    router::stream_run(&gw, req, &sink).await.map(|_| ())
 }
 
 async fn sync_from_models_dev(gw: &Gateway) -> Result<SyncStats, String> {

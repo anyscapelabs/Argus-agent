@@ -11,11 +11,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
-use tauri::ipc::Channel;
 
-use crate::gateway::schema::StreamEvent;
 use crate::gateway::store::{kv_get, kv_set};
-use crate::gateway::Gateway;
+use crate::gateway::{EventSink, Gateway};
 use crate::tools::shell;
 
 pub use plan::{SandboxError, SandboxResult};
@@ -257,7 +255,7 @@ fn audit(gw: &Gateway, r: &ExecutionRecord) {
 pub async fn run(
     gw: &Gateway,
     req: Request<'_>,
-    on_term: Option<(&Channel<StreamEvent>, u32)>,
+    on_term: Option<(&EventSink, u32)>,
 ) -> SandboxResult<Outcome> {
     if let Some(err) = project_root_check(req.profile, req.cwd) {
         return Err(err);
@@ -364,7 +362,7 @@ async fn finish(
     req: &Request<'_>,
     policy: &Policy,
     child: shell::Child,
-    on_term: Option<(&Channel<StreamEvent>, u32)>,
+    on_term: Option<(&EventSink, u32)>,
     backend: &'static str,
 ) -> SandboxResult<Outcome> {
     let (idx, chan) = match on_term {

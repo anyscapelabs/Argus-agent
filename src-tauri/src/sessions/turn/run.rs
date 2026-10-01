@@ -6,13 +6,12 @@
 // question the loop asks, and none of them can reach the loop's locals. What is
 // left here is the part that genuinely has to be read top to bottom.
 use rusqlite::params;
-use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager};
 
 use super::{Truncation, Turn};
 use crate::gateway::router;
 use crate::gateway::schema::StreamEvent;
-use crate::gateway::Gateway;
+use crate::gateway::{EventSink, Gateway};
 use crate::sessions::chat::{
     approval_id, ask_approval, run_skill_reflection, DENIED_CODE, EMPTY_CONT, HARD_STEPS,
     MAX_CLAIM_NUDGES, MAX_STEPS, NUDGE, RESULT_CLIP, SUMMARY_DEMAND,
@@ -32,7 +31,7 @@ impl Turn {
         app: &AppHandle<R>,
         session_id: &str,
         sink: &dyn sink::ChatSink,
-        model_chan: &Channel<StreamEvent>,
+        model_chan: &EventSink,
         perm: &str,
         web: bool,
         allow_hosts: &[String],
@@ -274,6 +273,9 @@ impl Turn {
             let mut shown_candidates: Vec<(String, &'static str, Option<u64>)> = vec![];
 
             let mut events_ok = true;
+            // Bound once: a spawned reader task has to own the sink, and a
+            // per-exec temporary would not outlive the call that hands it over.
+            let ev = sink.event_sink();
 
             for exec in pending.iter_mut() {
                 let idx: usize = exec
@@ -419,7 +421,7 @@ impl Turn {
                             permission: perm,
                             web,
                             approved: allow,
-                            on_term: sink.term_chan().map(|c| (c, idx as u32)),
+                            on_term: ev.as_ref().map(|c| (c, idx as u32)),
                         })
                         .await;
                         exec.elapsed_ms = t0.elapsed().as_millis();

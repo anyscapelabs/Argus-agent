@@ -24,6 +24,11 @@ const TERM_TIMEOUT: u64 = 300;
 
 const WATCH_IDLE: std::time::Duration = std::time::Duration::from_millis(150);
 
+/// How long the event forwarder gets to finish before teardown stops waiting on
+/// it. The turn is already over by then; this only bounds the relay, and
+/// `drop_bus` closes the receiver a moment later anyway.
+const FWD_DRAIN: std::time::Duration = std::time::Duration::from_secs(5);
+
 const WAKE_SLOTS: u32 = 240;
 const WAKE_SLOT_MS: u64 = 500;
 pub const DENIED_CODE: i64 = -2;
@@ -244,9 +249,9 @@ pub async fn run_skill_reflection<R: tauri::Runtime>(app: &AppHandle<R>, session
         r
     };
 
-    let null_chan = Channel::<StreamEvent>::new(|_| Ok(()));
+    let quiet = EventSink::null();
 
-    let Ok(stats) = router::stream_run(&gw, req, &null_chan).await else {
+    let Ok(stats) = router::stream_run(&gw, req, &quiet).await else {
         return;
     };
 
@@ -273,6 +278,37 @@ pub async fn run_skill_reflection<R: tauri::Runtime>(app: &AppHandle<R>, session
 }
 
 pub async fn send<R: tauri::Runtime>(
+    gw: &Gateway,
+    app: &AppHandle<R>,
+    session_id: &str,
+    content: &str,
+    attachments: Option<&str>,
+    sink: &dyn sink::ChatSink,
+    role: &str,
+) -> Result<(), String> {
+    let out = turn(gw, app, session_id, content, attachments, sink, role).await;
+
+    // The turn is over either way, and two things stall if this never arrives.
+    // The webview clears its turn on TurnEnd, and sess_chat_stream's forwarder
+    // breaks on it and only then releases the session lock. Every early `?` in
+    // the body below used to skip it, so a turn that died on a provider error
+    // left the forwarder waiting on an event nobody was going to send — and
+    // `fwd.await` never returned, so `release_turn` never ran and every later
+    // message came back "this session is already answering". For good.
+    if let Err(err) = &out {
+        // The promise carries this to whoever asked. A watcher attached to the
+        // bus has no promise, so it needs the event to learn the turn failed.
+        sink.emit(StreamEvent::Err { msg: err.clone() });
+    }
+
+    sink.emit(StreamEvent::TurnEnd {
+        session_id: session_id.into(),
+    });
+
+    out
+}
+
+async fn turn<R: tauri::Runtime>(
     gw: &Gateway,
     app: &AppHandle<R>,
     session_id: &str,
@@ -308,8 +344,7 @@ pub async fn send<R: tauri::Runtime>(
         // already moved past.
     }
 
-    let null_chan = Channel::<StreamEvent>::new(|_| Ok(()));
-    let model_chan: &Channel<StreamEvent> = sink.term_chan().unwrap_or(&null_chan);
+    let model_chan = sink.event_sink().unwrap_or_else(EventSink::null);
 
     let (perm, web) = {
         let conn = gw.conn.lock().map_err(|err| err.to_string())?;
@@ -346,7 +381,7 @@ pub async fn send<R: tauri::Runtime>(
         app,
         session_id,
         sink,
-        model_chan,
+        &model_chan,
         &perm,
         web,
         &allow_hosts,
@@ -425,10 +460,6 @@ pub async fn send<R: tauri::Runtime>(
         serde_json::json!({"session_id": session_id, "kind": "turn-done"}),
     );
 
-    sink.emit(StreamEvent::TurnEnd {
-        session_id: session_id.into(),
-    });
-
     Ok(())
 }
 
@@ -484,7 +515,13 @@ pub async fn sess_chat_stream(
         out = crate::tools::shell::CANCEL.scope(notify.clone(), crate::tools::notepad::SESSION_ID.scope(Some(session_id.clone()), send(&gw, &app, &session_id, &content, attachments.as_deref(), &sink, "user"))) => out,
     };
 
-    let _ = fwd.await;
+    // Bounded, because the turn is already over and teardown must not be able
+    // to stall on the relay. `send` closes every path with TurnEnd now, but a
+    // chat busier than BUS_CAP can lag that last event away, and waiting on an
+    // event that has already gone past is exactly how the session lock used to
+    // be held for good. Dropping the bus below closes the receiver, so a
+    // forwarder that outlasts this stops on its own a moment later.
+    let _ = tokio::time::timeout(FWD_DRAIN, fwd).await;
 
     if let Ok(mut tasks) = gw.tasks.lock() {
         tasks.remove(&session_id);

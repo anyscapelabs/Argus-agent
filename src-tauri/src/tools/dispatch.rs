@@ -5,9 +5,7 @@
 // implementation. Approval and the `mutating` table are the gate above this
 // file, not in it — by the time a name gets here it has already been allowed.
 
-use tauri::ipc::Channel;
-
-use crate::gateway::schema::StreamEvent;
+use crate::gateway::EventSink;
 
 use super::*;
 
@@ -21,7 +19,7 @@ pub struct ExecIn<'a, R: tauri::Runtime> {
     pub permission: &'a str,
     pub web: bool,
     pub approved: bool,
-    pub on_term: Option<(&'a Channel<StreamEvent>, u32)>,
+    pub on_term: Option<(&'a EventSink, u32)>,
 }
 
 // Manual `Clone` + `Copy`: every field is a reference, bool, or `Option` of

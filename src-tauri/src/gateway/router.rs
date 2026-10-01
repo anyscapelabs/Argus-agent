@@ -1,10 +1,8 @@
 use std::time::{Duration, Instant};
 
-use tauri::ipc::Channel;
-
 use super::adapters;
 use super::schema::{Avail, ChatReq, ChatResp, Provider, ReqLog, StreamEvent, ToolCall, WireUsage};
-use super::{store, Gateway};
+use super::{store, EventSink, Gateway};
 
 const MAX_ATTEMPTS: i64 = 10;
 
@@ -311,7 +309,7 @@ pub async fn run_opts(gw: &Gateway, req: &ChatReq, max_attempts: i64) -> Result<
 pub async fn stream_run(
     gw: &Gateway,
     mut req: ChatReq,
-    chan: &Channel<StreamEvent>,
+    chan: &EventSink,
 ) -> Result<StreamStats, String> {
     let Resolved {
         provs,

@@ -6,12 +6,16 @@
 use tauri::ipc::Channel;
 
 use crate::gateway::schema::StreamEvent;
-use crate::gateway::Gateway;
+use crate::gateway::{EventSink, Gateway};
 
 pub trait ChatSink: Send + Sync {
     fn emit(&self, ev: StreamEvent);
 
-    fn term_chan(&self) -> Option<&Channel<StreamEvent>> {
+    /// How a spawned task — a running command's output, the model's stream —
+    /// gets events back here. `None` only if this sink genuinely wants them
+    /// dropped; a bus sink must answer, or the chat goes silent for exactly
+    /// the events a user is waiting on.
+    fn event_sink(&self) -> Option<EventSink> {
         None
     }
 
@@ -25,8 +29,8 @@ impl ChatSink for Channel<StreamEvent> {
         let _ = self.send(ev);
     }
 
-    fn term_chan(&self) -> Option<&Channel<StreamEvent>> {
-        Some(self)
+    fn event_sink(&self) -> Option<EventSink> {
+        Some(EventSink::Channel(self.clone()))
     }
 }
 
@@ -44,6 +48,10 @@ pub struct BusSink<'a> {
 impl ChatSink for BusSink<'_> {
     fn emit(&self, ev: StreamEvent) {
         self.gw.publish(&self.session_id, ev);
+    }
+
+    fn event_sink(&self) -> Option<EventSink> {
+        Some(EventSink::Bus(self.gw.term_tx(&self.session_id)))
     }
 
     fn detached(&self) -> bool {
@@ -77,6 +85,10 @@ impl ChatSink for FanSink<'_> {
         }
 
         self.gw.publish(&self.child_id, ev);
+    }
+
+    fn event_sink(&self) -> Option<EventSink> {
+        Some(EventSink::Bus(self.gw.term_tx(&self.child_id)))
     }
 
     fn detached(&self) -> bool {

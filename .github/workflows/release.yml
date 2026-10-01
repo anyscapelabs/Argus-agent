@@ -183,6 +183,10 @@ jobs:
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARGUS_GOOGLE_CLIENT_ID: ${{ secrets.ARGUS_GOOGLE_CLIENT_ID }}
+          ARGUS_GOOGLE_CLIENT_SECRET: ${{ secrets.ARGUS_GOOGLE_CLIENT_SECRET }}
+          ARGUS_GITHUB_CLIENT_ID: ${{ secrets.ARGUS_GITHUB_CLIENT_ID }}
+          ARGUS_GITHUB_CLIENT_SECRET: ${{ secrets.ARGUS_GITHUB_CLIENT_SECRET }}
         with:
           tagName: ${{ env.TAG }}
           releaseName: Argus ${{ env.TAG }}

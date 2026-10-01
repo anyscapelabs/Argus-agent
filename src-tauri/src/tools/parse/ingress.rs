@@ -1,4 +1,4 @@
-// The ingress decision: what a model's text claims it did, and what it ran.
+// What the model's text claims it did, versus what it ran.
 use std::fmt::Write as _;
 
 use serde_json::Value;
@@ -32,9 +32,8 @@ pub fn build_executions(
     build_executions_styled(base_text, native_calls, act_base, ToolCallStyle::GlmXml)
 }
 
-// Native models called through the API, so their prose is never executed, even
-// when it looks like a call. Degraded models have no API channel left, so the
-// text is all there is.
+// Native models have an API channel, so their prose is never executed. Degraded
+// ones have no channel left and the text is all there is.
 pub fn build_executions_styled(
     base_text: &str,
     native_calls: &[ToolCall],
@@ -58,10 +57,9 @@ pub fn build_executions_styled(
         if a.tool.trim().is_empty() {
             continue;
         }
-        // An empty object from the text channel is breakage, not a call: no
-        // provider validated it, and running it mints `arguments: "{}"` history
-        // the model then imitates. Fail loudly so it re-sends. Zero-arg tools
-        // are the exception: `{}` is their documented invocation.
+        // An empty object from the text channel is breakage, not a call: running
+        // it mints `arguments: "{}"` history the model then imitates. Zero-arg
+        // tools are the exception: `{}` is their documented invocation.
         if args_is_empty_object(&a.args) && !takes_no_args(&a.tool) {
             let mut e = ToolExecution::from_action(&a, idx);
             idx += 1;
@@ -86,8 +84,8 @@ pub fn build_executions_styled(
     out
 }
 
-// Same tool, same args on both channels. That pair is an XML-template model's
-// signature, not a failure: the native call already ran.
+// Same tool, same args on both channels is an XML-template model's signature,
+// not a failure: the native call already ran.
 pub fn has_native_text_duplicate(base_text: &str, native_calls: &[ToolCall]) -> bool {
     if native_calls.is_empty() {
         return false;
@@ -113,9 +111,8 @@ pub fn has_orphaned_action_block(text: &str) -> bool {
     parse_actions(text).is_empty()
 }
 
-// Every span that reads as a tool tag, parseable or not. A span the extractor
-// rejects is still a span, or a half-typed `<action tool="x"` lands in the
-// transcript as text the user has to read.
+// Every span that reads as a tool tag, parseable or not, or a half-typed
+// `<action tool="x"` lands in the transcript as text the user has to read.
 fn action_spans(text: &str) -> Vec<(usize, usize)> {
     let mut out: Vec<(usize, usize)> = Vec::new();
     let mut off = 0usize;
@@ -147,14 +144,12 @@ fn action_spans(text: &str) -> Vec<(usize, usize)> {
 }
 
 /// The markup goes back to the model on `tool_calls`, so a copy left in the prose
-/// hands it a turn claiming an action no call backs, and re-teaches the syntax
-/// it just retired.
+/// claims an action no call backs and re-teaches the syntax.
 pub fn strip_actions(text: &str) -> String {
     render_actions(text, &[])
 }
 
-/// A tool tag survives only if it became an execution: rewritten in place, or
-/// appended for a native call with no tag of its own. A tag that cannot execute
+/// A tool tag survives only if it became an execution. One that cannot execute
 /// is still not something the user should see.
 pub fn render_actions(text: &str, execs: &[ToolExecution]) -> String {
     let spans = action_spans(text);

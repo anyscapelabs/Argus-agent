@@ -1,16 +1,11 @@
-// Which dialect this model speaks, and what to remember about the step.
-
 use super::Turn;
 use crate::gateway::router;
 use crate::gateway::Gateway;
 use crate::tools::{self, ToolCallStyle};
 
-/// Which dialect this model speaks for this turn.
-///
-/// Degraded replies have no API channel, so their text must execute
-/// regardless of style. Otherwise the stored classification decides, and an
-/// unknown model showing the duplication signature is classified once here
-/// so the next turn resolves to the template style directly.
+/// Degraded replies have no API channel, so their text must execute regardless
+/// of style. Otherwise the stored classification decides, and an unknown model
+/// showing the duplication signature is classified once here.
 impl Turn {
     pub(super) fn resolve_style(
         gw: &Gateway,
@@ -37,14 +32,9 @@ impl Turn {
         style
     }
 
-    /// Note the two things worth remembering about a step. Both are recorded
-    /// where the classification happens, so a lesson exists for the same turn
-    /// that caused it.
-    ///
-    /// A turn that wrote its tool call as XML text has told us which dialect it
-    /// speaks. A degraded turn means the provider refused the tool schemas — the
-    /// turn still worked via the in-band format, so that is infrastructure, not
-    /// a model failure, and is recorded against the host.
+    /// A degraded turn means the provider refused the tool schemas — the turn still
+    /// worked in-band, so that is infrastructure, not a model failure, and is
+    /// recorded against the host.
     pub(super) fn record_observations(
         &self,
         gw: &Gateway,

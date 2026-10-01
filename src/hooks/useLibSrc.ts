@@ -3,10 +3,8 @@ import { useEffect, useState } from "react";
 
 import { libraryPath, type Attachment } from "../lib/ipc";
 
-// A file the user picked is named by its path, so its image needs no lookup. A
-// file out of the library has only an id, so the transcript asks for the path
-// once and remembers it: reopening a chat must not re-ask the backend for
-// every image in it.
+// A library file has only an id, so the transcript asks for the path once and
+// remembers it: reopening a chat must not re-ask for every image in it.
 const CACHE = new Map<string, string>();
 
 export function libSrc(id: string): string | null {
@@ -31,8 +29,7 @@ export function useLibSrc(id: string | null): string | null {
         if (live) setSrc(convertFileSrc(path));
       })
       .catch(() => {
-        // The file is gone. The row goes with it, and the chip falls back to
-        // an icon rather than a broken image.
+        // File gone; the chip falls back to an icon, not a broken image.
       });
 
     return () => {

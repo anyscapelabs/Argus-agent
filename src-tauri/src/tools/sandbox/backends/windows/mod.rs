@@ -48,8 +48,7 @@ pub fn job_plan(policy: &Policy) -> SandboxResult<Plan> {
     }))
 }
 
-/// Windows has no per-path deny, only per-path grant, so a write scope needs
-/// the write bit and a read scope does not.
+/// No per-path deny on Windows, only grant: a write scope needs the write bit.
 pub fn grant_mask(access: FsAccess) -> u32 {
     match access {
         FsAccess::Read => READ_MASK,
@@ -64,8 +63,8 @@ pub fn grant_list(plan: &JobPlan) -> Vec<(PathBuf, u32)> {
         let mask = grant_mask(rule.access);
 
         match out.iter_mut().find(|(p, _)| *p == rule.path) {
-            // Two rules on one path must merge, or the second grant replaces
-            // the first and a write scope ends up read-only.
+            // Two rules on one path must merge: the second grant otherwise replaces the
+            // first and a write scope ends up read-only.
             Some((_, m)) => *m |= mask,
             None => out.push((rule.path.clone(), mask)),
         }
@@ -126,8 +125,7 @@ impl Backend for WinBackend {
     fn plan(&self, policy: &Policy) -> SandboxResult<Plan> {
         self.available()?;
 
-        // An AppContainer profile that exists on disk is not a boundary that
-        // enforces. Refuse rather than pretend.
+        // On disk is not enforcing. Refuse rather than pretend.
         self.selftest()?;
 
         job_plan(policy)
@@ -141,10 +139,8 @@ impl Backend for WinBackend {
             });
         };
 
-        // Containment is applied by the raw spawn path, not post-spawn: the
-        // token is minted at CreateProcessW, and there is no later hook that
-        // can add it. Reaching here means something asked for a Command we
-        // cannot confine.
+        // The token is minted at CreateProcessW, so a Command we got here cannot be
+        // confined.
         Err(SandboxError::Apply {
             backend: NAME,
             why: format!(
@@ -170,8 +166,7 @@ pub fn spawn(
     spawn::spawn_appcontainer(exe, args, cwd, &caps, job, &grants, env)
 }
 
-// Reads a path that exists on every Windows install, so a refusal is a
-// boundary decision and never a missing file.
+// Exists on every Windows install, so a refusal is a boundary decision.
 pub const CANARY_TARGET: &str = r"C:\Windows\System32\drivers\etc\hosts";
 pub const CANARY_SHELL: &str = r"C:\Windows\System32\cmd.exe";
 
@@ -207,7 +202,6 @@ pub fn canary_verdict(control_ok: bool, with_grant: bool, sandboxed: bool) -> Sa
 }
 
 #[cfg(target_os = "windows")]
-// True when the AppContainer process managed to read the canary target.
 fn read_target(grants: &[(PathBuf, u32)]) -> bool {
     let jp = JobPlan {
         memory_bytes: None,
@@ -251,8 +245,7 @@ fn read_target(grants: &[(PathBuf, u32)]) -> bool {
         return false;
     }
 
-    // Exit code alone cannot tell a read from an empty file, so the bytes have
-    // to be read too.
+    // Exit code cannot tell a read from an empty file.
     let mut child = child;
     let mut text = String::new();
     let Some(mut out) = child.out.take() else {
@@ -265,8 +258,7 @@ fn read_target(grants: &[(PathBuf, u32)]) -> bool {
 }
 
 #[cfg(target_os = "windows")]
-// Grant first: a boundary that cannot even read a path it was given is our
-// bug, and it must be reported as such rather than as "not enforcing".
+// Grant first: a boundary that cannot read a path it was given is our bug.
 fn probe() -> SandboxResult<Probe> {
     let control_ok = std::process::Command::new(CANARY_SHELL)
         .args(["/c", "type", CANARY_TARGET])

@@ -24,7 +24,7 @@ const TERM_TIMEOUT: u64 = 300;
 
 const WATCH_IDLE: std::time::Duration = std::time::Duration::from_millis(150);
 
-/// Bounds the relay wait. The turn is already over.
+/// The turn is already over; this only bounds the relay wait.
 const FWD_DRAIN: std::time::Duration = std::time::Duration::from_secs(5);
 
 const WAKE_SLOTS: u32 = 240;
@@ -73,9 +73,8 @@ pub fn approval_id() -> String {
     format!("ap{}", uuid::Uuid::new_v4().as_simple())
 }
 
-/// Put a message in a conversation without running a turn for it, and tell
-/// whoever is looking at that conversation to re-read it. This is how a card
-/// gets into the middle of a chat the agent is already answering.
+/// Post a message without running a turn, then tell the open chat to re-read.
+/// This is how a card lands mid-answer.
 pub fn post(gw: &Gateway, session_id: &str, role: &str, body: &str) {
     if let Ok(conn) = gw.conn.lock() {
         let _ = store::add_msg(
@@ -141,9 +140,8 @@ pub fn announce<R: tauri::Runtime>(
                     session_id: sid.clone(),
                 };
 
-                // A turn nobody asked for still has a person reading it, or
-                // the open chat. Without this the wake refuses every step
-                // that needs approving, because it thinks it is alone.
+                // Without this the wake refuses every step needing approval:
+                // it thinks it is alone.
                 gw.go_live(&sid);
 
                 let _ = crate::tools::shell::CANCEL
@@ -286,10 +284,9 @@ pub async fn send<R: tauri::Runtime>(
 ) -> Result<(), String> {
     let out = turn(gw, app, session_id, content, attachments, sink, role).await;
 
-    // The forwarder in sess_chat_stream only releases the session lock on
-    // TurnEnd, so this cannot sit behind a `?`.
+    // The forwarder only releases the session lock on TurnEnd, so this cannot
+    // sit behind a `?`.
     if let Err(err) = &out {
-        // Watchers have no promise to reject.
         sink.emit(StreamEvent::Err { msg: err.clone() });
     }
 
@@ -329,11 +326,8 @@ async fn turn<R: tauri::Runtime>(
                 },
             )?;
         }
-        // The previous turn's resume is deliberately left in place: it is the
-        // whole point of a resume, and the first `project()` below is the only
-        // reader. It is overwritten on every unfinished stop and cleared the
-        // moment a turn finishes, so it can never describe work the model has
-        // already moved past.
+        // The previous turn's resume stays in place; the first `project()` below
+        // is its only reader, and it is overwritten on every unfinished stop.
     }
 
     let model_chan = sink.event_sink().unwrap_or_else(EventSink::null);
@@ -386,8 +380,7 @@ async fn turn<R: tauri::Runtime>(
     let recent = turn.recent;
 
     {
-        // `recent` is dead after the turn; move the names out instead of
-        // cloning them for a summary the model never sees.
+        // `recent` is dead after the turn; move the names out, no clone.
         let tools_seen: Vec<String> = recent.into_iter().map(|(t, _)| t).collect();
         let mut ep =
             crate::memory::session_memory::session_memory_from_turn(content, &tools_seen, finished);
@@ -507,7 +500,7 @@ pub async fn sess_chat_stream(
         out = crate::tools::shell::CANCEL.scope(notify.clone(), crate::tools::notepad::SESSION_ID.scope(Some(session_id.clone()), send(&gw, &app, &session_id, &content, attachments.as_deref(), &sink, "user"))) => out,
     };
 
-    // A bus busier than BUS_CAP can lag the last event away.
+    // A bus busier than BUS_CAP can lag the last event away, so drain it.
     let _ = tokio::time::timeout(FWD_DRAIN, fwd).await;
 
     if let Ok(mut tasks) = gw.tasks.lock() {

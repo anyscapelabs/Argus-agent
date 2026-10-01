@@ -1,6 +1,5 @@
-// Emphasis is delimiter matching, not search: a delimiter run opens only if a
-// matching closer follows, so this scans once and can never match across a tag
-// boundary the way a chain of regex passes can.
+// Emphasis is delimiter matching, not search: a run opens only if a matching
+// closer follows, so a chain of regex passes can never match across a tag here.
 
 import { scanTagEnd } from "./tokenize";
 import {
@@ -21,7 +20,7 @@ const RPAREN = 0x29;
 const BANG = 0x21;
 const BACKSLASH = 0x5c;
 
-/** A matched delimiter pair. `next` is past the closing run, `to` is its start. */
+/** `next` is past the closing run, `to` is its start. */
 type Mark = { tag: string; from: number; to: number; next: number };
 
 /** Format the inline spans of one run of tag-free prose. */
@@ -91,7 +90,6 @@ function inlineMd(s: string): string {
   return out;
 }
 
-/** Escape the three characters that would otherwise read back as markup. */
 function esc(s: string): string {
   let out = "";
   for (let i = 0; i < s.length; i++) {
@@ -104,7 +102,7 @@ function esc(s: string): string {
   return out;
 }
 
-/** Index of the closing run of `ch`, or `-1`. 3+ backticks close on a run of the same length. */
+/** Index of the closing run of `ch`, or `-1`. A run closes on one of equal length. */
 function closingRun(s: string, open: number, ch: number): number {
   let run = 1;
   while (open + run < s.length && s.charCodeAt(open + run) === ch) run++;
@@ -123,9 +121,8 @@ function closingRun(s: string, open: number, ch: number): number {
 }
 
 /**
- * Whether the delimiter at `open` is emphasis, and where it closes.
- *
- * Without the flanking checks `snake_case_name` and `a * b` turn italic.
+ * Whether the delimiter at `open` is emphasis, and where it closes. Without the
+ * flanking checks `snake_case_name` and `a * b` turn italic.
  */
 function matchEmphasis(s: string, open: number, ch: number): Mark | null {
   // 2+ `*`/`_` is strong. `~` is never bold: one is not emphasis, two strike.
@@ -236,9 +233,9 @@ function matchingBracket(s: string, at: number): number {
 }
 
 /**
- * Only http(s) destinations render as links. A relative path or a
- * `javascript:` URL shows its text and drops the target, so a model cannot put
- * a live link in front of the user.
+ * Only http(s) destinations render as links. A relative path or a `javascript:`
+ * URL shows its text and drops the target, so a model cannot put a live link in
+ * front of the user.
  */
 function renderLink(text: string, href: string, isImage: boolean): string {
   const body = isImage ? "" : inlineMd(text);
@@ -255,9 +252,9 @@ function isHttpUrl(href: string): boolean {
 }
 
 /**
- * Markdown must never rewrite tag bodies: backticks in action JSON or terminal
- * output starting with `#` would corrupt commands and records. So each span is
- * either a tag, copied across untouched, or prose, which is formatted.
+ * Markdown must never rewrite tag bodies: backticks in action JSON would
+ * corrupt commands. Each span is a tag, copied across, or prose, which is
+ * formatted.
  */
 export function inlineOutside(line: string): string {
   let out = "";
@@ -272,7 +269,7 @@ export function inlineOutside(line: string): string {
 
     const scan = scanTagEnd(line, i + 1);
     if (scan.kind === "unterminated") {
-      // No `>` before the end of the line: a comparison, not a tag.
+      // No `>` before end of line: a comparison, not a tag.
       i++;
       continue;
     }
@@ -291,9 +288,9 @@ export function inlineOutside(line: string): string {
 }
 
 /**
- * Whether the text between `<` and `>` is a tag rather than prose. No whitelist
- * here: the caller decides what a tag means, and dropping one would leave its
- * body as raw text in the chat.
+ * Whether the text between `<` and `>` is a tag rather than prose. No whitelist:
+ * the caller decides what a tag means, and dropping one leaves its body as raw
+ * text.
  */
 function isTagRegion(line: string, from: number, to: number): boolean {
   let i = from;
@@ -314,7 +311,6 @@ function isTagRegion(line: string, from: number, to: number): boolean {
       continue;
     }
     if (c === 0x3d) {
-      // `name="value"`: the name, the `=`, then the value.
       i++;
       while (i < to && isSpaceAt(line, i)) i++;
       if (

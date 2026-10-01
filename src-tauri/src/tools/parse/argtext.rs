@@ -1,7 +1,4 @@
-// Argument text: the `<arg_key>`/`<arg_value>` pair, the length rules for a
-// value, and the protocol prefix a model leaves at the head of a call. The
-// closing tag carries a zero-width joiner so a model cannot close a call with a
-// lookalike string.
+// The closing tag carries a zero-width joiner so a lookalike cannot close a call.
 use serde_json::Value;
 
 use super::normalize::TOOL_CALL_CLOSE;
@@ -11,15 +8,9 @@ pub(super) const ARG_KEY_CLOSE: &str = "</arg_key>";
 pub(super) const ARG_VALUE: &str = "<arg_value>";
 pub(super) const ARG_VALUE_CLOSE: &str = "</arg_value>";
 
-/// The pairs come in three shapes. Closed, they are
-/// `<arg_key>k</arg_key><arg_value>v</arg_value>`. Open — a stream cut mid-call,
-/// or a model that omits the closes — they run
-/// `<arg_key>k<arg_value>v<arg_key>k2<arg_value>v2`, where the next key is the
-/// only thing that ends a value. And with the value opener missing entirely,
-/// `<arg_key>k</arg_key>v`, which is what GLM emits under load.
-///
-/// Reading only the closed shape is how a whole tool call reached the reader as
-/// raw text. Dropping the third shape discarded the arguments AND the call.
+/// Three shapes: closed, open (a stream cut mid-call), and no value opener,
+/// which is what GLM emits under load. Dropping the third discarded the
+/// arguments AND the call.
 pub(super) fn arg_pairs(body: &str) -> (serde_json::Map<String, Value>, usize) {
     let mut out = serde_json::Map::new();
     let mut rest = body;
@@ -30,9 +21,7 @@ pub(super) fn arg_pairs(body: &str) -> (serde_json::Map<String, Value>, usize) {
         let v = tail.find(ARG_VALUE);
         let key_end = tail.find(ARG_KEY_CLOSE);
 
-        // A key ends at its own closer, or at the value tag that follows it.
-        // Only when the value tag never opened does the closer end it:
-        // `command</arg_key>cargo test`.
+        // No value tag: the closer ends the key. `command</arg_key>cargo test`.
         let (key, after) = match v {
             Some(v) => {
                 let key = match key_end {
@@ -74,9 +63,8 @@ pub(super) fn first_of(hay: &str, needles: &[&'static str]) -> Option<(usize, &'
         .min_by_key(|(i, _)| *i)
 }
 
-/// How far a value runs past its `<arg_key>`, so the pair can be taken whole:
-/// the `</arg_value>` and what it wraps, or the next key, the closing wrapper,
-/// or the end of the line.
+/// How far a value runs past its `<arg_key>`: the `</arg_value>` and what it
+/// wraps, or the next key, the closing wrapper, or the end of the line.
 pub(super) fn arg_value_len(after_key: &str) -> usize {
     let Some(v) = after_key.find(ARG_VALUE) else {
         return 0;
@@ -91,8 +79,7 @@ pub(super) fn arg_value_len(after_key: &str) -> usize {
     }
 }
 
-/// Whatever the salvage above could not read still must not reach a reader. A
-/// protocol tag gets into the transcript by becoming an action, or not at all.
+/// Whatever salvage could not read still must not reach a reader.
 pub(super) fn strip_protocol(text: &str) -> String {
     const TAGS: &[&str] = &[
         "<tool_call>",
@@ -125,11 +112,9 @@ pub(super) fn strip_protocol(text: &str) -> String {
                 },
             };
 
-            // A pair nobody claimed takes its value with it. Stripping the tag
-            // and leaving `backgroundfalsecommandsed -n` behind trades one
-            // unreadable thing for another. A key with no value is not a pair —
-            // it is a `<` in prose, and eating that is the mistake this
-            // function exists to stop making.
+            // An unclaimed pair takes its value with it; leaving
+            // `backgroundfalsecommandsed -n` behind trades one unreadable thing
+            // for another. A key with no value is a `<` in prose.
             let end = if *tag == ARG_KEY {
                 let v = arg_value_len(&tail[end..]);
 

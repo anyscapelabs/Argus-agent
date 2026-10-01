@@ -46,8 +46,8 @@ impl RawChild {
         self.err.take().map(tokio::fs::File::from_std)
     }
 
-    // Wait off the runtime: the pipe is synchronous. HANDLE is Copy but not
-    // Send, so it travels as the integer the kernel treats it as.
+    // HANDLE is Copy but not Send, so it travels as the integer the kernel
+    // treats it as.
     pub async fn wait(&self) -> i64 {
         let handle = self.process.0 as usize;
 
@@ -57,7 +57,6 @@ impl RawChild {
         }
     }
 
-    // Blocking. The caller owns the thread.
     pub fn wait_blocking(&self) -> i64 {
         wait_handle(self.process.0 as usize)
     }
@@ -177,7 +176,7 @@ fn env_block(keep: Option<&[String]>) -> Vec<u16> {
         None => std::env::vars().collect(),
     };
 
-    // Windows expects alphabetical order, and case-duplicate keys are undefined.
+    // Alphabetical order, and case-duplicate keys are undefined.
     let mut vars = vars;
     vars.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
     vars.dedup_by(|a, b| a.0.to_lowercase() == b.0.to_lowercase());

@@ -1,5 +1,3 @@
-// Structured tool records, the resume slot, votes, supersede, and the
-// dangling-result cleanup. These all touch rows that live next to messages.
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
@@ -57,8 +55,8 @@ pub fn add_event(conn: &Connection, e: &NewEvent) -> Result<ToolEvent, String> {
     .map_err(|err| err.to_string())
 }
 
-// Every event for the session, oldest first. Keyed by session rather than
-// liveness: superseding a message retries the turn, it does not un-run tools.
+// Keyed by session, not liveness: superseding a message retries the turn, it
+// does not un-run tools.
 pub fn list_events(conn: &Connection, session_id: &str) -> Result<Vec<ToolEvent>, String> {
     let mut stmt = conn
         .prepare(&format!(
@@ -165,9 +163,8 @@ pub fn has_unreplied_duplicate(
 }
 
 pub fn clean_dangling(conn: &Connection, session_id: &str) -> Result<usize, String> {
-    // `local = 0` or the card a local row holds is greyed out the next time
-    // the chat is opened: nothing ever answers a line the app answered itself,
-    // which is exactly the shape this query exists to catch.
+    // Nothing ever answers a line the app answered itself, which is exactly
+    // the shape this query exists to catch.
     conn.execute(
         "UPDATE messages SET active = 0 \
          WHERE session_id = ?1 AND role = 'user' AND active = 1 AND local = 0 \

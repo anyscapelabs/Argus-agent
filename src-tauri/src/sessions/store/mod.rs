@@ -1,9 +1,5 @@
-// One SQLite handle, five concerns. The submodules own their tables; this
-// file only routes, so callers keep reaching everything at `store::`.
-//
-// Why not one big file: sessions, messages, events, and folders evolve on
-// different clocks — a schema change to `tool_events` should not have to
-// survive a re-read of session lifecycle code to get reviewed.
+// The submodules own their tables; this file only routes, so callers keep
+// reaching everything at `store::`.
 
 pub mod events_resume;
 pub mod folders_export;

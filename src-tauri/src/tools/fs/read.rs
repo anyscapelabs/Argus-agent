@@ -77,8 +77,8 @@ pub fn read(conn: &Connection, library_dir: &Path, args: &Value) -> Result<Strin
         format!("{name} ({ext}) — characters {offset} to {next} of {total}\n\n")
     };
 
-    // The point of the whole thing: the next call is told exactly where to
-    // pick up, so "read the rest" cannot land on the same page twice.
+    // The next call is told exactly where to pick up, so "read the rest" cannot
+    // land on the same page twice.
     let tail = if next < total {
         format!(
             "\n\n[{name} is {total} characters. You have {offset} to {next}. \
@@ -91,9 +91,8 @@ pub fn read(conn: &Connection, library_dir: &Path, args: &Value) -> Result<Strin
     Ok(format!("{head}{body}{tail}"))
 }
 
-/// Every file handed to this conversation, canonicalised. A path is only
-/// openable if it is on this list, which is why attaching a file is the whole
-/// of the permission.
+/// A path is only openable if it is on this list, so attaching is the whole of
+/// the permission.
 fn attached_paths(
     conn: &Connection,
     sid: &str,

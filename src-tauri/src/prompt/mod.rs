@@ -1,11 +1,4 @@
-// Prompt assembly in four files: the layered system prompt, attachment
-// inlining, budget accounting, and the result types. This file only routes, so
-// every caller still reaches `prompt::project` and `prompt::Projection` exactly
-// as before.
-//
-// The split is by change-rate, not by size: the system prompt changes when the
-// product's voice changes, budgets when models change, attachments when the
-// library does. One file made all three impossible to review separately.
+// Routes only: split by change-rate (prompt voice, budgets, library).
 
 use tauri::State;
 

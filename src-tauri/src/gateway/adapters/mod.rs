@@ -20,11 +20,8 @@ impl CallError {
         }
     }
 
-    /// Name a stall for what it is.
-    ///
-    /// A raw reqwest `TimedOut` does not say whether the provider never sent
-    /// headers or went quiet partway through a reply, and those are different
-    /// failures to someone watching a turn that stopped moving.
+    /// A raw `TimedOut` cannot tell "never sent headers" from "went quiet mid
+    /// reply", and those are different failures to someone watching.
     pub fn from_send(err: &reqwest::Error, sent_any: bool) -> Self {
         if !err.is_timeout() {
             return Self {
@@ -86,9 +83,8 @@ pub fn real_name(wire: &str, tools: &[ToolSpec]) -> String {
         .unwrap_or_else(|| wire.to_string())
 }
 
-/// Extension to the media type a provider actually expects. Anything not
-/// listed is not sent, because a wrong type is a request the provider rejects
-/// rather than one it decodes.
+/// Unlisted extensions are not sent: a wrong type is a request the provider
+/// rejects rather than one it decodes.
 fn media_type(path: &str) -> Option<&'static str> {
     let ext = path.rsplit('.').next()?.to_ascii_lowercase();
 

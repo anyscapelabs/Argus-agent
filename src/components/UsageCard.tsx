@@ -9,7 +9,7 @@ const WINDOWS: { key: UsageWindow; label: string }[] = [
 ];
 
 type Props = {
-  /// The stored turn carries the window, so `/usage month` comes back on Month.
+  /// The turn carries the window: `/usage month` comes back on Month.
   window?: UsageWindow;
 };
 
@@ -17,8 +17,8 @@ export default function UsageCard({ window: start = "week" }: Props) {
   const [win, setWin] = useState<UsageWindow>(start);
   const [report, setReport] = useState<Usage | null>(null);
 
-  // A view, not a snapshot: the turn stores what the user typed and the
-  // numbers are read when the card is drawn.
+  // A view, not a snapshot: the turn stores the command, the numbers are read
+  // when the card is drawn.
   useEffect(() => {
     let live = true;
     setReport(null);
@@ -29,8 +29,7 @@ export default function UsageCard({ window: start = "week" }: Props) {
           setReport(out.usage);
         }
       })
-      // Not worth blanking the card, and nothing to retry: the next tab change
-      // asks again.
+      // Nothing to retry: the next tab change asks again.
       .catch(() => {});
 
     return () => {
@@ -111,7 +110,6 @@ export default function UsageCard({ window: start = "week" }: Props) {
   );
 }
 
-// The same height the numbers take, so the card does not jump when they land.
 function Loading() {
   return (
     <div className="h-[168px] animate-pulse rounded-xl bg-bg-hover-primary" />
@@ -139,7 +137,7 @@ function Calendar({
   }
 
   // Scaled to this window's busiest day: a fixed threshold makes every month
-  // look like the same quiet month.
+  // look the same.
   const peak = Math.max(...days.map((d) => d.tokens), 1);
   const cols = { gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` };
 
@@ -185,7 +183,7 @@ function tick(day: string, window: UsageWindow): string {
 }
 
 // Decades, not quarters: one heavy day is often twenty times a quiet one, and
-// quarter cuts paint all six quiet days the same grey.
+// quarter cuts paint the quiet days the same grey.
 function level(ratio: number): string {
   if (ratio <= 0) {
     return "bg-bg-hover-primary";
@@ -237,8 +235,7 @@ function tokens(n: number): string {
   return n.toString();
 }
 
-// A cent under is not $0.00, and the point of the number is that it is not
-// zero.
+// A cent under is not $0.00.
 function money(cost: number): string {
   if (cost > 0 && cost < 0.01) {
     return "under a cent";
@@ -247,9 +244,8 @@ function money(cost: number): string {
   return `$${cost.toFixed(2)}`;
 }
 
-// Same shape as the transcript's "Worked for" label, so both read as one unit.
-// Seconds drop out once they are the smaller half, which is also when they
-// would wrap the strip.
+// Same shape as the transcript's "Worked for" label. Seconds drop out once
+// they are the smaller half — that is also when they would wrap the strip.
 function duration(ms: number): string {
   const sec = Math.max(0, Math.round(ms / 1000));
 

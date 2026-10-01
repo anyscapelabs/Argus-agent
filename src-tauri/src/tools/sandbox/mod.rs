@@ -58,8 +58,8 @@ fn rank(p: Profile) -> u8 {
     }
 }
 
-/// Keep the tighter of two profiles. Security boundary: the user's setting is
-/// the ceiling and the model may only tighten, never loosen.
+/// Keep the tighter of two. Security boundary: the user's setting is the
+/// ceiling and the model may only tighten.
 pub fn tighten(requested: Profile, ceiling: Profile) -> Profile {
     if rank(requested) >= rank(ceiling) {
         requested
@@ -68,9 +68,8 @@ pub fn tighten(requested: Profile, ceiling: Profile) -> Profile {
     }
 }
 
-/// The model's `profile` arg is a request, clamped to the user's ceiling and to
-/// `Restricted` for unvouched content. Asking for `host` is how an injection
-/// escapes, so the answer is the ceiling, not an error.
+/// The model's `profile` arg is a request. Asking for `host` is how an
+/// injection escapes, so the answer is the ceiling, not an error.
 pub fn effective_profile(
     args: &Value,
     ceiling: Profile,
@@ -81,7 +80,7 @@ pub fn effective_profile(
     let mut eff = tighten(asked, ceiling);
 
     // An empty allowlist is silence, not refusal: "never said" must not confine
-    // every `git clone` on a fresh install.
+    // every `git clone`.
     if !allow_hosts.is_empty() {
         if let Some(o) = origin {
             if classify(o, allow_hosts) == Trust::Untrusted {
@@ -93,8 +92,7 @@ pub fn effective_profile(
     Ok(eff)
 }
 
-/// Unset, or a lock failure, reads as `Host` — pre-setting behaviour, and a
-/// poisoned db is already on the way down.
+/// Unset, or a lock failure, reads as `Host` — pre-setting behaviour.
 pub fn default_profile(gw: &Gateway) -> Profile {
     let Ok(conn) = gw.conn.lock() else {
         return Profile::Host;
@@ -129,8 +127,8 @@ fn workdir(cwd: Option<&str>) -> PathBuf {
     }
 }
 
-// Project without cwd silently confines to the launch directory and the model
-// burns turns on bare "Permission denied". Fail up front with the fix attached.
+// Project without cwd silently confines to the launch directory, and the model
+// burns turns on bare "Permission denied".
 pub fn project_root_check(profile: Profile, cwd: Option<&str>) -> Option<SandboxError> {
     let given = cwd.map(str::trim).is_some_and(|s| !s.is_empty());
 
@@ -142,9 +140,8 @@ pub fn project_root_check(profile: Profile, cwd: Option<&str>) -> Option<Sandbox
     None
 }
 
-// A bare denial burns turns, so name the allowed root. The prefix marks this as
-// a harness note: the chat loop matches it to record that the sandbox refused,
-// not the model.
+// A bare denial burns turns, so name the allowed root. The prefix marks this a
+// harness note: the chat loop matches it to record the refusal as the sandbox's.
 pub const DENIAL_NOTE: &str = "Argus note, not command output";
 
 pub fn denial_hint(isolated: bool, exit: i64, combined: &str, root: &str) -> Option<String> {

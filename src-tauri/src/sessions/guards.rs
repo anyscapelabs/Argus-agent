@@ -1,6 +1,3 @@
-// Loop guards: refuse a call when the agent is going in circles, and track how
-// much of a turn's budget is left.
-
 pub fn repeated(recent: &[(String, String)], key: &(String, String)) -> bool {
     if recent.iter().rev().take_while(|p| *p == key).count() >= 2 {
         return true;
@@ -39,13 +36,9 @@ pub fn repeated(recent: &[(String, String)], key: &(String, String)) -> bool {
     recent.iter().rev().take_while(same_site).count() >= 2
 }
 
-// Args that vary without changing what the call does: a retry differing only
-// here is the same attempt in different clothes.
-//
-// `background` and `privilege` are deliberately NOT here. They are the two
-// moves the tool description tells the agent to make when a foreground call
-// keeps failing, and erasing them makes the guard refuse the exact recovery it
-// exists to encourage.
+// Args that vary without changing what the call does. `background` and
+// `privilege` are deliberately NOT here — they are the recovery the tool
+// description tells the agent to make, and erasing them refuses it.
 const THRASH_VOLATILE: &[&str] = &["timeout", "label", "wake"];
 
 fn stable_args(args: &str) -> String {
@@ -60,8 +53,7 @@ fn stable_args(args: &str) -> String {
     }
 }
 
-// Each value contributes under its own key: `fs.write` pairs a long body with a
-// one-token path, and a shared body must not outvote the path telling them apart.
+// Each value counts under its own key: a shared body must not outvote the path.
 fn arg_tokens(stable: &str) -> std::collections::HashSet<String> {
     let mut toks = std::collections::HashSet::new();
 
@@ -106,9 +98,7 @@ fn arg_tokens(stable: &str) -> std::collections::HashSet<String> {
     toks
 }
 
-// No comparable tokens is no evidence, so un-informative calls read as
-// different. Scoring emptiness as maximal similarity blocked
-// `{"background":true}` against `false`.
+// No comparable tokens is no evidence: un-informative calls read as different.
 fn jaccard(a: &std::collections::HashSet<String>, b: &std::collections::HashSet<String>) -> f64 {
     if a.is_empty() || b.is_empty() {
         return 0.0;
@@ -122,8 +112,7 @@ fn jaccard(a: &std::collections::HashSet<String>, b: &std::collections::HashSet<
     }
 }
 
-// The short argument saying *which* thing this call is about. A long body
-// cannot outvote it: same content, three files, is three files.
+// The short argument saying *which* thing this call is about.
 const IDENTITY_KEYS: &[&str] = &["path", "id", "name", "url", "pattern", "query", "file"];
 
 fn identity(stable: &str) -> Option<String> {
@@ -142,8 +131,7 @@ fn identity(stable: &str) -> Option<String> {
     None
 }
 
-/// The one deliberate move that must never read as a retry of itself. It only
-/// *adds* a flag, so no similarity metric can tell it from churn.
+/// The one deliberate move that must never read as a retry of itself.
 fn escalates(win: &[&str], proposed: &str) -> bool {
     let asked_for = |a: &str| {
         let v: serde_json::Value = match serde_json::from_str(a) {
@@ -159,9 +147,7 @@ fn escalates(win: &[&str], proposed: &str) -> bool {
     asked_for(proposed) && !win.iter().any(|a| asked_for(a))
 }
 
-/// Growth counts: `ls` then `ls -la` is one call being refined. Divergence
-/// does not: four barely-alike attempts are four ideas, and stopping the fourth
-/// protects the agent.
+/// Growth counts: `ls` then `ls -la` is one call refined. Divergence does not.
 fn same_action(a: &str, b: &str) -> bool {
     if let (Some(ia), Some(ib)) = (identity(a), identity(b)) {
         return ia == ib;
@@ -180,9 +166,8 @@ fn same_action(a: &str, b: &str) -> bool {
 }
 
 // Same tool, failing streak, arguments equal modulo volatile keys or a chain of
-// near-identical variants. Successes never trip it: sequential similar calls
-// that work are real multi-step work. `hist`/`failed` hold completed attempts
-// only; `key` is the one proposed.
+// near-identical variants. Successes never trip it. `hist`/`failed` hold
+// completed attempts only; `key` is the one proposed.
 pub fn thrashing(hist: &[(String, String)], failed: &[bool], key: &(String, String)) -> bool {
     debug_assert_eq!(
         hist.len(),
@@ -210,14 +195,12 @@ pub fn thrashing(hist: &[(String, String)], failed: &[bool], key: &(String, Stri
     if escalates(&refs[..3], refs[3]) {
         return false;
     }
-    // Every step alike, and the last still the first: drift compounds, so
-    // neighbours alone let four unrelated attempts through.
+    // Every step alike, and the last still the first: drift compounds.
     refs.windows(2).all(|w| same_action(w[0], w[1])) && same_action(refs[0], refs[refs.len() - 1])
 }
 
-// Bounded context tokens per turn, so a spiral becomes a verdict instead of a
-// cost. Sized off the model's own window: a 1M model is not throttled like a
-// 32k one.
+// Bounded context tokens per turn, sized off the model's own window: a 1M
+// model is not throttled like a 32k one.
 const BUDGET_WINDOW_FRACTION: f64 = 0.25;
 pub const BUDGET_WARN_FRACTION: f64 = 0.7;
 const BUDGET_MIN: i64 = 32_000;
@@ -233,8 +216,7 @@ pub fn turn_budget(ctx_tokens: i64) -> i64 {
     scaled.clamp(BUDGET_MIN, BUDGET_MAX)
 }
 
-// Nudge at 70%, stop at 100%. Enforced, not asked for politely: a warning a
-// model ignores is not a budget.
+// Nudge at 70%, stop at 100%. Enforced, not asked for politely.
 pub fn budget_state(spent: i64, budget: i64) -> Budget {
     if budget <= 0 || spent < (BUDGET_WARN_FRACTION * budget as f64) as i64 {
         return Budget::Ok;

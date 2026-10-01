@@ -18,12 +18,12 @@ import {
 
 const DEFAULT_ID = "default";
 
-// A blank row reads as a broken one, so it is never blank.
+// A blank row reads as a broken one.
 export function profileLabel(p: { name: string }): string {
   return p.name.trim() === "" ? "Default" : p.name.trim();
 }
 
-// Weakest rung first. The label is what a person is agreeing to.
+// Weakest rung first; the label is what a person is agreeing to.
 export const CAPABILITIES: { key: Grant["capability"]; label: string; note: string }[] = [
   {
     key: "see_activity",
@@ -64,9 +64,9 @@ type State = {
   loading: boolean;
   // What a new chat starts on, set before the chat exists.
   activeId: string;
-  // The open chat's profile. Null means it has not asked yet.
+  // Null means the open chat has not asked yet.
   sessionId: string | null;
-  // The matrix of the profile whose detail page is open. Null until it asks.
+  // Null until the detail page asks.
   reach: Reach;
   reachFor: string | null;
 };
@@ -103,7 +103,7 @@ class ProfileStore {
         profileList(),
         profileActive(),
       ]);
-      // Gone, and a stale id would scope every list and prompt to nothing.
+      // A stale id would scope every list and prompt to nothing.
       const known = profiles.some((p) => p.id === saved);
 
       this.set({
@@ -147,7 +147,6 @@ class ProfileStore {
     await profileSetActive(id).catch(() => {});
   }
 
-  // A chat that has never been touched follows whatever the picker chose.
   async loadForSession(sessionId: string) {
     this.set({ sessionId });
 
@@ -162,7 +161,6 @@ class ProfileStore {
   async setForSession(sessionId: string, profileId: string) {
     await sessSetProfile(sessionId, profileId);
     this.set({ activeId: profileId });
-    // A move is a choice, and choices survive a restart.
     await profileSetActive(profileId).catch(() => {});
   }
 
@@ -179,7 +177,6 @@ class ProfileStore {
   async saveReach(id: string, reachAll: boolean, grants: Grant[]) {
     this.set({ reach: { reach_all: reachAll, grants } });
     await profileReachSet(id, reachAll, grants);
-    // rides along on the profile row the list draws from.
     await this.load();
   }
 }

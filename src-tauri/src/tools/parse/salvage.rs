@@ -1,7 +1,4 @@
-// Recovering an action from text that was cut off, mistyped, or written in a
-// dialect we do not officially support. Every function here returns what it
-// could recover and nothing more: a reply we cannot read becomes no action
-// rather than a wrong one.
+// A reply we cannot read becomes no action rather than a wrong one.
 use std::fmt::Write as _;
 
 use serde_json::Value;
@@ -108,9 +105,8 @@ fn name_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')
 }
 
-/// The name is whatever runs before the first arg tag, on its own line or
-/// not: a model that is not formatting puts the whole call on one line, and
-/// reading only the first line swallowed the name and the args together.
+/// Whatever runs before the first arg tag, on its own line or not — reading
+/// only the first line swallowed the name and the args together.
 pub(super) fn head_name(body: &str) -> Option<String> {
     body.split(ARG_KEY)
         .next()
@@ -122,10 +118,7 @@ pub(super) fn head_name(body: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Where the next call starts, in either shape. The wrapper is the common
-/// one. The bare form is a model that wrote the name straight into the args
-/// with no wrapper around it at all, which cost the reader the name and left
-/// the arguments to be eaten as debris.
+/// Where the next call starts, wrapped or bare.
 pub(super) fn next_call_start(text: &str) -> Option<usize> {
     match (text.find("<tool_call"), bare_call_start(text)) {
         (Some(a), Some(b)) => Some(a.min(b)),
@@ -134,18 +127,12 @@ pub(super) fn next_call_start(text: &str) -> Option<usize> {
     }
 }
 
-/// The start of a wrapperless call: a tool name at the head of a line,
-/// followed by the arguments. Anchoring on the name is what keeps ordinary
-/// prose out of it, the same way vLLM limits its own recovery to a requested
-/// tool name. A wrapper that never arrived leaves the name behind, and that
-/// name is the only thing left that says which tool to run.
+/// A wrapperless call: a tool name at the head of a line, then the arguments.
+/// Anchoring on the name keeps ordinary prose out.
 fn bare_call_start(text: &str) -> Option<usize> {
     let at = text.find(ARG_KEY)?;
 
-    // The name is the run of name characters sitting against the tag, not
-    // whatever prose happens to precede it: a model puts the call on its own
-    // line, and the line before it is the user's sentence. The gap between
-    // the two is whitespace, and it can be a newline.
+    // The name characters sit against the tag; the gap before can be a newline.
     let head = text[..at].trim_end();
     let start = head
         .char_indices()
@@ -158,10 +145,9 @@ fn bare_call_start(text: &str) -> Option<usize> {
         return None;
     }
 
-    // Shape alone cannot tell a wrapperless call from a sentence that happens
-    // to end in a tag — `runtime<arg_key>` is both. Position is what settles
-    // it: a dropped wrapper leaves the name at the start of its line, and
-    // guessing anywhere else runs a tool on the user's prose.
+    // `runtime<arg_key>` is both a dropped wrapper and a sentence. A dropped
+    // wrapper leaves the name at the start of its line; guessing anywhere else
+    // runs a tool on the user's prose.
     if start > 0 && !head[..start].ends_with('\n') {
         return None;
     }

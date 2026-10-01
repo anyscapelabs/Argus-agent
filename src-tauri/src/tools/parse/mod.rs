@@ -1,15 +1,6 @@
-// Reading a tool call back out of a model's text.
-//
-// The formats here are not one format. A model may write the template XML, a
-// bare tag, a native call, or a partial one that was cut off mid-write. Every
-// parser below takes a string a model produced and returns what it could
-// recover, and none of them fails: an unparseable fragment yields nothing
-// rather than an error, because the loop above already treats a reply that
-// describes an action without running one as something to ask about.
-//
-// The files are the pipeline in order: `argtext` and `salvage` recover pieces,
-// `normalize` rewrites them into the canonical syntax, `actions` reads that
-// syntax, and `ingress` decides what the reply actually ran.
+// Reading a tool call back out of a model's text. None of these parsers fails:
+// an unreadable fragment yields nothing, and the loop above already treats a
+// reply that describes an action without running one as something to ask about.
 
 mod actions;
 mod argtext;

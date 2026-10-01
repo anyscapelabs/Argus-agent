@@ -1,6 +1,3 @@
-// Attribute and record builders: how a tool call becomes the XML the model
-// reads back, and how a finished tool call becomes a message.
-//
 // Replacement order matters: `&` first, or later steps get escaped twice.
 
 use std::sync::OnceLock;
@@ -115,22 +112,18 @@ pub fn attach_shots(msgs: &mut [WireMsg]) {
             continue;
         }
 
-        // Extend, not replace: a message can carry a user image and a model
-        // screenshot, and the second is no reason to drop the first.
+        // Extend, not replace: a user image is no reason to drop a screenshot.
         m.images.extend(paths);
         left -= 1;
     }
 }
 
-// Text blocks are legacy. Native turns read rows instead — unless the row write
-// failed and text is all that is left. Degraded turns have no rows worth
-// reading. One predicate so the rule cannot drift between callers.
+// One predicate so the rule cannot drift between callers.
 pub fn needs_text_blocks(style: tools::ToolCallStyle, degraded: bool, events_ok: bool) -> bool {
     style != tools::ToolCallStyle::Native || degraded || !events_ok
 }
 
-/// Record where the turn stopped. The goal is the task as first asked, not the
-/// word that resumed it: on a `continue` that word is "continue".
+/// The goal is the task as first asked, not the word that resumed it.
 pub fn save_resume(gw: &Gateway, session_id: &str, actions: &[(String, bool)]) {
     let Ok(conn) = gw.conn.lock() else {
         return;
@@ -139,9 +132,6 @@ pub fn save_resume(gw: &Gateway, session_id: &str, actions: &[(String, bool)]) {
     super::resume::save(&conn, session_id, &goal, actions);
 }
 
-/// What one finished execution tells the playbook. One place, so a new failure
-/// mode is a line added here rather than a new scattered call site.
-///
 /// Each check matches a string Argus itself wrote, so a model cannot talk its
 /// way into a lesson.
 pub fn observe_exec(
@@ -183,7 +173,6 @@ pub fn observe_signals(
 }
 
 /// A refusal is appended after the command's own output, so it is the tail.
-/// Checking the tail only stops a file the agent read from reading as one.
 /// Residual: a command could print the exact string, costing one host lesson.
 pub fn denial_in_output(exec: &tools::ToolExecution) -> bool {
     const TAIL_MAX: usize = 200;
@@ -201,9 +190,7 @@ pub fn denial_in_output(exec: &tools::ToolExecution) -> bool {
 const EMPTY_ARGS_ERR: &str = "arrived with empty arguments";
 const MISSING_CWD_ERR: &str = "project profile needs cwd";
 
-/// What the resume says ran, read from `exec.args` at record time: a
-/// user-approved edit rewrites them, and a resume that misreports the approved
-/// command is worse than no command.
+/// Read at record time: a user-approved edit rewrites `exec.args` later.
 pub fn exec_label(exec: &tools::ToolExecution, is_term: bool) -> String {
     if is_term {
         let v: serde_json::Value = serde_json::from_str(&exec.args).unwrap_or_default();
@@ -255,8 +242,7 @@ pub fn sanitize_tags(s: &str) -> String {
     static DROP_TAGS: OnceLock<regex::Regex> = OnceLock::new();
     static BR: OnceLock<regex::Regex> = OnceLock::new();
 
-    // Loud fail: a pattern that will not compile is a bug in this file, and a
-    // silent skip leaves the tags in the transcript with no signal.
+    // Loud fail: a silent skip leaves the tags in the transcript with no signal.
     let drop_tags = DROP_TAGS.get_or_init(|| {
         regex::Regex::new(r"(?i)</?(p|div|span|command|output|think)[^>]*>")
             .expect("drop-tag pattern")

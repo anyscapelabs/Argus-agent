@@ -1,5 +1,4 @@
-// Message rows: the transcript. Everything the model later reads comes back
-// through `list_msgs`.
+// Message rows: the transcript.
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
@@ -53,9 +52,8 @@ pub fn get_last_final(conn: &Connection, session_id: &str) -> Result<String, Str
     .map_err(|err| err.to_string())
 }
 
-/// The task as first asked. Later turns are the model's own attempts at it, and
-/// a resume built from those describes the attempt, not the job. Raw content,
-/// not a rendered line: the transcript strips tags.
+/// The task as first asked. Raw content, not a rendered line: the transcript
+/// strips tags.
 pub fn first_user_msg(conn: &Connection, session_id: &str) -> Option<String> {
     conn.query_row(
         "SELECT content FROM messages
@@ -74,8 +72,8 @@ pub fn add_msg(conn: &Connection, m: &NewMsg) -> Result<Msg, String> {
     insert(conn, m, false)
 }
 
-/// A line the app answered itself. The flag is set here and nowhere else: the
-/// frontend cannot mark a message of its own invisible.
+/// Set here and nowhere else: the frontend cannot mark a message of its own
+/// invisible.
 pub fn add_local_msg(conn: &Connection, session_id: &str, content: &str) -> Result<Msg, String> {
     let m = NewMsg {
         session_id: session_id.into(),
@@ -122,8 +120,7 @@ fn insert(conn: &Connection, m: &NewMsg, local: bool) -> Result<Msg, String> {
 }
 
 /// A nudge rides the request, not the transcript, so a model answering the same
-/// way twice said one thing twice. Overwrite the row, do not stack a copy under
-/// it, and say so the caller can stop asking.
+/// way twice said one thing twice. Overwrite the row; do not stack a copy.
 pub fn add_msg_dedup(conn: &Connection, m: &NewMsg) -> Result<(Msg, bool), String> {
     if m.role != "assistant" {
         return add_msg(conn, m).map(|msg| (msg, false));

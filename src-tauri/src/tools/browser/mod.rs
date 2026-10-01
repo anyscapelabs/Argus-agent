@@ -386,12 +386,11 @@ async fn sess(name: &str) -> Result<tokio::sync::MutexGuard<'static, SessMap>, S
     };
 
     if !fresh {
-        // Launch outside the lock: starting Chrome takes seconds, and holding
-        // the pool guard across it queues every other profile behind one launch.
+        // Launch outside the lock: Chrome takes seconds, and the guard across it
+        // queues every other profile behind one launch.
         let s = launch(&pool().root, name).await?;
         let mut map = pool().sess.lock().await;
-        // Another task may have launched while we did; keep the live one and
-        // drop the spare (dropping its Browser closes it).
+        // Another task may have launched; keep the live one and drop the spare.
         if map.get(name).is_none_or(|e| e.last_used.elapsed() >= IDLE) {
             map.remove(name);
             map.insert(name.into(), s);
@@ -739,8 +738,7 @@ pub async fn close(args: &Value) -> Result<String, String> {
         map.remove(&name)
     };
 
-    // Close outside the lock: page teardown awaits the browser and must not
-    // hold the pool guard while it does.
+    // Close outside the lock: teardown awaits the browser.
     match sess {
         Some(mut s) => {
             let _ = s.page.close().await;

@@ -1,6 +1,5 @@
-// The minimal zip container the OOXML writers share: one local file header
-// per entry, a central directory, and a CRC so Word/Excel accept it. No
-// compression — these payloads are already small.
+// The minimal zip container the OOXML writers share. No compression — these
+// payloads are already small.
 pub(super) fn esc_xml(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -104,8 +103,8 @@ impl ZipWriter {
         self.buf.extend_from_slice(&[0x50, 0x4B, 0x05, 0x06]);
         self.buf.extend_from_slice(&0u16.to_le_bytes());
         self.buf.extend_from_slice(&0u16.to_le_bytes());
-        // Both counts are u16 in the format. Writing the u32 made the record
-        // four bytes too long and no conformant reader could open the file.
+        // Both counts are u16. A u32 here makes the record four bytes too long and no
+        // conformant reader can open the file.
         let n = count as u16;
         self.buf.extend_from_slice(&n.to_le_bytes());
         self.buf.extend_from_slice(&n.to_le_bytes());

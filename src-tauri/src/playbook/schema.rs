@@ -1,10 +1,6 @@
-// Signals and lessons, separated.
-//
-// A signal is something the harness *observed* — a call that arrived with no
-// arguments, a turn that blew its budget. A lesson is a sentence about a
-// model or a machine, and a lesson is only allowed to exist once a signal has
-// been seen more than once. Keeping the two apart is what stops a harness
-// event from being laundered into a claim about the model.
+// Signals and lessons, separated. A lesson only exists once a signal has been
+// seen more than once, which stops a harness event being laundered into a
+// claim about the model.
 //
 // Two scopes, because they are not the same claim:
 //   model — how THIS model speaks and behaves. Scoped to a model id.

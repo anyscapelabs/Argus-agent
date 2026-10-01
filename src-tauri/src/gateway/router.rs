@@ -56,20 +56,18 @@ pub struct StreamStats {
     pub tok_out: i64,
     pub truncated: bool,
     pub tool_calls: Vec<ToolCall>,
-    // The provider refused the tools payload, so the reply came back in-band.
-    // Text actions must still execute: stripping them silences the only
-    // channel left.
+    // Tools refused, reply came back in-band: stripping its text actions would
+    // silence the only channel left.
     pub degraded: bool,
 }
 
-/// Split out from the keyring call so the local case is decidable when the
-/// keyring cannot be reached at all.
+/// Split out so the local case is decidable without a reachable keyring.
 pub fn decide_key(
     prov: &Provider,
     got: Result<Option<String>, String>,
 ) -> Result<Option<String>, String> {
-    // Local first. Ollama and friends have no key, so no secret-service on a
-    // headless box or a CI runner must not stop them.
+    // Local first: Ollama has no key, so a headless box or CI without a
+    // secret-service must still resolve it.
     if adapters::is_local(&prov.base_url) {
         return Ok(got.unwrap_or(None));
     }
@@ -437,7 +435,7 @@ pub async fn stream_run(
                     let _ = store::log_req(&conn, &log);
                 }
 
-                // Tools payload refused: teach the in-band syntax, once per prompt.
+                // Tools refused: teach the in-band syntax, once per prompt.
                 if !err.retryable()
                     && matches!(err.status, Some(400) | Some(404) | Some(422))
                     && !req.tools.is_empty()
@@ -489,8 +487,7 @@ pub async fn stream_run(
 
                 let wait = backoff_ms(err.status, attempt, err.retry_after);
 
-                // Ten attempts against a rate limit is minutes of nothing on
-                // screen. Say why, once, before the wait rather than after it.
+                // Minutes of nothing on screen: say why once, before the wait.
                 if err.status == Some(429) && !rate_noticed {
                     rate_noticed = true;
                     let _ = chan.send(StreamEvent::Notice {

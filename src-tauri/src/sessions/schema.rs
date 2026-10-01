@@ -131,13 +131,11 @@ pub struct Session {
     pub agent_name: Option<String>,
     #[serde(default)]
     pub agent_state: Option<String>,
-    /// Which profile owns this chat. The sidebar list is scoped by it, so a
-    /// profile is a question you can ask of your own work and get an answer.
+    /// Which profile owns this chat; the sidebar list is scoped by it.
     #[serde(default)]
     pub profile_id: Option<String>,
-    /// Sub-agents still working under this one. A parent that fanned out has
-    /// not finished its job when its turn ends, and the only thing that knows
-    /// that is the children.
+    /// Sub-agents still working under this one. A parent that fanned out has not
+    /// finished when its turn ends.
     #[serde(default)]
     pub running_agents: i64,
 }
@@ -183,9 +181,8 @@ pub struct Msg {
     /// JSON array of `{id, name, kind, sz}`. An id the library holds.
     #[serde(default)]
     pub attachments: Option<String>,
-    /// The app answered this line itself. It is a real turn in the transcript
-    /// and nothing else — `prompt::project` keeps it out of the model's
-    /// history, because the model was never asked.
+    /// The app answered this line itself. A real turn in the transcript;
+    /// `prompt::project` keeps it out of the model's history.
     #[serde(default)]
     pub local: bool,
 }
@@ -214,8 +211,7 @@ pub struct NewMsg {
     pub attachments: Option<String>,
 }
 
-// A structured record of one tool execution. Written once, read by the UI
-// cards, the history projection, and any audit — never reconstructed by
+// Written once, read by the UI cards and any audit. Never reconstructed by
 // parsing message text.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ToolEvent {

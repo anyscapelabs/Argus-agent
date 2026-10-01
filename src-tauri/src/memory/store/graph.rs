@@ -1,6 +1,4 @@
-// The transcript and the memory graph: what a past session said, and how
-// memories and sessions connect. Both are read-only projections over rows
-// written elsewhere.
+// Read-only projections over rows written elsewhere.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
@@ -41,8 +39,7 @@ const STRIP_TAGS: &[&str] = &[
     "thinking",
 ];
 
-/// Tool output and rendered blocks are the bulk of a transcript and carry no
-/// meaning on replay. Keep the prose the two people actually exchanged.
+/// Tool output and rendered blocks carry no meaning on replay.
 fn strip_blocks(s: &str) -> String {
     static RES: OnceLock<Vec<regex::Regex>> = OnceLock::new();
     let res = RES.get_or_init(|| {

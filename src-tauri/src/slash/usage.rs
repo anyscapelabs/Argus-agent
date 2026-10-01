@@ -1,9 +1,8 @@
 use rusqlite::Connection;
 use serde::Serialize;
 
-/// A turn is one user message and the assistant messages up to the next one.
-/// Same rule as `ChatTranscript.tsx` uses for its "Worked for" labels, so the
-/// total and the per-turn labels cannot disagree.
+/// One user message and the assistant messages up to the next one. Must match
+/// `ChatTranscript.tsx` or the total and the per-turn labels disagree.
 const TURNS: &str = "
     SELECT u.session_id, u.seq, u.created_at,
       COALESCE(
@@ -27,12 +26,8 @@ const TURNS: &str = "
       AND u.created_at >= datetime('now', ?1)
 ";
 
-/// Milliseconds of active time. A turn still running has no end yet and scores
-/// zero: it is not yet time spent.
-///
-/// The start is the first assistant row with real text, or the user's own
-/// message when there is not one yet — the rule `ChatTranscript.tsx` uses for
-/// its "Worked for" labels, so the two cannot count different things.
+/// Milliseconds of active time. A turn still running has no end and scores zero:
+/// it is not yet time spent.
 fn worked_ms(conn: &Connection, window: &str) -> Result<f64, String> {
     let sql = format!(
         "SELECT COALESCE(SUM(
@@ -44,8 +39,7 @@ fn worked_ms(conn: &Connection, window: &str) -> Result<f64, String> {
          FROM ({TURNS}) t"
     );
 
-    // The arithmetic stays in SQL because `created_at` is a `datetime('now')`
-    // string and re-parsing it to get milliseconds back is work SQLite did.
+    // `created_at` is a `datetime('now')` string; reparsing for ms is SQLite's job.
     let ms: f64 = conn
         .query_row(&sql, rusqlite::params![window], |r| r.get(0))
         .map_err(|err| err.to_string())?;
@@ -62,8 +56,7 @@ struct Totals {
     cost: f64,
 }
 
-/// `attempt` is a column and failed retries are logged, so counting
-/// `status <> 'ok'` gives a real error rate rather than an impression of one.
+/// Failed retries are logged, so `status <> 'ok'` is a real error rate.
 fn totals(conn: &Connection, window: &str) -> Result<Totals, String> {
     conn.query_row(
         "SELECT COUNT(*),
@@ -85,7 +78,7 @@ fn totals(conn: &Connection, window: &str) -> Result<Totals, String> {
     .map_err(|err| err.to_string())
 }
 
-/// Per-model, so the expensive one is visible rather than averaged away.
+/// Per-model, so the expensive one stays visible.
 fn by_model(conn: &Connection, window: &str) -> Result<Vec<ModelUsage>, String> {
     let mut stmt = conn
         .prepare(
@@ -114,8 +107,7 @@ fn by_model(conn: &Connection, window: &str) -> Result<Vec<ModelUsage>, String> 
         .map_err(|err| err.to_string())
 }
 
-/// One row per day, so the card can draw a calendar the way a month of
-/// activity actually falls rather than as a single total.
+/// One row per day, for the calendar.
 fn by_day(conn: &Connection, window: &str) -> Result<Vec<DayUsage>, String> {
     let mut stmt = conn
         .prepare(
@@ -155,9 +147,8 @@ pub fn window_of(arg: &str) -> Result<(&'static str, &'static str, &'static str)
     }
 }
 
-/// Everything the card draws, for one window. The chat renders it; there is
-/// no markdown in it, because a number inside a sentence is a number nobody
-/// can compare with the number next to it.
+/// No markdown in here: a number inside a sentence cannot be compared with the
+/// number next to it.
 #[derive(Serialize, Clone, Default, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Usage {

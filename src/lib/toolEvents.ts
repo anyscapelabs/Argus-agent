@@ -14,10 +14,8 @@ function parseArgs(raw: string): Record<string, unknown> {
   }
 }
 
-// How often the text parser still carries a turn. `suspicious` means the
-// session has event rows yet a message fell back to markup — the shape the
-// structured path exists to delete. `legacy` is a pre-events session.
-// Read this key when deciding whether the template text splice can go.
+// `suspicious` = event rows exist yet a message fell back to markup.
+// `legacy` = pre-events session. Read when deciding whether the text splice goes.
 const COUNT_KEY = "argus.metrics.fallback";
 const counted = new Set<string>();
 
@@ -90,12 +88,12 @@ export function noteFallback(
     const key = sessionHasEvents ? "suspicious" : "legacy";
     store.set(JSON.stringify({ ...cur, [key]: cur[key] + 1 }));
   } catch {
-    // Metrics must never break rendering.
+    // Never break rendering.
   }
 }
 
-// Steps from event rows, not by re-parsing message text. Labels, details, and
-// codes arrive computed; this maps them onto the shapes the work panel renders.
+// Steps from event rows, not by re-parsing text. Labels, details and codes
+// arrive computed.
 export function eventStep(ev: ToolEvent): ToolStep {
   const durationMs = ev.elapsed_ms > 0 ? ev.elapsed_ms : undefined;
   const output = ev.output.length > 0 ? ev.output : undefined;
@@ -141,8 +139,7 @@ export function eventStep(ev: ToolEvent): ToolStep {
   return { group: "tool", tool: ev.tool, label: ev.label || `Ran ${ev.tool}` };
 }
 
-// Events for one message, or null when the message predates events and the
-// caller must fall back to parsing its text.
+// Null when the message predates events: the caller parses its text instead.
 export function eventsFor(
   events: Map<string, ToolEvent[]>,
   messageId: string,
@@ -151,9 +148,8 @@ export function eventsFor(
   return list !== undefined && list.length > 0 ? list : null;
 }
 
-// A DocumentCard for a document event. Parses the backend's own `key=value`
-// result lines — a stable internal format, not model prose — because the card
-// predates events and still reads BlockNodes.
+// Parses the backend's own `key=value` result lines — stable internal format,
+// not model prose — because the card predates events and reads BlockNodes.
 export function docBlockFor(ev: ToolEvent): BlockNode | null {
   if (ev.kind !== "document") return null;
 

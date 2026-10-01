@@ -5,8 +5,8 @@ use crate::Gateway;
 
 pub mod usage;
 
-/// `Local` answers here and costs nothing, `Prompt` expands to text for the
-/// model, `Client` lives in the window.
+/// `Local` answers here, `Prompt` expands to text for the model, `Client` lives
+/// in the window.
 #[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
 pub enum Kind {
@@ -27,7 +27,6 @@ pub struct Cmd {
     pub tpl: Option<&'static str>,
 }
 
-/// The menu and the dispatcher read these same rows.
 pub const CMDS: &[Cmd] = &[
     Cmd {
         name: "usage",
@@ -70,9 +69,8 @@ pub const CMDS: &[Cmd] = &[
     },
 ];
 
-/// Exactly one of these is ever set. `text` renders as a line of the app
-/// speaking, `usage` renders as a card the chat draws, and `model` sends
-/// something to the model instead of what the user typed.
+/// Exactly one is ever set: `text` speaks, `usage` draws a card, `model` sends
+/// something instead of what the user typed.
 #[derive(Serialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SlashOut {
@@ -101,14 +99,12 @@ fn find(name: &str) -> Option<&'static Cmd> {
     CMDS.iter().find(|c| c.name == name)
 }
 
-/// No model, no tokens, so no turn is stored for it. Not the same question as
-/// `Kind::Local`: `/compact` runs here but costs a model call.
+/// No model, no tokens, so no turn is stored for it.
 pub fn answered_locally(name: &str) -> bool {
     matches!(name, "usage")
 }
 
-/// Check before the row is written: a turn that can never render looks like the
-/// feature randomly not working.
+/// Check before the row is written.
 pub fn local_turn_text(name: &str, arg: &str) -> Result<String, String> {
     if !answered_locally(name) {
         return Err(format!("/{name} is not answered by the app itself."));
@@ -144,8 +140,7 @@ pub async fn slash_run(
 
     let arg = arg.unwrap_or_default().trim().to_string();
 
-    // The window handles these first; answering here would claim an effect we
-    // cannot have.
+    // Answering here would claim an effect the window has already had.
     if cmd.kind == Kind::Client {
         return Err(format!("/{name} is handled by the app, not the backend."));
     }

@@ -1,8 +1,5 @@
-// What the harness has learned about a model, and about this machine.
-//
-// Two rules: a lesson is a fact with evidence, never a scolding, and nothing
-// here is generated — each signal maps to a fixed sentence in code, so a model
-// cannot rewrite the rules it is judged by.
+// Nothing here is generated — each signal maps to a fixed sentence in code, so
+// a model cannot rewrite the rules it is judged by.
 pub mod schema;
 pub mod store;
 
@@ -55,10 +52,8 @@ fn lesson_for(kind: Kind) -> (&'static str, &'static str) {
     }
 }
 
-/// Turn recorded signals into lessons. Called after a turn, cheap and
-/// synchronous: it is a map lookup and one UPSERT per kind, because the
-/// sentences are fixed. A lesson enters the prompt only once its evidence
-/// clears the bar, which lives in `store::MIN_EVIDENCE_TO_TEACH`.
+/// A lesson enters the prompt only once its evidence clears
+/// `store::MIN_EVIDENCE_TO_TEACH`.
 pub fn curate(
     conn: &Connection,
     scope_id: &str,
@@ -86,9 +81,7 @@ pub fn curate(
     Ok(taught)
 }
 
-/// The prompt blocks. Both are opt-in by evidence, and a scope with no
-/// lessons contributes nothing — which is what keeps a model with no history
-/// byte-identical to one that has never run this code.
+/// A scope with no lessons contributes nothing.
 pub fn prompt_context(conn: &Connection, model_id: Option<&str>) -> Result<String, String> {
     let mut out = String::new();
 

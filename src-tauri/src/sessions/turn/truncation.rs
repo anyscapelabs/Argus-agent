@@ -1,6 +1,3 @@
-// Deciding what a reply the model could not finish means for the rest of the
-// step.
-
 use super::{Truncation, Turn};
 use crate::gateway::router;
 use crate::gateway::schema::StreamEvent;
@@ -9,14 +6,9 @@ use crate::sessions::chat::{MAX_TRUNC_CONTS, TRUNC_CONT};
 use crate::sessions::schema::Msg;
 use crate::sessions::{sink, store};
 
-/// Decide what to do about a reply the model could not finish.
-///
-/// A model told to carry on and answering the same thing has nothing left to
-/// say — asking again only buys another copy of the same words, which is how
-/// one answer ends up in the chat three times over. So a repeat counts
-/// against the limit, and the notice is only sent when the model really was
-/// cut off: telling a model that had finished that it was cut off would be a
-/// worse lie than saying nothing.
+/// A repeat of the same words counts against the limit: asking again only buys
+/// another copy, which is how one answer lands in the chat three times. The
+/// notice goes out only when the model really was cut off.
 impl Turn {
     pub(super) fn handle_truncation(
         &mut self,

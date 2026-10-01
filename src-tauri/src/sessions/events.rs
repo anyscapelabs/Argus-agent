@@ -3,9 +3,7 @@ use serde_json::Value;
 use super::schema::NewEvent;
 use crate::tools::ToolExecution;
 
-// The structured twin of what used to be a markup block in message text.
-// Both are built from the same ToolExecution, so the card, the history, and
-// the audit can never disagree about what ran.
+// Card, history and audit all derive from the same ToolExecution.
 const OUTPUT_CAP: usize = 65536;
 
 pub fn kind_of(tool: &str) -> &'static str {
@@ -67,8 +65,7 @@ fn doc_field(body: &str, key: &str) -> String {
         .unwrap_or_default()
 }
 
-// Display text computed once at write time, mirroring the card labels the UI
-// used to derive by re-parsing markup. One derivation, not one per reader.
+// Computed once at write time: one derivation, not one per reader.
 fn label_for(kind: &str, tool: &str, args: &Value, output: &str) -> (String, String) {
     match kind {
         "terminal" => {
@@ -182,9 +179,8 @@ pub fn from_execution(exec: &ToolExecution, message_id: &str, session_id: &str) 
     }
 }
 
-// The card shows `exit N`, and the UI must not re-parse output strings to get
-// it. Same shape as the chat loop's exit_of: a leading `exit N` line wins,
-// success without one is 0, anything else failed.
+// Mirrors the chat loop's exit_of: a leading `exit N` line wins, success
+// without one is 0, anything else failed.
 fn exit_code(exec: &ToolExecution) -> i64 {
     if exec.status == crate::tools::ToolStatus::Cancelled && exec.result_body().contains("denied") {
         return -2;

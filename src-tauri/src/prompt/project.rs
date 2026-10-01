@@ -1,5 +1,3 @@
-// The layered system prompt and the message list. `project()` is the only
-// entry point; everything below it is one layer it stacks.
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -131,8 +129,8 @@ fn stable_layer(
 
     s.push_str(&crate::tools::section(web, style));
 
-    // Added to, never substituted for: a profile system prompt would silently
-    // drop the sandbox boundary and approval rules.
+    // Added to, never substituted for: a profile prompt must not drop the
+    // sandbox boundary and approval rules.
     if let Some(p) = profile_section(conn, profile_id) {
         s.push_str(&p);
     }
@@ -149,8 +147,7 @@ fn stable_layer(
     Ok(s)
 }
 
-/// A name is a label, not a mechanism: a profile called "Senior Developer" that
-/// says nothing is base Argus with a friendlier tone.
+/// A name is a label, not a mechanism.
 fn profile_section(conn: &Connection, profile_id: Option<&str>) -> Option<String> {
     let id = profile_id?;
     let body: String = conn
@@ -320,9 +317,8 @@ pub fn project(
         system.push_str(&notes);
     }
 
-    // State about the turn, not a memory the agent chose to keep. A sub-agent
-    // gets its own brief: inheriting the parent's unfinished work costs it a
-    // window re-deriving a conversation it was not in.
+    // State about the turn, not a memory. A sub-agent gets its own brief: the
+    // parent's unfinished work only costs it a window re-deriving the chat.
     if let Some(resume) = crate::sessions::resume::prompt_include(conn, session_id) {
         if !child {
             system.push_str("\n\n");
@@ -330,9 +326,8 @@ pub fn project(
         }
     }
 
-    // Both the playbook and the learned preferences are evidence-gated, so a
-    // model with no history leaves an evidence-free session's prompt unchanged.
-    // No sub-agent: a playbook is advice for whoever has been here before.
+    // Evidence-gated, so an evidence-free session's prompt is unchanged. No
+    // sub-agent: a playbook is advice for whoever has been here before.
     if let Ok(playbook) = crate::playbook::prompt_context(conn, model_id.as_deref()) {
         if !child && !playbook.trim().is_empty() {
             system.push_str("\n\n");
@@ -345,8 +340,7 @@ pub fn project(
         system.push_str(&index);
     }
 
-    // `local = 0` keeps out lines the app answered itself: a real turn in the
-    // transcript, never a question put to anyone.
+    // `local = 0` keeps out lines the app answered itself.
     let mut stmt = conn
         .prepare(
             "SELECT role, content, tool_calls, tool_call_id, attachments FROM messages
@@ -395,7 +389,6 @@ pub fn project(
     })
 }
 
-/// One message row: role, content, tool calls, tool call id, attachments.
 type WireRow = (
     String,
     String,
@@ -451,9 +444,8 @@ fn to_wire(rows: &[WireRow], resolve: &dyn Fn(&Attachment) -> Option<String>) ->
         .collect()
 }
 
-// The model re-reads what it said, not how we drew it. `<thinking>`,
-// `<plan>`/`<step>`, and `<final/>` are renderer bookkeeping — feeding them back
-// teaches the markup. `<agent-done>` stays: content, and the parent may need it.
+// `<thinking>`, `<plan>`/`<step>` and `<final/>` are renderer bookkeeping —
+// feeding them back teaches the markup. `<agent-done>` stays.
 pub fn strip_display_tags(text: &str) -> String {
     static THINKING: OnceLock<Regex> = OnceLock::new();
 

@@ -1,5 +1,3 @@
-// Ending a turn that ran out of budget.
-
 use rusqlite::params;
 
 use super::Turn;
@@ -7,11 +5,8 @@ use crate::gateway::schema::StreamEvent;
 use crate::gateway::Gateway;
 use crate::sessions::{blocks, guards, sink, store};
 
-/// End the turn because it ran out of budget. Leaves a resume behind and
-/// appends a warning to the last final message, so the "send continue"
-/// promise the notice makes is one the next turn can actually keep.
-///
-/// Returns whether the turn is over; the caller only has to break.
+/// Leaves a resume and warns on the last final message, so the "send continue"
+/// the notice promises is one the next turn can keep.
 impl Turn {
     pub(super) fn budget_stopped(
         &mut self,

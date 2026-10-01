@@ -1,11 +1,5 @@
-// Where the last turn stopped, in the harness's own words.
-//
-// The loop already knows this: the task as asked, what actually ran, and what
-// the last thing was that failed. A fresh context — after a budget stop, a
-// step pause, or a restart — reads it instead of re-deriving the same three
-// facts from a transcript it can no longer fit. Written here, not by the
-// model: a self-written resume is a claim, and a resumed claim is a loop the
-// guard cannot see.
+// Written here, not by the model: a self-written resume is a claim, and a
+// resumed claim is a loop the guard cannot see.
 use super::schema::ResumeRow;
 use crate::sessions::store;
 
@@ -13,8 +7,8 @@ const GOAL_CHARS: usize = 200;
 const NEXT_CHARS: usize = 240;
 const DONE_ACTIONS: usize = 6;
 
-/// The task as first asked. Later turns are the model's own attempts at it,
-/// and a resume built from those describes the mistake, not the job.
+/// The task as first asked. A resume built from later turns describes the
+/// mistake, not the job.
 pub fn goal_of(first_user_msg: &str) -> String {
     let text = first_user_msg.trim();
     if text.chars().count() <= GOAL_CHARS {
@@ -25,8 +19,7 @@ pub fn goal_of(first_user_msg: &str) -> String {
     format!("{cut}…")
 }
 
-/// What ran, newest first, with failures called out: the last failure is
-/// usually the thing a fresh turn would otherwise try again.
+/// What ran, newest first, with failures called out.
 pub fn done_of(actions: &[(String, bool)]) -> String {
     if actions.is_empty() {
         return "nothing ran yet".into();
@@ -51,8 +44,8 @@ pub fn done_of(actions: &[(String, bool)]) -> String {
     lines.join("\n")
 }
 
-/// The next move, when the harness can name one: the last action that failed
-/// is the thing to change, not to repeat. Empty means the model decides.
+/// The last action that failed is the thing to change, not to repeat. Empty
+/// means the model decides.
 pub fn next_of(actions: &[(String, bool)]) -> String {
     actions
         .iter()
@@ -86,8 +79,7 @@ pub fn clear(conn: &rusqlite::Connection, session_id: &str) {
     let _ = store::clear_resume(conn, session_id);
 }
 
-// Only injected when a turn actually stopped unfinished. A finished turn must
-// not leave a resume claiming there is work left.
+// A finished turn must not leave a resume claiming there is work left.
 pub fn prompt_include(conn: &rusqlite::Connection, session_id: &str) -> Option<String> {
     let row = store::get_resume(conn, session_id)?;
     if row.goal.trim().is_empty() && row.done.trim().is_empty() {

@@ -10,9 +10,8 @@ pub const MAX_BYTES: usize = 25_000_000;
 /// characters, and a file that is mostly those is not text.
 const BINARY_RATIO: f64 = 0.10;
 
-/// Every kind of file a model can be asked to read. `None` means this file
-/// has no text we can get at — never an empty string, which reads as an
-/// empty file rather than an unreadable one.
+/// `None` means no text we can get at — never an empty string, which reads as
+/// an empty file rather than an unreadable one.
 pub fn text(bytes: &[u8], ext: &str) -> Option<String> {
     if bytes.len() > MAX_BYTES {
         return None;
@@ -28,8 +27,7 @@ pub fn text(bytes: &[u8], ext: &str) -> Option<String> {
     }
 }
 
-// The zip family, all of it. Word deflates, which is why the old reader that
-// only understood stored entries never saw a real .docx.
+// Word deflates, so a stored-only reader never saw a real .docx.
 fn entry(bytes: &[u8], name: &str) -> Option<String> {
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
     let mut file = zip.by_name(name).ok()?;
@@ -44,8 +42,7 @@ fn entries(bytes: &[u8], prefix: &str, suffix: &str) -> Vec<String> {
         return vec![];
     };
 
-    // Ascending by number, so `slide2.xml` lands between 1 and 10 rather than
-    // wherever its name sorts.
+    // By number, not name sort: `slide2.xml` lands between 1 and 10.
     let mut names: Vec<String> = (0..zip.len())
         .filter_map(|i| zip.by_index(i).ok().map(|f| f.name().to_string()))
         .filter(|n| n.starts_with(prefix) && n.ends_with(suffix))
@@ -61,8 +58,6 @@ fn entries(bytes: &[u8], prefix: &str, suffix: &str) -> Vec<String> {
     names
 }
 
-// docx. The paragraph-to-markdown logic is the old reader's and is good; only
-// the entry lookup changed.
 fn docx(bytes: &[u8]) -> Option<String> {
     let xml = entry(bytes, "word/document.xml")?;
     let mut out: Vec<String> = vec![];
@@ -97,8 +92,8 @@ fn docx(bytes: &[u8]) -> Option<String> {
     (!out.is_empty()).then(|| out.join("\n\n"))
 }
 
-// xlsx. Cells reference the shared string table by index and each other by
-// `r="B7"`, so the grid has to be built from the ref, not from the order.
+// Cells index the shared string table and place themselves by `r="B7"`, so the
+// grid comes from the ref, not the order.
 fn xlsx(bytes: &[u8]) -> Option<String> {
     let shared = entry(bytes, "xl/sharedStrings.xml")
         .map(|s| strings(&s))
@@ -271,8 +266,6 @@ fn table(rows: &[Vec<String>]) -> String {
     format!("| {head} |\n| {rule} |\n{body}")
 }
 
-// pptx. Slide order is the number in the name, and each slide is a list of
-// text runs.
 fn pptx(bytes: &[u8]) -> Option<String> {
     let names = entries(bytes, "ppt/slides/slide", ".xml");
     let mut out = vec![];
@@ -293,7 +286,6 @@ fn pptx(bytes: &[u8]) -> Option<String> {
     (!out.is_empty()).then(|| out.join("\n\n"))
 }
 
-// OpenDocument, which is a zip with one big XML in it.
 fn odf(bytes: &[u8]) -> Option<String> {
     let xml = entry(bytes, "content.xml")?;
     let text = tags(&xml, "text:p");
@@ -306,8 +298,7 @@ fn pdf(bytes: &[u8]) -> Option<String> {
     (!out.trim().is_empty()).then_some(out)
 }
 
-// Everything else. A code file is text, and so is a `.env` nobody listed, so
-// there is no extension table to keep in step with the disk.
+// A code file is text, and so is a `.env` nobody listed.
 fn plain(bytes: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(bytes);
     let bad = text.chars().filter(|c| *c == '\u{fffd}').count();

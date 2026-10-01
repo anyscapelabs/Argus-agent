@@ -1,5 +1,5 @@
-// Pure scanner: it never rejects a tag it does not know. Hand-written single
-// pass because `tokenize` must report "not closed yet" — a position, not a match.
+// Hand-written single pass: `tokenize` must report "not closed yet", a position
+// rather than a match.
 import { isKnownTag } from "./schema";
 import {
   Char,
@@ -15,11 +15,8 @@ import {
 } from "./scan";
 
 /**
- * `final` says whether more text can still arrive.
- *
- * Default `true` is right for stored messages: written means finished, so an
- * unterminated tag in them is prose. A live turn passes `false`, and a tag
- * still arriving is held back instead of shown as raw markup.
+ * `final: false` on a live turn holds an unterminated tag back instead of
+ * showing it as raw markup. Stored messages are finished, so `true`.
  */
 export type TokenizeOpts = { final?: boolean };
 
@@ -41,14 +38,7 @@ const HASH = 0x23;
 const LOWER_X = 0x78;
 const UPPER_X = 0x58;
 
-/**
- * Decode the HTML entities the backend emits when it escapes a value into an
- * attribute or a tag body.
- *
- * A scan, not three chained replacements: the text is walked once, and a `&`
- * that does not begin a well-formed entity is copied through without rebuilding
- * the string around it. Text with no entities returns the input unallocated.
- */
+/** Decode the HTML entities the backend emits when it escapes a value. */
 function decodeEntities(str: string): string {
   const amp = str.indexOf("&");
   if (amp === -1) return str;
@@ -146,10 +136,8 @@ function c2(s: string, i: number): number {
 }
 
 /**
- * Whether a quoted attribute value ends at the quote just found.
- *
- * A quote only closes the value when a whole attribute name and `=` follows,
- * or the tag ends. `echo "hi" > f` has quotes that close nothing.
+ * A quote only closes the value when a whole attribute name and `=` follows, or
+ * the tag ends. `echo "hi" > f` has quotes that close nothing.
  */
 function quoteClosesValue(raw: string, after: number): boolean {
   const i = skipSpaces(raw, after, raw.length);
@@ -248,13 +236,8 @@ export type TagScan =
   | { kind: "unterminated" };
 
 /**
- * Where the tag ends, which is the `>` that closes it and not the first one in
- * sight. A terminal command is full of them — `2>&1`, `-gt`, `->`.
- *
- * Single pass with an explicit quote state so a `>` inside a quoted value cannot
- * end the tag. Interruptible by design: the caller must be able to tell "ran
- * out of input" from "tag invalid", which only a scanner holding its own
- * position can.
+ * The `>` that closes the tag, not the first one in sight — a terminal command
+ * is full of them. Quote-aware, so `command="ls > f"` does not end early.
  */
 export function scanTagEnd(buf: string, from: number): TagScan {
   let quote = 0;
@@ -297,7 +280,6 @@ function isWellFormedTagName(tag: string): boolean {
   return true;
 }
 
-/** Index of the first space in `s`, or `-1`. */
 function firstSpace(s: string): number {
   for (let k = 0; k < s.length; k++) {
     if (isSpaceAt(s, k)) return k;
@@ -315,8 +297,6 @@ export function tokenize(buf: string, opts: TokenizeOpts = {}): Token[] {
     toks.push({ kind: "text", value: decodeEntities(buf.slice(start, end)) });
   };
 
-  // Everything in front of `at` is complete, so the hold is safe: emit it as
-  // text now, withhold only the fragment from `at` on.
   const hold = (at: number) => {
     flush(at);
     start = at;
@@ -339,9 +319,8 @@ export function tokenize(buf: string, opts: TokenizeOpts = {}): Token[] {
     const scan = scanTagEnd(buf, i + 1);
 
     if (scan.kind === "unterminated") {
-      // Hold only what could still change. A tag never spans a line, so anything
-      // before a newline is already final — holding prose there blanks the rest
-      // of the reply for good.
+      // Hold only what could still change. A tag never spans a line, so holding
+      // prose there blanks the rest of the reply for good.
       if (
         opts.final === false &&
         isTagNameStartAt(buf, i + 1) &&
@@ -394,8 +373,8 @@ export function tokenize(buf: string, opts: TokenizeOpts = {}): Token[] {
     }
 
     if (tag === "br") {
-      // A text token, not a buffer rewrite: rewriting `buf` would shift every offset
-      // the scanner is holding.
+      // A text token, not a buffer rewrite: rewriting shifts every offset the
+      // scanner holds.
       if (i > start) {
         toks.push({ kind: "text", value: decodeEntities(buf.slice(start, i)) });
       }

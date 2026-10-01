@@ -7,11 +7,8 @@ import { tokenize } from "./tokenize";
 const PARSE_CAP = 1_000_000;
 
 /**
- * Invisible code points: zero-width joiners, soft hyphens, bidi overrides, the
- * word-joiner block. A model emits one mid-tag and the tag never closes.
- *
- * A scan, not a global regex: the string is walked once and returned untouched
- * in the common case, and this runs on every delta of every turn.
+ * A model emits one of these mid-tag and the tag never closes. A scan, not a
+ * regex: this runs on every delta.
  */
 const INVISIBLE = new Set([
   0x200b, 0x200c, 0x200d, 0xfeff, 0x00ad, 0x200e, 0x200f, 0x202a, 0x202b,
@@ -40,16 +37,10 @@ function findInvisible(s: string, from: number): number {
   return -1;
 }
 
-/**
- * `final` says whether more text can still arrive. See `TokenizeOpts`.
- *
- * A live turn passes `false` so an unfinished tag is held back instead of
- * flashing as raw markup; everything from the database passes the default.
- */
+/** `false` on a live turn holds an unfinished tag back instead of flashing raw markup. */
 export function parse(buf: string, opts: { final?: boolean } = {}): XmlTree {
   const final = opts.final !== false;
-  // Belt and braces: Rust strips these before storage, but streamed text
-  // reaches here first.
+  // Rust strips these too, but streamed text lands here first.
   const clean = stripInvisible(buf);
   const src = clean.length > PARSE_CAP ? clean.slice(0, PARSE_CAP) : clean;
 

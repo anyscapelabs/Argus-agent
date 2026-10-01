@@ -1,6 +1,5 @@
-// The tool catalog and the prompt text that describes it. Both halves of "what
-// the model is told it can do", kept together because they drift apart when
-// they do not.
+// The tool catalog and the prompt text describing it, kept together because
+// they drift when apart.
 
 use std::fmt::Write as _;
 
@@ -13,8 +12,7 @@ use super::notepad;
 use super::profile;
 use super::{ToolCallStyle, ToolMeta, MAX_OUT, TOOLS, WEB_TOOLS};
 
-// `write!` appends in place; a `format!` throwaway costs one String per tool,
-// per prompt, per step.
+// Appends in place; a `format!` throwaway costs one String per tool, per step.
 fn spec_line(s: &mut String, t: &ToolMeta) {
     let _ = writeln!(s, "- {} — {}. args: {}", t.name, t.desc, t.args);
 }
@@ -280,12 +278,11 @@ retry once with different wording, or switch engine.\n",
     s
 }
 
-/// The default turn discipline. How the model calls a tool is the provider's
-/// business — it was handed the schemas. Only how a turn *ends* has to survive
-/// into the text, which no API expresses.
+/// How the model calls a tool is the provider's business — it was handed the
+/// schemas. Only how a turn *ends* has to survive into the text.
 ///
-/// `style` agrees with the model's own template rather than fighting it: some
-/// templates order XML, and forbidding that in prose only teaches it to hide.
+/// `style` agrees with the model's own template: some templates order XML, and
+/// forbidding that in prose only teaches it to hide.
 pub fn section(web: bool, style: ToolCallStyle) -> String {
     let calling = match style {
         ToolCallStyle::Native =>

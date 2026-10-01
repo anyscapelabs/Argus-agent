@@ -16,9 +16,8 @@ export type BlockNode = {
 
 export type XmlTree = BlockNode[];
 
-// Single source of truth for block ownership. The work panel renders `work`
-// blocks; bubbles render everything else, plus `work` only when no panel
-// owns the turn (fallback so tools can never vanish).
+// The work panel renders these; bubbles render everything else, plus these only
+// when no panel owns the turn, so tools can never vanish.
 const WORK_TAGS = new Set([
   "action",
   "terminal",
@@ -54,9 +53,8 @@ export function buildTree(toks: Token[]): XmlTree {
     buf = "";
     if (v.length === 0) return;
 
-    // A bullet or a number followed by a space. Read rather than matched: it
-    // runs for every line of every block, and it is the only place the tree
-    // builder decides that prose is a list.
+    // A bullet or a number followed by a space. Char-read, not regex: this runs
+    // for every line of every block.
     const isList = (l: string): boolean => {
       const c = l.charCodeAt(0);
 
@@ -196,10 +194,8 @@ export function buildTree(toks: Token[]): XmlTree {
     }
 
     if (cur.tag !== tag) {
-      // A closing tag that does not match — `</arg_value>` for an `<action>` —
-      // must not leave the block open. While `cur` lives, every following line
-      // is appended to it, and a block that renders as one line swallows the
-      // rest of the reply. End it here and let the prose out.
+      // An unmatched close — `</arg_value>` for an `<action>` — must not leave the
+      // block open: a one-line block would swallow the rest of the reply.
       cur = null;
       continue;
     }

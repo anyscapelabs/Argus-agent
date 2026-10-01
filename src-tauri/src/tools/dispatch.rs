@@ -1,16 +1,11 @@
-// The dispatch table: a tool name goes in, its output comes out.
-//
-// One long `match`, in the order the arms are cheap to reject. Most names are
-// refused by the first arm; only the ones that match reach a real
-// implementation. Approval and the `mutating` table are the gate above this
-// file, not in it — by the time a name gets here it has already been allowed.
+// One long `match`, arms ordered cheap-to-reject. Approval and the `mutating`
+// table gate this file from above: a name that gets here is already allowed.
 
 use crate::gateway::EventSink;
 
 use super::*;
 
-/// One tool invocation. The eight loose arguments to `exec` became one named
-/// bundle; every caller builds it at the call site.
+/// One tool invocation.
 pub struct ExecIn<'a, R: tauri::Runtime> {
     pub app: &'a tauri::AppHandle<R>,
     pub gw: &'a crate::gateway::Gateway,
@@ -22,9 +17,7 @@ pub struct ExecIn<'a, R: tauri::Runtime> {
     pub on_term: Option<(&'a EventSink, u32)>,
 }
 
-// Manual `Clone` + `Copy`: every field is a reference, bool, or `Option` of
-// those, so neither needs an `R` bound. (The derives would demand `R: Clone`
-// / `R: Copy`.) Retries copy the invocation per attempt.
+// Manual: the derives would demand `R: Clone` / `R: Copy`.
 impl<R: tauri::Runtime> Clone for ExecIn<'_, R> {
     fn clone(&self) -> Self {
         *self
@@ -57,8 +50,7 @@ pub async fn exec<R: tauri::Runtime>(call: ExecIn<'_, R>) -> Result<String, Stri
         .find(|t| t.name == name)
         .ok_or_else(|| format!("unknown tool {name}"))?;
 
-    // Depth one, enforced where it counts. A sub-agent that could fan out
-    // would multiply without anything in the way counting it.
+    // Depth one: a sub-agent that could fan out multiplies unchecked.
     if name.starts_with("agent.") {
         let sid = notepad::current_session()
             .ok_or("a sub-agent may only be started from inside a conversation")?;
@@ -89,8 +81,6 @@ pub async fn exec<R: tauri::Runtime>(call: ExecIn<'_, R>) -> Result<String, Stri
     match name {
         "terminal" | "bash.run" => {
             // The user's setting is the ceiling, not a starting suggestion.
-            // This used to pass a hardcoded Host, so the profile chosen in
-            // Settings was stored and never consulted.
             let origin = sandbox::origin_of_tool(name, args_json);
             let profile = sandbox::effective_profile(
                 &args,
@@ -250,8 +240,8 @@ pub async fn exec<R: tauri::Runtime>(call: ExecIn<'_, R>) -> Result<String, Stri
                 },
             )?;
 
-            // The card is a message of its own. Left inside this tool result
-            // it would be rendered as a work step and never drawn at all.
+            // Its own message: inside this tool result it renders as a work
+            // step and never gets drawn.
             crate::sessions::chat::post(
                 gw,
                 &sid,

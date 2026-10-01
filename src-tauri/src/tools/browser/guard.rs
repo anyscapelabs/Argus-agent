@@ -1,7 +1,4 @@
-// What the browser will not do on its own.
-//
-// A credentialed URL, a payment page, and a field that looks like a secret are
-// all refused here rather than downstream, so no caller can forget the check by
+// Refused here rather than downstream, so no caller can skip the check by
 // reaching for the page directly. The patterns are the whole policy.
 
 use std::sync::OnceLock;
@@ -18,7 +15,7 @@ const SECRET_PAT: &str = r"sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat
 
 pub(crate) fn secret_re() -> Option<regex::Regex> {
     static RE: OnceLock<Option<regex::Regex>> = OnceLock::new();
-    // Literal pattern: a compile failure here is a code bug, cached once.
+    // Literal pattern: a compile failure here is a code bug.
     RE.get_or_init(|| regex::Regex::new(SECRET_PAT).ok())
         .clone()
 }
@@ -51,7 +48,7 @@ pub fn sensitive_note(url: &str, out: String) -> String {
 
 pub fn sensitive_pats() -> Option<(regex::Regex, regex::Regex)> {
     static PATS: OnceLock<Option<(regex::Regex, regex::Regex)>> = OnceLock::new();
-    // Literal patterns: compile once, not once per tool call.
+    // Compile once, not once per tool call.
     PATS.get_or_init(|| {
         Some((
             regex::Regex::new(&format!("(?i)({URL_PAT})")).ok()?,

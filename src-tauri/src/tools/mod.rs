@@ -13,8 +13,6 @@ pub mod sandbox;
 pub mod shell;
 pub mod specs;
 
-// The catalog and the prompt text behind it, re-exported so callers keep
-// reaching them at `tools::`.
 pub use dispatch::{exec, ExecIn};
 pub use parse::*;
 pub use specs::*;
@@ -192,9 +190,7 @@ pub struct Action {
 }
 
 // A text-channel call with `{}` is only breakage when the tool takes
-// arguments. Several tools document `{}` as their whole invocation —
-// browser.read, browser.close — so the empty-args guard asks the catalog
-// instead of rejecting them all.
+// arguments, so the guard asks the catalog instead of rejecting them all.
 pub(crate) fn takes_no_args(name: &str) -> bool {
     TOOLS
         .iter()
@@ -213,10 +209,9 @@ pub(crate) fn takes_no_args(name: &str) -> bool {
         })
 }
 
-// One redaction for every secret shape. The browser guard knew token patterns
-// (`sk-`, `ghp_`, …) and the connector log knew parameter names (`?key=`,
-// `client_secret=`); a credential matching only one list passed the other.
-// Both passes run here so no caller can pick the wrong half.
+// One redaction for every secret shape. Token patterns (`sk-`, `ghp_`) and
+// parameter names (`?key=`, `client_secret=`) both run here so no caller can
+// pick the wrong half.
 pub fn redact_secrets(s: &str) -> String {
     let patterned = match browser::guard::secret_re() {
         Some(re) => re.replace_all(s, "[redacted]").into_owned(),
@@ -243,10 +238,9 @@ pub fn redact_secrets(s: &str) -> String {
     out
 }
 
-// How a model speaks tools. One mechanism for all models; only this differs.
-// Native models call through the API and any text syntax is discarded.
-// GlmXml models were fine-tuned on an XML template that contradicts the API
-// instruction, so they emit both: the native call runs, the text is decoded.
+// How a model speaks tools. GlmXml models were fine-tuned on an XML template
+// that contradicts the API instruction, so they emit both: the native call
+// runs, the text is decoded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToolCallStyle {
     Native,

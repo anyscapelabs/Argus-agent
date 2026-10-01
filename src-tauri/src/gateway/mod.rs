@@ -21,7 +21,6 @@ use schema::{
     SyncStats,
 };
 
-/// A sink that names one transport goes silent on the other's events.
 #[derive(Clone)]
 pub enum EventSink {
     Channel(Channel<StreamEvent>),
@@ -29,7 +28,6 @@ pub enum EventSink {
 }
 
 impl EventSink {
-    /// Somewhere harmless to put events the caller does not want.
     pub fn null() -> Self {
         let (tx, _rx) = broadcast::channel(1);
         Self::Bus(tx)
@@ -45,22 +43,19 @@ impl EventSink {
 
 pub const BUS_CAP: usize = 512;
 
-/// TCP connect budget. Generous, because a cold TLS handshake to a distant
-/// provider is slow but bounded.
+/// Generous: a cold TLS handshake to a distant provider is slow but bounded.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Silence before a provider is presumed dead. Well past any real inter-token
-/// gap, so a slow-but-alive reply is never killed.
+/// Well past any real inter-token gap, so a slow-but-alive reply is not killed.
 pub const STALL_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// Per-read stall bound, not a total timeout: a total one runs until the body
-/// finishes and would cap every long reply.
+/// Per-read stall bound, not a total timeout: a total one would cap every long
+/// reply.
 pub fn http_client() -> Result<Client, reqwest::Error> {
     http_client_with(CONNECT_TIMEOUT, STALL_TIMEOUT)
 }
 
-/// Split out so a test can prove the stall bound bites without waiting two
-/// minutes.
+/// Split out so a test can prove the bound bites without waiting two minutes.
 pub fn http_client_with(connect: Duration, stall: Duration) -> Result<Client, reqwest::Error> {
     Client::builder()
         .connect_timeout(connect)
@@ -113,8 +108,8 @@ impl Gateway {
             .unwrap_or(false)
     }
 
-    /// A set, not a slot: a sub-agent's page and its parent chat are watched at
-/// the same time, and one must not take the other down.
+    /// A set, not a slot: a sub-agent's page and its parent are watched at once,
+    /// and one must not take the other down.
     pub fn start_watching(&self, session_id: &str) {
         if let Ok(mut w) = self.watching.lock() {
             w.insert(session_id.to_string());
@@ -133,8 +128,8 @@ impl Gateway {
         }
     }
 
-    /// A sub-agent's approvals render in its parent's window, so this is what says
-    /// a human could answer.
+    /// A sub-agent's approvals render in its parent's window, so this says a human
+    /// could answer.
     pub fn attached(&self, session_id: &str) -> bool {
         self.events
             .lock()

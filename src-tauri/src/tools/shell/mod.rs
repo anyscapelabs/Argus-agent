@@ -22,8 +22,7 @@ pub const TERM_TIMEOUT_MAX: u64 = 1800;
 const TERM_TIMEOUT_DEF: u64 = 120;
 const DRAIN: Duration = Duration::from_secs(2);
 
-/// Ceiling on what one command accumulates. Display clips far below it, so this
-/// only stops a runaway writer from eating Argus's memory.
+/// Only stops a runaway writer from eating Argus's memory.
 pub const DEFAULT_OUT_CAP: usize = 8 * 1024 * 1024;
 
 pub fn needs_elevation(cmd: &str) -> bool {
@@ -122,8 +121,7 @@ fn take(buf: &Buf) -> String {
     std::mem::take(&mut buf.lock().unwrap_or_else(|p| p.into_inner()))
 }
 
-/// Where a command's timeout starts when the agent names none. One number, no
-/// opinion about the command.
+/// Where a command's timeout starts when the agent names none.
 pub fn default_timeout_for() -> u64 {
     TERM_TIMEOUT_DEF
 }
@@ -151,8 +149,8 @@ pub fn kill_process_group(pid: u32) -> Result<(), String> {
     }
 }
 
-/// Split from spawning so the sandbox can wrap the argv (macOS puts
-/// `sandbox-exec` in front) without a second copy of the shell rules.
+/// Split from spawning so the sandbox can wrap the argv (`sandbox-exec` goes
+/// in front) without a second copy of the shell rules.
 pub fn argv(cmd: &str, elevated: bool) -> (PathBuf, Vec<String>) {
     let cfg = detect::status();
 
@@ -181,8 +179,8 @@ pub fn argv(cmd: &str, elevated: bool) -> (PathBuf, Vec<String>) {
     args.push(cmd.into());
 
     if elevated {
-        // pkexec opens the OS auth dialog itself: the password goes to polkit,
-        // never to Argus, and pkexec runs with a sanitized env.
+        // pkexec opens the OS auth dialog: the password goes to polkit, never
+        // to Argus, and it runs with a sanitized env.
         let mut full = vec![cfg.binary.to_string_lossy().into_owned()];
         full.extend(args);
         return (PathBuf::from("pkexec"), full);
@@ -239,7 +237,7 @@ pub enum WaitOut {
 }
 
 /// A running command. Windows has to build its own child: the AppContainer
-/// token is minted inside CreateProcessW and cannot be attached after the fact.
+/// token is minted inside CreateProcessW.
 pub enum Child {
     Async(tokio::process::Child),
     #[cfg(target_os = "windows")]
@@ -341,8 +339,8 @@ pub struct RawRun {
     pub truncated: bool,
 }
 
-/// One execution path for `terminal` and `sandbox`: stream through `chan`, drain
-/// both pipes, tear the group down.
+/// One execution path for `terminal` and `sandbox`: stream, drain both pipes,
+/// tear the group down.
 pub async fn run_child(
     mut child: Child,
     idx: u32,
@@ -480,8 +478,8 @@ pub async fn run_stream(
     }
 
     // pkexec and a user saying no look the same, and neither raises a dialog
-    // with no auth agent registered. Uncorrected, the model reads it as a
-    // refusal, apologises, retries, and burns the turn.
+    // with no auth agent registered. Uncorrected, the model apologises,
+    // retries, and burns the turn.
     if elevated && run.exit != 0 {
         if let Some(why) = auth_agent_hint(&run.out) {
             return Err(why.into());
@@ -507,10 +505,8 @@ pub async fn run_stream(
 }
 
 /// pkexec's shapes for "nobody was there to ask" and for a user who genuinely
-/// declined. Only the first is Argus's problem to explain.
-///
-/// Matched on the wrapper's own phrasing, not a bare "dismissed": output
-/// containing that word is not a broken polkit.
+/// declined. Matched on the wrapper's own phrasing, not a bare "dismissed":
+/// output containing that word is not a broken polkit.
 pub fn auth_agent_hint(out: &str) -> Option<&'static str> {
     let out = out.to_lowercase();
 

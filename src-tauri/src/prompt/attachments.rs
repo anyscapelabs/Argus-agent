@@ -1,13 +1,13 @@
-// Attachments: resolving one to a file, inlining the ones small enough to
-// read, and unwrapping a tool result's body for the transcript.
+// Attachments: resolve to a file, inline the ones small enough, unwrap a tool
+// result's body for the transcript.
 use std::path::Path;
 
 use rusqlite::Connection;
 
 use crate::library::schema::Attachment;
 
-/// The file behind an attachment, or nothing if it is gone. A message outlives
-/// the file it named, and that is not a reason to fail.
+/// The file behind an attachment. A message outlives the file it named, and
+/// that is not a reason to fail.
 pub(super) fn attachment_path(
     conn: &Connection,
     library_dir: &Path,
@@ -22,12 +22,9 @@ pub(super) fn attachment_path(
     crate::library::store::abs_of(conn, library_dir, id).map(|p| p.to_string_lossy().into_owned())
 }
 
-/// An image goes inline, because the model can already see one. A document
-/// goes inline too, whole, because a file the model has to go and open costs
-/// it a turn to learn what the user already said they were attaching — and a
-/// partial copy is worse than none, because the model cannot tell it is
-/// partial. So a file that will not fit is not trimmed: it is named with its
-/// path and read whole, in pieces that move.
+/// Images go inline; the model can already see one. A document that will not
+/// fit is not trimmed: it is named with its path and read whole, in pieces. A
+/// partial copy is worse than none — the model cannot tell it is partial.
 pub(super) fn attachments(
     raw: Option<&str>,
     resolve: &dyn Fn(&Attachment) -> Option<String>,
@@ -103,9 +100,8 @@ pub(super) fn attachments(
 const INLINE_MAX_BYTES: u64 = 8_000_000;
 const INLINE_TOTAL_CHARS: usize = 400_000;
 
-/// The whole text of a file, or nothing at all. Never a piece of one: a
-/// partial file that looks whole is a wrong answer, and a right answer is
-/// what the user attached it for.
+/// The whole text of a file, or nothing. A partial file that looks whole is a
+/// wrong answer.
 fn inline_body(path: &str, room: usize) -> Option<String> {
     if room == 0 {
         return None;

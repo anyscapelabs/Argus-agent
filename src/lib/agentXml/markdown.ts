@@ -8,8 +8,7 @@ import {
   isTagNameStartAt,
 } from "./scan";
 
-// Prose bodies get markdown normalized; terminal and diff stay raw, since a
-// shell script's `#` is a comment, not a heading.
+// Terminal and diff stay raw: a shell script's `#` is a comment, not a heading.
 const PROSE_TAGS = new Set(["thinking", "plan", "step", "warning", "error"]);
 
 const PAYLOAD_TAGS = new Set([
@@ -28,9 +27,7 @@ const SPANNING_TAGS = new Set([...PROSE_TAGS, ...PAYLOAD_TAGS]);
 
 type Span = { name: string; close: boolean; self: boolean; end: number };
 
-// Same quote-aware scan the tokenizer uses: a `>` inside `command="ls > f"`
-// must not end the tag early. Two answers about where a tag ends is how a line
-// ends up half-raw.
+// Must agree with scanTagEnd, or a line goes half-raw.
 function scanSpans(line: string): Span[] {
   const out: Span[] = [];
   let i = 0;
@@ -90,7 +87,6 @@ function trackTags(stack: string[], line: string): string[] {
   return next;
 }
 
-/** The language on a code-fence opener, or `null` if the line is not one. */
 function readFence(line: string): string | null {
   if (
     line.charCodeAt(0) !== 0x60 ||
@@ -124,8 +120,8 @@ function readFence(line: string): string | null {
   return lang;
 }
 
-// Mask single-line payload blocks so prose normalization never rewrites a
-// tool's JSON. Multi-line payloads ride the depth tracker instead.
+// Mask payload blocks so prose normalization never rewrites tool JSON.
+// Multi-line payloads ride the depth tracker instead.
 function shieldLine(line: string): {
   text: string;
   restore: (s: string) => string;
@@ -181,7 +177,6 @@ function shieldLine(line: string): {
   return { text: out, restore: (s) => restorePlaceholders(s, saved) };
 }
 
-/** The tag name in `line[from..to]`, with its close/self flags, or `null`. */
 function readTagName(
   line: string,
   from: number,
@@ -205,7 +200,6 @@ function readTagName(
   };
 }
 
-/** Put the shielded spans back, in one pass, without a regular expression. */
 function restorePlaceholders(s: string, saved: string[]): string {
   let at = s.indexOf("\u0000");
   if (at === -1) return s;
@@ -300,7 +294,6 @@ function isTagLike(line: string, at: number): boolean {
   return isTagNameStartAt(line, at + 1);
 }
 
-/** A thematic break: three or more of one of `-`, `*`, `_`, spaces allowed. */
 function isThematicBreak(line: string): boolean {
   let i = 0;
   let ch = 0;
@@ -323,7 +316,6 @@ function isThematicBreak(line: string): boolean {
   return ch !== 0;
 }
 
-/** Strip a leading `>` blockquote marker, and the space that usually follows. */
 function stripQuoteMarker(line: string): string {
   let i = 0;
   while (i < line.length && isSpaceAt(line, i)) i++;
@@ -353,7 +345,6 @@ function normalizeMdLine(line: string): string {
   return restore(inlineOutside(stripQuoteMarker(masked)));
 }
 
-/** `<ul>/<ol>/<li>` rewritten as `- ` bullets, or `null` if none. */
 function readList(line: string): string | null {
   if (
     line.indexOf("<ul>") === -1 &&
@@ -398,7 +389,7 @@ function readList(line: string): string | null {
   return out;
 }
 
-/** Cells of a GFM row, or `null`. A `\|` is an escaped pipe and does not split. */
+/** Cells of a GFM row. A `\|` does not split. */
 function tableRow(line: string): string[] | null {
   let from = 0;
   while (from < line.length && isSpaceAt(line, from)) from++;
@@ -458,8 +449,7 @@ function isDelimiterRow(line: string): boolean {
   return dashes > 0;
 }
 
-/** A table needs its delimiter row before it is a table; before that the header
- *  line stays a paragraph. */
+/** No delimiter row yet, so the header line stays a paragraph. */
 function tryTable(
   lines: string[],
   i: number,
@@ -554,9 +544,8 @@ export function normalizeMd(
       continue;
     }
 
-    // A `<` with no `>` yet passes through raw, for that line only. Never hold the
-    // line back waiting for the tag: `a < b` in prose is common and holding
-    // cost the rest of the message. The buffer is re-read next delta anyway.
+    // A `<` with no `>` yet passes raw. Holding prose there blanks the rest of
+    // the message, and the buffer is re-read next delta anyway.
     const line = lines[k];
     const lt = line.indexOf("<");
 

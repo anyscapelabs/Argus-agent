@@ -1,4 +1,4 @@
-// Session rows: creation, listing, and the small column patches the UI makes.
+// Session rows: creation, listing, and column patches.
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
@@ -171,8 +171,7 @@ pub fn create_child(
 ) -> Result<Session, String> {
     let id = Uuid::new_v4().to_string();
 
-    // A sub-agent is its parent's, working. A Senior Developer that fans out
-    // produces senior developers, so the profile comes along.
+    // A parent that fans out produces children like itself, so profile follows.
     conn.execute(
         "INSERT INTO sessions (id, title, model_id, permission, parent_id, agent_name, agent_state, profile_id)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'running',

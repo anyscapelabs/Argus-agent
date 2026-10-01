@@ -48,8 +48,8 @@ export type Turn = {
 
 export type TurnStatus = { providerId: string; attempt: number };
 
-// Answered in the window, not the transcript: a line of the app speaking.
-// `/usage` is not one — it is a stored turn.
+// Answered in the window, not the transcript. `/usage` is not one — that is a
+// stored turn.
 export type Note = { kind: "text"; text: string };
 
 const EMPTY_TXT = "";
@@ -81,19 +81,14 @@ type State = {
   agentRuns: Record<string, AgentRun>;
   // Steps render from these, never by re-parsing text.
   events: Record<string, ToolEvent[]>;
-  /// What a local slash command answered. Not a message: no model ran, so
-  /// there is nothing to persist and nothing to reload.
   notes: Record<string, Note[]>;
 };
 
 /**
  * Whether this chat is doing work, from any source.
  *
- * The one place the answer is worked out; the composer, transcript and session
- * list all read it. Three ways to be busy: a turn in flight that has not
- * failed; a parent with children still running, which outlives its own turn
- * because it promised to report; or a sub-agent, whose turn ends before its
- * summary is written, so `turns` goes quiet a moment before the work does.
+ * Three ways: a turn in flight; a parent with children still running, which
+ * outlives its own turn; a sub-agent, whose turn ends before its summary lands.
  */
 export function isWorking(state: State, id: string): boolean {
   const turn = state.turns[id];
@@ -110,10 +105,8 @@ export function isWorking(state: State, id: string): boolean {
 }
 
 /**
- * Whether `id` is a sub-agent whose own run has not settled.
- *
- * Separate from `isWorking`: a parent waiting on children is busy but has
- * nothing left to write, and must not look like it is still typing.
+ * Whether `id` is a sub-agent whose own run has not settled. A parent waiting
+ * on children is busy but has nothing left to write — it must not look busy.
  */
 export function isSubAgentRunning(state: State, id: string): boolean {
   const run = state.agentRuns[id];
@@ -169,8 +162,8 @@ class SessionStore {
       const runs = await agentList(sessionId);
       const agentRuns = { ...this.state.agentRuns };
 
-      // Prune runs this parent no longer reports: a missed turn_end
-      // otherwise leaves a finished list masquerading as working.
+      // Prune runs this parent no longer reports: a missed turn_end otherwise
+      // leaves a finished list masquerading as working.
       for (const [id, r] of Object.entries(agentRuns)) {
         if (r.parentId === sessionId && !runs.some((n) => n.id === id)) {
           delete agentRuns[id];
@@ -294,8 +287,7 @@ class SessionStore {
     try {
       await apply();
     } catch {
-      // One attempt only: the setters are not idempotent, so retry would
-      // apply the change twice. Roll back to the last known row.
+      // Setters are not idempotent: one attempt, then roll back.
       this.set({
         sessions: this.state.sessions.map((s) =>
           s.id === sessionId ? { ...s, [field]: row[field] } : s,
@@ -415,8 +407,8 @@ class SessionStore {
 
     if (ev.type === "refresh") {
       void this.loadMsgs(sessionId);
-      // turn_end lives on a sub-agent bus with no replay, so a missed one
-      // leaves the header ticking. Reconcile from state.
+      // A sub-agent bus has no replay, so a missed turn_end leaves the header
+      // ticking. Reconcile from state.
       void Promise.all([this.loadAgents(sessionId), this.loadSessions()]).then(
         () => {
           const st = this.state;
@@ -487,14 +479,14 @@ class SessionStore {
     void sessUnwatch(sessionId ?? undefined).catch(() => {});
   }
 
-  // `files` is for a resend of a message that already had them. A new message
-  // takes the ones waiting on the input and clears them.
+  // `files` is a resend of a message that already had them. A new message takes
+  // the ones waiting on the input and clears them.
   async send(sessionId: string, content: string, files?: Attachment[]) {
     const prev = this.state.turns[sessionId];
     if (prev !== undefined && prev.err === null) return;
 
-    // Chips come off when the send starts, not when the turn ends. A send that
-    // never gets off the ground puts them back.
+    // Chips come off at send, not at turn end. A send that never gets off the
+    // ground puts them back.
     const resend = files !== undefined;
     const attachments = resend ? files : attachStore.payload();
     if (!resend && attachments.length > 0) attachStore.clear();
@@ -512,7 +504,7 @@ class SessionStore {
       tok_out: null,
       active: true,
       vote: null,
-      // The bubble shows files now, not when the written row comes back.
+      // Bubble shows files now, not when the written row comes back.
       attachments: attachments.length > 0 ? JSON.stringify(attachments) : null,
       created_at: "",
     };
@@ -561,8 +553,7 @@ class SessionStore {
       await this.loadSessions();
       this.onTurnDone?.(sessionId, true, snippet);
     } catch (err) {
-      // Turn never reached the backend, so the message carrying these files
-      // was never written. Put them back.
+      // Turn never reached the backend, so the row was never written.
       if (!resend && attachments.length > 0) {
         attachStore.restore(attachments);
       }
@@ -608,21 +599,17 @@ class SessionStore {
       await sessSupersedeFrom(sessionId, usrSeq);
     } catch {}
 
-    // The files went with the message the first time; asking again about a
-    // file the model no longer has is a different question.
+    // The files went with the message the first time; the model no longer has them.
     await this.send(sessionId, content, files ?? []);
   }
 
   /**
-   * Stop everything this chat is doing.
-   *
-   * Children first: a parent that fanned out has usually finished its own turn
-   * by the time the user reaches for stop, so cancelling it does nothing.
+   * Stop everything this chat is doing. Children first: a parent that fanned out
+   * has usually finished its own turn by the time the user reaches for stop.
    */
   async stop(sessionId: string) {
-    // Ask the backend, not the store. `agentRuns` refreshes on `agent-done`
-    // and on a wake, so a parent that just fanned out has none cached — the
-    // stop button needs them most then.
+    // Backend, not the store: `agentRuns` refreshes on `agent-done` and on a
+    // wake, so a parent that just fanned out has none cached.
     try {
       const children = await agentList(sessionId);
 

@@ -89,9 +89,8 @@ async fn session(
 
 pub async fn tools(server: &str) -> Result<Vec<ToolInfo>, String> {
     let (client, cfg) = session(server).await?;
-    // Take the client out of its slot so the call below never runs under the
-    // registry guard. A slow or wedged server must not serialize every other
-    // caller behind one call.
+    // Take the client out of its slot so the call never runs under the registry
+    // guard. A wedged server must not serialize every other caller.
     let mut cli = {
         let mut g = client.lock().await;
         let taken = g.take();
@@ -160,9 +159,8 @@ pub async fn call(server: &str, tool: &str, args: &Value) -> Result<String, Stri
     out
 }
 
-/// Put a used client back only if nobody else stored one meanwhile, and only
-/// if it is still alive. A dead client is dropped so the next caller spawns
-/// fresh instead of retrying a corpse.
+/// Store a client back only if the slot is free and it is still alive: a dead
+/// client would be retried as a corpse.
 async fn restore(slot: &Arc<AsyncMutex<Option<client::Client>>>, mut cli: client::Client) {
     if !cli.alive() {
         return;

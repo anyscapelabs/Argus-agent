@@ -1,5 +1,3 @@
-// Where a turn's events go.
-//
 // The channel is the normal path. The bus exists so a watcher that attached
 // mid-turn still sees the events that follow it, and the fan keeps both.
 
@@ -56,15 +54,11 @@ impl ChatSink for BusSink<'_> {
     }
 }
 
-/// A sub-agent runs in its own session but answers to the chat that spawned
-/// it. Only an approval crosses into the parent, because a human has to be
-/// able to answer it and the parent chat is where approvals are answered.
-/// Everything else — deltas, terminal output, and above all TurnEnd, which
-/// would end the parent's turn out from under it — stays in the child.
+/// Only an approval crosses into the parent, because that is where approvals
+/// are answered. Everything else stays in the child — above all TurnEnd,
+/// which would end the parent's turn out from under it.
 ///
-/// The one thing it will not do is ask when nobody is there. `detached` keys
-/// off the parent being attached, so the moment that window closes the agent
-/// fails closed exactly like any other unattended turn.
+/// Never asks when nobody is there: it fails closed.
 pub struct FanSink<'a> {
     pub gw: &'a Gateway,
     pub child_id: String,
@@ -72,10 +66,7 @@ pub struct FanSink<'a> {
 }
 
 impl ChatSink for FanSink<'_> {
-    /// Only an approval crosses into the parent, because a human has to be
-    /// able to answer it and the parent chat is where approvals are answered.
-    /// Everything else — deltas, terminal output, and above all TurnEnd, which
-    /// would tear down the parent's own turn — stays on the child's own bus.
+    /// Everything else stays on the child's own bus.
     fn emit(&self, ev: StreamEvent) {
         if matches!(ev, StreamEvent::Approval { .. }) {
             self.gw.publish(&self.parent_id, ev.clone());

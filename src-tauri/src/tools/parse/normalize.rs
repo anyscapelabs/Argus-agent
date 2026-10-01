@@ -1,6 +1,4 @@
-// Turning sloppy markup into the canonical action syntax. Models drop quotes,
-// write bare tags, wrap calls in invisible characters, and return arguments in
-// a dozen shapes. None of that is an error here — it is just text to rewrite.
+// Sloppy markup is not an error here, it is text to rewrite.
 use std::fmt::Write as _;
 
 use serde_json::Value;
@@ -79,14 +77,8 @@ pub(super) fn coerce_args(tag: &str, body: &str) -> String {
 
 pub(super) const TOOL_CALL_CLOSE: &str = "</tool_call>";
 
-/// GLM and the Hermes line hide the wrapper tag behind a zero-width space, so a
-/// chat UI will not auto-execute what it finds. Every match below is on a
-/// literal `<tool_call`, so that one invisible byte defeated the entire salvage
-/// path: the block was not recognised, not removed, and not run — it just
-/// landed in the transcript, wrapper and all.
-///
-/// Nothing a model writes legitimately contains a zero-width character, and
-/// leaving one in place only makes the transcript harder to read and search.
+/// GLM and Hermes hide the wrapper behind a zero-width space, so the literal
+/// `<tool_call` matches missed it and the raw block landed in the transcript.
 fn strip_invisibles(text: &str) -> String {
     text.chars()
         .filter(|c| {
@@ -107,9 +99,7 @@ pub fn normalize_actions(raw: &str) -> String {
         out.push_str(&rest[..start]);
         let tail = &rest[start..];
 
-        // A wrapper that never arrived. The name is the only thing marking
-        // where the call begins and the first arg is the only thing marking
-        // where it ends, so the call runs exactly as far as its arguments do.
+        // A wrapper that never arrived: the call runs as far as its arguments do.
         if !tail.starts_with("<tool_call") {
             let (args, used) = arg_pairs(tail);
 
@@ -133,10 +123,8 @@ pub fn normalize_actions(raw: &str) -> String {
         }
 
         let Some(close) = tail.find(TOOL_CALL_CLOSE) else {
-            // Cut the opening tag and keep what the model wrote inside it —
-            // that body is the answer, and dropping the tail with the tag is
-            // how a whole reply used to disappear. With no `>` there is nothing
-            // to tell the tag from the text after it, so nothing is kept.
+            // Cut the opening tag, keep the body: it is the answer. No `>` to find means
+            // no way to tell the tag from the text after it, so nothing is kept.
             if let Some(i) = tag_end(tail) {
                 out.push_str(&tail[i + 1..]);
             }

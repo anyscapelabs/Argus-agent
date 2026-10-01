@@ -64,9 +64,7 @@ pub struct NewLibItem {
     pub session_id: Option<String>,
 }
 
-/// What a message records about a file it carried. A picked file is named by
-/// the path it came from, and that path is the only thing that can open it. A
-/// row written before the picker stopped copying into the library has an `id`
+/// A row written before the picker stopped copying into the library has an `id`
 /// and no `path`, and resolves through the library instead.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Attachment {

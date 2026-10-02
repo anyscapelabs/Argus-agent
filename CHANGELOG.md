@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+Nothing yet. The next entry is `0.1.1`.
+
+## [0.1.0] — First stable release
+
+The first stable release of Argus — a personal agent that lives on your
+machine. This rolls up everything shipped through the alpha loop, plus the
+document-editing tools that graduated from unreleased.
+
 ### Added
 
 - **In-place document editing** — library documents can now be edited in place
@@ -18,6 +26,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
     extracted text view. Each `old` string must match exactly once or the whole
     call fails and nothing is written, so a patch never silently corrupts a
     document. Cheaper than `doc.edit` for small corrections.
+
+### Fixed
+
+- **Thinking and narration** — `<thinking>` renders as paragraphs in the
+  Worked summary, never in the answer; intermediate step narration no longer
+  joins the final bubble.
+- **Duplication** — retried turns no longer stack the same answer twice;
+  repeat blocks render once.
+- **Provider errors** — every model error persists as a bubble message instead
+  of vanishing when the turn ends.
+- **GLM compliance** — per-model close rules, accept-and-close for complete
+  unclosed answers, and a resend-proof nudge.
+- **Markdown** — Vercel-style memoized renderer (full GFM: tables, lists,
+  quotes, code).
+- **Connectors** — disconnect updates the UI immediately.
+- **Release plumbing** — `bun run bump` sets all four version files at once;
+  GitHub/Google OAuth secrets bake in at compile time so shipped builds carry
+  them; native window decorations restored.
+- **A local model provider no longer requires a reachable keyring.** Ollama and
+  other `127.0.0.1` providers store no key, but the gateway read the keyring
+  before checking that, so an OS with no secret-service or kwallet running —
+  any headless Linux box — reported a missing API key for a provider that never
+  had one.
+
+### Removed
+
+- **Voice input** — local dictation was built and removed before release. A
+  transcript is indistinguishable from typed text, so a misheard instruction
+  becomes an executed one, and the read-back half wanted cloud text-to-speech,
+  which breaks the offline promise. Possible later, not claimed by this build.
 
 ## [0.1.0-alpha.2]
 
@@ -96,7 +134,7 @@ agent that lives on your machine.
   becomes an executed one, and the read-back half wanted cloud text-to-speech,
   which breaks the offline promise. Possible later, not claimed by this build.
 
-[Unreleased]: https://github.com/anyscapelabs/Argus-agent/compare/v0.1.0-alpha.2...HEAD
-[0.1.0-alpha.1]: https://github.com/anyscapelabs/Argus-agent/releases/tag/v0.1.0-alpha.1
-
+[Unreleased]: https://github.com/anyscapelabs/Argus-agent/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/anyscapelabs/Argus-agent/releases/tag/v0.1.0
 [0.1.0-alpha.2]: https://github.com/anyscapelabs/Argus-agent/releases/tag/v0.1.0-alpha.2
+[0.1.0-alpha.1]: https://github.com/anyscapelabs/Argus-agent/releases/tag/v0.1.0-alpha.1

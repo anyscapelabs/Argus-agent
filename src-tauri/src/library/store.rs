@@ -216,6 +216,42 @@ fn sha256_hex(bytes: &[u8]) -> String {
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+pub fn update_bytes(
+    conn: &Connection,
+    dir: &Path,
+    id: &str,
+    bytes: &[u8],
+) -> Result<LibItem, String> {
+    if bytes.is_empty() {
+        return Err("refusing to write an empty document".into());
+    }
+
+    let item = get(conn, dir, id)?;
+    let abs = abs_path(dir, &item.path);
+
+    if let Ok(cur) = fs::read(&abs) {
+        if cur == bytes {
+            return Ok(item);
+        }
+    }
+
+    fs::write(&abs, bytes).map_err(|err| err.to_string())?;
+    let sha = sha256_hex(bytes);
+    let sz = bytes.len() as i64;
+    conn.execute(
+        "UPDATE library SET sz = ?1, sha = ?2 WHERE id = ?3",
+        params![sz, sha, id],
+    )
+    .map_err(|err| err.to_string())?;
+
+    if bytes.len() <= 200_000 {
+        let text = String::from_utf8_lossy(bytes).into_owned();
+        let _ = crate::memory::store::index_file(conn, id, item.session_id.as_deref(), &text);
+    }
+
+    get(conn, dir, id)
+}
+
 fn chrono_ym() -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

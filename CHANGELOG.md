@@ -7,7 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-Nothing yet. The next entry is `0.1.0-alpha.3`.
+### Added
+
+- **In-place document editing** — library documents can now be edited in place
+  instead of recreated. Two tools share one overwrite path:
+  - `doc.edit` rewrites a document from full content — same id, same kind, new
+    bytes. The whole document is sent and the rebuilt version replaces the
+    original on disk and in the index. Read the id with `library.read` first.
+  - `doc.patch` makes token-light fixes with `SEARCH/REPLACE` edits on the
+    extracted text view. Each `old` string must match exactly once or the whole
+    call fails and nothing is written, so a patch never silently corrupts a
+    document. Cheaper than `doc.edit` for small corrections.
 
 ## [0.1.0-alpha.2]
 
@@ -86,5 +96,7 @@ agent that lives on your machine.
   becomes an executed one, and the read-back half wanted cloud text-to-speech,
   which breaks the offline promise. Possible later, not claimed by this build.
 
-[Unreleased]: https://github.com/anyscapelabs/Argus-agent/compare/v0.1.0-alpha.1...HEAD
+[Unreleased]: https://github.com/anyscapelabs/Argus-agent/compare/v0.1.0-alpha.2...HEAD
 [0.1.0-alpha.1]: https://github.com/anyscapelabs/Argus-agent/releases/tag/v0.1.0-alpha.1
+
+[0.1.0-alpha.2]: https://github.com/anyscapelabs/Argus-agent/releases/tag/v0.1.0-alpha.2

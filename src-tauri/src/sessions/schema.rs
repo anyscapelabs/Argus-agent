@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   compact_seq INTEGER NOT NULL DEFAULT 0,
   compactions INTEGER NOT NULL DEFAULT 0,
   web_search  INTEGER NOT NULL DEFAULT 0,
+  reflect     INTEGER NOT NULL DEFAULT 1,
   parent_id   TEXT REFERENCES sessions(id) ON DELETE CASCADE,
   agent_name  TEXT,
   agent_state TEXT

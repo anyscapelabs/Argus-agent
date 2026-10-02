@@ -640,7 +640,10 @@ export default function ChatTranscript({
                   )}
                   <AgentBubble
                     onOpenAgent={onOpenAgent}
-                    text={allText}
+                    // Panel owns the work: the bubble shows only the streaming
+                    // message, so intermediate prose cannot leak in live and
+                    // vanish on final. No panel means no other home — show all.
+                    text={workSteps.length > 0 ? (last?.content ?? "") : allText}
                     caret
                     final={!streaming}
                     hideToolActivity

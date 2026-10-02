@@ -39,8 +39,8 @@ pub fn create_session(conn: &Connection, req: &NewSession) -> Result<Session, St
     let perm = req.permission.clone().unwrap_or_else(|| "ask".into());
 
     conn.execute(
-        "INSERT INTO sessions (id, title, model_id, permission, folder_id, web_search, profile_id) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'default')",
+        "INSERT INTO sessions (id, title, model_id, permission, folder_id, web_search, profile_id, reflect) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'default', 1)",
         params![id, req.title, req.model_id, perm, req.folder_id, req.web_search],
     )
     .map_err(|err| err.to_string())?;
@@ -173,9 +173,9 @@ pub fn create_child(
 
     // A parent that fans out produces children like itself, so profile follows.
     conn.execute(
-        "INSERT INTO sessions (id, title, model_id, permission, parent_id, agent_name, agent_state, profile_id)
+        "INSERT INTO sessions (id, title, model_id, permission, parent_id, agent_name, agent_state, profile_id, reflect)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'running',
-                 COALESCE((SELECT profile_id FROM sessions WHERE id = ?5), 'default'))",
+                 COALESCE((SELECT profile_id FROM sessions WHERE id = ?5), 'default'), 1)",
         params![id, title, model_id, permission, parent_id, name],
     )
     .map_err(|err| err.to_string())?;

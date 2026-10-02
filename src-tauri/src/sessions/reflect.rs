@@ -77,8 +77,9 @@ pub async fn run_reflection_check(
     let instruction = format!(
         "You are Argus's answer checker. Does the reply below actually satisfy the goal \
          stated in the first message? Did any tool call actually fail without the reply \
-         acknowledging it? Reply with exactly PASS if yes to the first and no surprises, \
-         otherwise reply with one short corrective instruction.\n\
+         acknowledging it? Does the reply promise future work or ask the user to wait \
+         instead of delivering the result? Reply with exactly PASS if yes to the first, \
+         no to the second and third, otherwise reply with one short corrective instruction.\n\
          \n\
          GOAL:\n\
          {goal}\n\

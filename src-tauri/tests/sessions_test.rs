@@ -25,6 +25,29 @@ fn session_deserializes_from_ui_row() {
 }
 
 #[test]
+fn new_sessions_check_their_own_answers() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    argus_lib::sessions::store::migrate(&conn).unwrap();
+    let s = argus_lib::sessions::store::create_session(
+        &conn,
+        &argus_lib::sessions::schema::NewSession {
+            title: "t".into(),
+            model_id: None,
+            permission: None,
+            folder_id: None,
+            web_search: false,
+        },
+    )
+    .unwrap();
+    let on: i64 = conn
+        .query_row("SELECT reflect FROM sessions WHERE id = ?1", [s.id], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(on, 1);
+}
+
+#[test]
 fn skips_cache_dirs_wherever_they_live() {
     assert!(SKIP_DIRS.contains(&"Cache"));
     assert!(SKIP_DIRS.contains(&"Service Worker"));

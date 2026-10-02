@@ -241,9 +241,13 @@ function matchingBracket(s: string, at: number): number {
  * front of the user.
  */
 function renderLink(text: string, href: string, isImage: boolean): string {
-  const body = isImage ? "" : inlineMd(text);
-  if (isImage) return "";
+  if (isImage) {
+    if (!isHttpUrl(href)) return esc(text);
+    const body = inlineMd(text);
+    return `<img src="${esc(href)}" alt="${esc(body).replaceAll('"', "&quot;")}">`;
+  }
 
+  const body = inlineMd(text);
   return isHttpUrl(href)
     ? `<link href="${esc(href)}">${body}</link>`
     : `<link>${body}</link>`;
@@ -658,6 +662,17 @@ function stripQuoteMarker(line: string): string {
   return line.slice(i);
 }
 
+function isQuoteLine(line: string): boolean {
+  let i = 0;
+  while (i < line.length && isSpaceAt(line, i)) i++;
+  return line.charCodeAt(i) === 0x3e;
+}
+
+function thematicReplacement(line: string): string {
+  const s = line.replace(/\s/g, "");
+  return s.length >= 3 && s.startsWith("-") ? "---" : "";
+}
+
 function normalizeMdLine(line: string): string {
   const { text: masked, restore } = shieldLine(line);
 
@@ -672,7 +687,12 @@ function normalizeMdLine(line: string): string {
     return restore(`<${tag}>${inlineOutside(heading.text)}</${tag}>`);
   }
 
-  if (isThematicBreak(masked)) return "";
+  if (isThematicBreak(masked)) return restore(thematicReplacement(masked));
+
+  if (isQuoteLine(masked)) {
+    const inner = restore(inlineOutside(stripQuoteMarker(masked)));
+    return inner.trim() === "" ? "" : `> ${inner}`;
+  }
 
   return restore(inlineOutside(stripQuoteMarker(masked)));
 }
@@ -909,7 +929,7 @@ export function normalizeMd(
     k++;
   }
 
-  if (inFence) flushFence(false);
+  if (inFence && final) flushFence(true);
 
   return out.join("\n");
 }

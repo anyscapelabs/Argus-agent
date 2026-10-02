@@ -1,5 +1,5 @@
 import { marked } from "marked";
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
@@ -149,6 +149,26 @@ function pathify(seg: string): React.ReactNode[] {
   return out;
 }
 
+function SafeImage({ src, alt }: { src?: string; alt?: string }) {
+  const [dead, setDead] = useState(false);
+
+  if (!src || !isHttp(src) || dead) {
+    return alt ? <span>{alt}</span> : null;
+  }
+
+  return (
+    <ExtLink href={src}>
+      <img
+        src={src}
+        alt={alt ?? ""}
+        loading="lazy"
+        onError={() => setDead(true)}
+        className="h-auto w-full max-w-[480px] rounded-lg border border-border-primary object-contain"
+      />
+    </ExtLink>
+  );
+}
+
 function mdChildren(children: React.ReactNode): React.ReactNode {
   if (typeof children === "string") return <>{chipify(children)}</>;
   if (Array.isArray(children)) {
@@ -174,7 +194,9 @@ const MD_COMPONENTS = {
 
     return <ExtLink href={href}>{children}</ExtLink>;
   },
-  img: ({ alt }: { alt?: string }) => (alt ? <span>{alt}</span> : null),
+  img: ({ src, alt }: { src?: string; alt?: string }) => (
+    <SafeImage src={src} alt={alt} />
+  ),
   strong: ({ children }: { children?: React.ReactNode }) => (
     <span className="font-bold">{mdChildren(children)}</span>
   ),
@@ -204,16 +226,18 @@ const MD_COMPONENTS = {
     </span>
   ),
   h1: ({ children }: { children?: React.ReactNode }) => (
-    <span className="text-[16px] font-semibold">{mdChildren(children)}</span>
+    <span className="text-[20px] font-bold">{mdChildren(children)}</span>
   ),
   h2: ({ children }: { children?: React.ReactNode }) => (
-    <span className="text-[16px] font-semibold">{mdChildren(children)}</span>
+    <span className="text-[18px] font-semibold">{mdChildren(children)}</span>
   ),
   h3: ({ children }: { children?: React.ReactNode }) => (
     <span className="text-[16px] font-semibold">{mdChildren(children)}</span>
   ),
   h4: ({ children }: { children?: React.ReactNode }) => (
-    <span className="text-[16px] font-semibold">{mdChildren(children)}</span>
+    <span className="text-sm font-semibold text-text-secondary">
+      {mdChildren(children)}
+    </span>
   ),
   blockquote: ({ children }: { children?: React.ReactNode }) => (
     <span className="border-l-2 border-border-primary pl-3 font-serif text-[16px] font-light leading-6 text-text-secondary">

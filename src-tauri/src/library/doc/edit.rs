@@ -1,5 +1,3 @@
-// Full-rewrite path: same id, same kind, new bytes. The patch tool shares
-// the overwrite below; this one just rebuilds from complete arguments.
 use super::build::build;
 use crate::gateway::Gateway;
 use crate::library::schema::LibItem;

@@ -14,6 +14,7 @@ import { type PendingApproval } from "../stores/sessions";
 import AgentCard from "./agent/AgentCard";
 import AlertBanner from "./agent/AlertBanner";
 import ApprovalBlock from "./agent/ApprovalBlock";
+import CodeBlock from "./agent/CodeBlock";
 import { MemoizedMarkdown } from "./agent/MemoizedMarkdown";
 import ToolActivity, {
   actionStep,
@@ -62,10 +63,10 @@ type Props = {
 };
 
 const HEADING_CLS: Record<string, string> = {
-  h1: "text-[16px] font-semibold",
-  h2: "text-[16px] font-semibold",
+  h1: "text-[20px] font-bold",
+  h2: "text-[18px] font-semibold",
   h3: "text-[16px] font-semibold",
-  h4: "text-[16px] font-semibold",
+  h4: "text-sm font-semibold text-text-secondary",
 };
 
 function diffStats(blk: BlockNode): { added: number; removed: number } {
@@ -108,9 +109,24 @@ function renderBlk(
     if (isBulleted || isNumbered) {
       const items = raw
         .split("\n")
-        .map((l) => l.trim())
-        .filter((l) => /^(?:[-•*]|\d+\.)\s+/.test(l))
-        .map((l) => l.replace(/^(?:[-•*]|\d+\.)\s+/, ""));
+        .map((l) => {
+          const indent = l.match(/^\s*/)![0].length;
+          const t = l.trim();
+          if (!/^(?:[-•*]|\d+\.)\s+/.test(t)) return null;
+          const body = t.replace(/^(?:[-•*]|\d+\.)\s+/, "");
+          const task = /^\[([ xX])\]\s+/.exec(body);
+          return {
+            depth: Math.min(4, Math.floor(indent / 2)),
+            checked: task ? task[1].toLowerCase() === "x" : null,
+            text: task ? body.slice(task[0].length) : body,
+          };
+        })
+        .filter(
+          (
+            x,
+          ): x is { depth: number; checked: boolean | null; text: string } =>
+            x !== null && x.text.length > 0,
+        );
 
       if (items.length === 0) {
         return (
@@ -123,6 +139,33 @@ function renderBlk(
         );
       }
 
+      const renderItem = (
+        it: { depth: number; checked: boolean | null; text: string },
+        idx: number,
+      ) => {
+        const body = (
+          <MemoizedMarkdown content={it.text} id={`${key}-li-${idx}`} />
+        );
+
+        if (it.checked === null) return body;
+
+        return (
+          <span className="flex items-start gap-2">
+            <span
+              role="checkbox"
+              aria-checked={it.checked}
+              className={
+                "mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[11px] leading-none " +
+                `${it.checked ? "border-green-500 text-green-500" : "border-border-primary text-transparent"}`
+              }
+            >
+              ✓
+            </span>
+            <span className="min-w-0 flex-1">{body}</span>
+          </span>
+        );
+      };
+
       if (isNumbered) {
         return (
           <ol
@@ -132,9 +175,13 @@ function renderBlk(
             {items.map((it, idx) => (
               <li
                 key={idx}
-                className="font-sans text-[16px] font-medium leading-6 text-text-primary"
+                style={it.depth > 0 ? { marginLeft: it.depth * 16 } : undefined}
+                className={
+                  "font-sans text-[16px] font-medium leading-6 text-text-primary " +
+                  `${it.checked !== null ? "list-none" : ""}`
+                }
               >
-                <MemoizedMarkdown content={it} id={`${key}-li-${idx}`} />
+                {renderItem(it, idx)}
               </li>
             ))}
           </ol>
@@ -149,9 +196,13 @@ function renderBlk(
           {items.map((it, idx) => (
             <li
               key={idx}
-              className="font-sans text-[16px] font-medium leading-6 text-text-primary"
+              style={it.depth > 0 ? { marginLeft: it.depth * 16 } : undefined}
+              className={
+                "font-sans text-[16px] font-medium leading-6 text-text-primary " +
+                `${it.checked !== null ? "list-none" : ""}`
+              }
             >
-              <MemoizedMarkdown content={it} id={`${key}-li-${idx}`} />
+              {renderItem(it, idx)}
             </li>
           ))}
         </ul>
@@ -219,21 +270,7 @@ function renderBlk(
     case "codeblock": {
       const code = blk.children.map((c) => c.value).join("");
       const lang = blk.attrs.language ?? "";
-      return (
-        <div
-          key={key}
-          className="mt-2 overflow-hidden rounded-lg border border-border-primary first:mt-0"
-        >
-          {lang !== "" && (
-            <div className="border-b border-border-primary px-3 py-1 font-mono text-[10px] text-text-secondary">
-              {lang}
-            </div>
-          )}
-          <pre className="overflow-x-auto px-3 py-2 font-mono text-xs leading-5 text-text-primary">
-            {code}
-          </pre>
-        </div>
-      );
+      return <CodeBlock key={key} lang={lang} code={code} />;
     }
     case "email-draft":
       return (

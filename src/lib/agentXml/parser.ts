@@ -48,6 +48,7 @@ export function buildTree(toks: Token[]): XmlTree {
     "strikethrough",
     "code",
     "link",
+    "img",
   ]);
   const tableInner = new Set(["tr", "th", "td"]);
 

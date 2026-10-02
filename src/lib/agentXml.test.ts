@@ -386,3 +386,38 @@ describe("a report like a real audit", () => {
     }
   });
 });
+
+describe("prose components the bubble used to drop", () => {
+  it("holds back an unclosed fence mid-stream, renders it on final", () => {
+    const live = normalizeMd("```js\nconst a = 1;", { final: false });
+    expect(live).not.toContain("```");
+    expect(live).not.toContain("<codeblock");
+
+    const done = normalizeMd("```js\nconst a = 1;", { final: true });
+    expect(done).toContain("<codeblock");
+  });
+
+  it("keeps quote markers for the renderer instead of flattening", () => {
+    expect(normalizeMd("> quoted")).toBe("> quoted");
+    expect(normalizeMd("plain")).toBe("plain");
+  });
+
+  it("keeps a dash rule as a break, drops the rest as before", () => {
+    expect(normalizeMd("---")).toBe("---");
+    expect(normalizeMd("***")).toBe("");
+  });
+
+  it("passes images through as markup instead of deleting them", () => {
+    const out = normalizeMd("see ![alt](https://x.test/i.png) now");
+    expect(out).toContain("<img");
+    expect(out).toContain('src="https://x.test/i.png"');
+    expect(normalizeMd("see ![alt](/local/i.png) now")).not.toContain(
+      "<img",
+    );
+  });
+
+  it("keeps an image inline in the paragraph that holds it", () => {
+    const tags = parse("see ![a](https://x.test/i.png) now").map((b) => b.tag);
+    expect(tags).not.toContain("img");
+  });
+});

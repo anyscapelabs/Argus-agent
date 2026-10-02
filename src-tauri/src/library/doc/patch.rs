@@ -1,5 +1,3 @@
-// Token-light edits: SEARCH/REPLACE on the extracted text view, then rebuild
-// the same kind in place. Full rewrites stay on doc.edit; this is for fixes.
 use super::docx::docx_bytes;
 use super::edit::editable;
 use super::pdf::pdf_bytes;
@@ -94,8 +92,6 @@ fn split_title(patched: &str, fallback: &str) -> (String, String) {
 }
 
 fn table_rows(patched: &str) -> Result<Vec<Vec<String>>, String> {
-    // Header and rule carry pipes; body rows from our own writer do not, so a
-    // table is the pipe block plus the bare rows glued under it.
     let all: Vec<&str> = patched.lines().collect();
     let start = all
         .iter()

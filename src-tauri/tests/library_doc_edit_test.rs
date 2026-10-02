@@ -39,7 +39,7 @@ fn test_gw(tag: &str) -> (argus_lib::gateway::Gateway, std::path::PathBuf) {
 
 fn make_md(gw: &argus_lib::gateway::Gateway, body: &str) -> argus_lib::library::schema::LibItem {
     let args = serde_json::json!({"name": "notes", "kind": "md", "title": "t", "content": body});
-    let (item, _) = doc::create(&gw, &args, None).unwrap();
+    let (item, _) = doc::create(gw, &args, None).unwrap();
     item
 }
 

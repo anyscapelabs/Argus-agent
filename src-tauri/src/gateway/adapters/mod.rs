@@ -16,7 +16,31 @@ impl CallError {
     pub fn retryable(&self) -> bool {
         match self.status {
             None => true,
-            Some(s) => s == 402 || s == 408 || s == 429 || s >= 500,
+            Some(s) => s == 408 || s == 429 || s >= 500,
+        }
+    }
+
+    pub fn kind(&self) -> &'static str {
+        match self.status {
+            Some(401) | Some(403) => "auth",
+            Some(402) | Some(429) => "quota",
+            Some(s) if s >= 500 => "server",
+            Some(_) => "error",
+            None => {
+                let m = self.msg.to_lowercase();
+
+                if m.contains("timed out")
+                    || m.contains("silent")
+                    || m.contains("mid-reply")
+                    || m.contains("connection")
+                    || m.contains("sending")
+                    || m.contains("dns")
+                {
+                    "network"
+                } else {
+                    "error"
+                }
+            }
         }
     }
 

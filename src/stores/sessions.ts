@@ -44,9 +44,17 @@ export type Turn = {
   termCode: Record<number, number>;
   approval: PendingApproval | null;
   status: TurnStatus | null;
+  retry: TurnRetry | null;
 };
 
 export type TurnStatus = { providerId: string; attempt: number };
+
+export type TurnRetry = {
+  attempt: number;
+  maxAttempts: number;
+  waitSecs: number;
+  label: string;
+};
 
 // Answered in the window, not the transcript. `/usage` is not one — that is a
 // stored turn.
@@ -68,6 +76,7 @@ function blankTurn(err: string | null = null): Turn {
     termCode: {},
     approval: null,
     status: null,
+    retry: null,
   };
 }
 
@@ -352,7 +361,12 @@ class SessionStore {
     }
 
     if (ev.type === "delta") {
-      patch((prev) => ({ ...prev, text: prev.text + ev.text, err: null }));
+      patch((prev) => ({
+        ...prev,
+        text: prev.text + ev.text,
+        err: null,
+        retry: null,
+      }));
       return;
     }
 
@@ -401,7 +415,20 @@ class SessionStore {
     }
 
     if (ev.type === "err") {
-      patch((prev) => ({ ...prev, err: ev.msg }));
+      patch((prev) => ({ ...prev, err: ev.msg, retry: null }));
+      return;
+    }
+
+    if (ev.type === "retry") {
+      patch((prev) => ({
+        ...prev,
+        retry: {
+          attempt: ev.attempt,
+          maxAttempts: ev.max_attempts,
+          waitSecs: ev.wait_secs,
+          label: ev.label,
+        },
+      }));
       return;
     }
 

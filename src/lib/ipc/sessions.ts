@@ -80,7 +80,14 @@ export type StreamEvent =
       cost: number;
     }
   | { type: "refresh" }
-  | { type: "err"; msg: string }
+  | { type: "err"; msg: string; kind: string }
+  | {
+      type: "retry";
+      attempt: number;
+      max_attempts: number;
+      wait_secs: number;
+      label: string;
+    }
   | { type: "term"; idx: number; chunk: string }
   | { type: "term_end"; idx: number; code: number }
   | { type: "approval"; id: string; idx: number; command: string }

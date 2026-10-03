@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import AgentBubble from "./AgentBubble";
 import UsageCard from "./UsageCard";
 import UserBubble from "./UserBubble";
+import RetryRow from "./agent/RetryRow";
 import { parseCached, type BlockNode } from "../lib/agentXml";
 import {
   docBlockFor,
@@ -532,12 +533,7 @@ export default function ChatTranscript({
               proseParts.push(b.kind === "heading" ? `# ${t}` : t);
             }
           }
-          // Intermediate narration stays in the Worked panel: only a stub
-          // final borrows prior prose, otherwise the final answers alone.
-          const STUB_CHARS = 40;
-          const lastLen = last?.content.trim().length ?? 0;
-          const borrowed = lastLen < STUB_CHARS ? proseParts.join("\n\n") : "";
-          const priorProse = [...cardParts, borrowed]
+          const priorProse = [...cardParts, ...proseParts]
             .filter((s) => s.length > 0)
             .join("\n\n");
           const summaryText =
@@ -638,9 +634,12 @@ export default function ChatTranscript({
                       sessionId={sessionId}
                     />
                   )}
+                  {turn?.retry != null && answering && (
+                    <RetryRow retry={turn.retry} />
+                  )}
                   <AgentBubble
                     onOpenAgent={onOpenAgent}
-                    text={workSteps.length > 0 ? (last?.content ?? "") : allText}
+                    text={allText}
                     caret
                     final={!streaming}
                     hideToolActivity

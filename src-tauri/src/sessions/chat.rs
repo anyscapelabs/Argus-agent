@@ -290,11 +290,15 @@ pub async fn send<R: tauri::Runtime>(
     // The forwarder only releases the session lock on TurnEnd, so this cannot
     // sit behind a `?`.
     if let Err(err) = &out {
+        let kind = crate::gateway::router::fail_kind(err);
         // A failed turn persists nothing, so the reload after TurnEnd shows no
         // bubble. Every provider error belongs in the transcript instead.
         if let Ok(conn) = gw.conn.lock() {
             let body = err.replace('&', "&amp;").replace('<', "&lt;");
-            let content = format!("<error severity=\"high\">{}</error>", body.trim());
+            let content = format!(
+                "<error severity=\"high\" kind=\"{kind}\">{}</error>",
+                body.trim()
+            );
 
             if let Ok(row) = store::add_msg(
                 &conn,
@@ -315,7 +319,10 @@ pub async fn send<R: tauri::Runtime>(
             }
         }
 
-        sink.emit(StreamEvent::Err { msg: err.clone() });
+        sink.emit(StreamEvent::Err {
+            msg: err.clone(),
+            kind: kind.into(),
+        });
     }
 
     sink.emit(StreamEvent::TurnEnd {

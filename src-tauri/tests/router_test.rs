@@ -123,3 +123,21 @@ fn plain_failures_classify_without_a_status() {
         "error"
     );
 }
+
+#[test]
+fn payment_failures_end_at_once_with_a_quota_kind() {
+    use argus_lib::gateway::adapters::CallError;
+
+    let declined = CallError {
+        status: Some(402),
+        msg: "insufficient credits".into(),
+        retry_after: None,
+    };
+
+    assert!(!declined.retryable());
+    assert_eq!(declined.kind(), "quota");
+    assert_eq!(
+        router::fail_kind("402 Payment Required: balance exhausted"),
+        "quota"
+    );
+}

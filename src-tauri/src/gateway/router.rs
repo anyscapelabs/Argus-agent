@@ -312,9 +312,16 @@ pub fn fail_kind(msg: &str) -> &'static str {
         || m.contains("rejected")
         || m.contains("api key")
         || m.contains("forbidden")
+        || m.contains("suspended")
     {
         "auth"
-    } else if m.contains("rate limit") || m.contains("quota") {
+    } else if m.contains("402")
+        || m.contains("payment")
+        || m.contains("rate limit")
+        || m.contains("quota")
+        || m.contains("credit")
+        || m.contains("balance")
+    {
         "quota"
     } else if m.contains("timed out")
         || m.contains("silent")

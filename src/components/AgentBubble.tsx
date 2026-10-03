@@ -31,6 +31,7 @@ import MemoryRefChip from "./agent/MemoryRefChip";
 import PlanBlock from "./agent/PlanBlock";
 import StreamingIndicator from "./agent/StreamingIndicator";
 import TableBlock from "./agent/TableBlock";
+import ThoughtFold from "./agent/ThoughtFold";
 import WebSearchGroup, { WEB_ACTIONS } from "./agent/WebSearchGroup";
 
 type LiveTerm = {
@@ -257,8 +258,7 @@ function renderBlk(
         />
       );
     case "thinking":
-      // Owned by the Worked summary, never the main answer.
-      return null;
+      return <ThoughtFold key={key} block={blk} />;
     case "plan":
       return <PlanBlock key={key} block={blk} />;
     case "approval":
@@ -348,13 +348,6 @@ function renderTree(
 
   while (i < tree.length) {
     const blk = tree[i];
-
-    // Thinking lives in the Worked summary as a paragraph, never in the
-    // main answer.
-    if (blk.tag === "thinking") {
-      i++;
-      continue;
-    }
 
     if (hideTools === true && blockRole(blk.tag) === "work") {
       i++;

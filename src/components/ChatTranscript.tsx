@@ -1,4 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+import { FiArrowDown } from "react-icons/fi";
+import { useStickToBottom } from "use-stick-to-bottom";
 
 import AgentBubble from "./AgentBubble";
 import UsageCard from "./UsageCard";
@@ -134,9 +136,10 @@ export default function ChatTranscript({
   const st = useSessions();
   const notes = st.notes[sessionId] ?? [];
   const { msgs, turns, stopped } = st;
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const pinnedRef = useRef(true);
-  const rafRef = useRef(0);
+  // Hermes-style stick-to-bottom: ResizeObserver + spring follow while new
+  // content lands, user scroll-up unlocks until back at the bottom.
+  const { scrollRef, contentRef, isAtBottom, scrollToBottom } =
+    useStickToBottom({ initial: "smooth", resize: "smooth" });
 
   const rows = msgs[sessionId] ?? [];
   const turn = turns[sessionId];
@@ -164,53 +167,8 @@ export default function ChatTranscript({
     rows.find((m) => m.id === msgId)?.vote ?? null;
 
   useEffect(() => {
-    const onScroll = () => {
-      const el = scrollRef.current;
-      if (!el) {
-        return;
-      }
-
-      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-      pinnedRef.current = nearBottom;
-    };
-
-    const el = scrollRef.current;
-    if (!el) {
-      return;
-    }
-
-    el.addEventListener("scroll", onScroll, { passive: true });
-
-    return () => el.removeEventListener("scroll", onScroll);
-  }, []);
-
-  useEffect(() => {
-    pinnedRef.current = true;
-    const el = scrollRef.current;
-    if (!el) {
-      return;
-    }
-
-    el.scrollTop = el.scrollHeight;
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (!pinnedRef.current) {
-      return;
-    }
-
-    cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(() => {
-      const el = scrollRef.current;
-      if (el === null || !pinnedRef.current) {
-        return;
-      }
-
-      el.scrollTop = el.scrollHeight;
-    });
-
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [rows.length, turn?.text]);
+    void scrollToBottom();
+  }, [sessionId, scrollToBottom]);
 
   const retryFrom = (usrMsgId: string) => {
     if (running || readOnly) {
@@ -264,13 +222,17 @@ export default function ChatTranscript({
   };
 
   return (
-    <div
-      ref={scrollRef}
-      tabIndex={0}
-      onKeyDown={handleScrollKey}
-      className="min-h-0 flex-1 overflow-y-auto px-6 pb-16 pt-6 outline-none"
-    >
-      <div className="mx-auto flex w-full min-w-0 max-w-[700px] flex-col gap-3">
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={scrollRef}
+        tabIndex={0}
+        onKeyDown={handleScrollKey}
+        className="min-h-0 flex-1 overflow-y-auto px-6 pb-16 pt-6 outline-none"
+      >
+        <div
+          ref={contentRef}
+          className="mx-auto flex w-full min-w-0 max-w-[700px] flex-col gap-3"
+        >
         {groups.map((group, gi) => {
           // The app answered this line itself, so there is no assistant row
           // under it and nothing to retry.
@@ -724,7 +686,18 @@ export default function ChatTranscript({
             Stopped — partial work above is saved.
           </div>
         )}
+        </div>
       </div>
+      {!isAtBottom && (
+        <button
+          type="button"
+          onClick={() => void scrollToBottom()}
+          aria-label="Scroll to latest"
+          className="absolute bottom-4 left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-border-primary bg-bg-secondary text-text-secondary shadow-lg hover:text-text-primary cursor-pointer"
+        >
+          <FiArrowDown size={14} />
+        </button>
+      )}
     </div>
   );
 }

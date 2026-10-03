@@ -151,7 +151,7 @@ export const TAG_SCHEMA: readonly TagSchema[] = [
   {
     tag: "error",
     selfClosing: false,
-    attributes: [{ name: "severity", values: ["low", "medium", "high"] }],
+    attributes: [{ name: "severity", values: ["low", "medium", "high"] }, { name: "kind" }],
   },
 ] as const;
 

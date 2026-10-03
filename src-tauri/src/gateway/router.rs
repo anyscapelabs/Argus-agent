@@ -297,6 +297,43 @@ pub async fn run_opts(gw: &Gateway, req: &ChatReq, max_attempts: i64) -> Result<
     }
 }
 
+pub fn fail_kind(msg: &str) -> &'static str {
+    let m = msg.to_lowercase();
+
+    if m.contains("no api key")
+        || m.contains("stored key")
+        || m.contains("no connected provider")
+        || m.contains("provider gone")
+        || m.contains("unknown compatible dialect")
+    {
+        "config"
+    } else if m.contains("401")
+        || m.contains("unauthorized")
+        || m.contains("rejected")
+        || m.contains("api key")
+        || m.contains("forbidden")
+    {
+        "auth"
+    } else if m.contains("rate limit") || m.contains("quota") {
+        "quota"
+    } else if m.contains("timed out")
+        || m.contains("silent")
+        || m.contains("mid-reply")
+        || m.contains("connection")
+        || m.contains("dns")
+    {
+        "network"
+    } else if m.contains("500")
+        || m.contains("502")
+        || m.contains("503")
+        || m.contains("overloaded")
+    {
+        "server"
+    } else {
+        "error"
+    }
+}
+
 pub async fn stream_run(
     gw: &Gateway,
     mut req: ChatReq,
@@ -306,19 +343,35 @@ pub async fn stream_run(
         provs,
         av,
         mut req_json,
-    } = resolve(gw, &req)?;
+    } = resolve(gw, &req).inspect_err(|err| {
+        let _ = chan.send(StreamEvent::Err {
+            msg: err.clone(),
+            kind: fail_kind(err).into(),
+        });
+    })?;
 
     let prov = match provs.iter().find(|p| p.id == av.provider_id) {
         Some(p) => p,
-        None => return Err("provider gone".into()),
+        None => {
+            let err = "provider gone".to_string();
+            let _ = chan.send(StreamEvent::Err {
+                msg: err.clone(),
+                kind: "config".into(),
+            });
+            return Err(err);
+        }
     };
 
-    let tok = key_for(prov)?;
+    let tok = key_for(prov).inspect_err(|err| {
+        let _ = chan.send(StreamEvent::Err {
+            msg: err.clone(),
+            kind: fail_kind(err).into(),
+        });
+    })?;
 
     let mut attempt = 0i64;
     let mut rate_body: Option<String> = None;
     let mut same_429 = 0u32;
-    let mut rate_noticed = false;
     let mut degraded = false;
 
     loop {
@@ -460,7 +513,11 @@ pub async fn stream_run(
                     } else {
                         err.msg.clone()
                     };
-                    let _ = chan.send(StreamEvent::Err { msg: msg.clone() });
+                    let kind = err.kind().to_string();
+                    let _ = chan.send(StreamEvent::Err {
+                        msg: msg.clone(),
+                        kind,
+                    });
                     return Err(msg);
                 }
 
@@ -476,7 +533,10 @@ pub async fn stream_run(
                         let msg =
                             "provider keeps returning the same rate limit — likely out of quota; try another model"
                                 .to_string();
-                        let _ = chan.send(StreamEvent::Err { msg: msg.clone() });
+                        let _ = chan.send(StreamEvent::Err {
+                            msg: msg.clone(),
+                            kind: "quota".into(),
+                        });
                         return Err(msg);
                     }
                 }
@@ -486,19 +546,12 @@ pub async fn stream_run(
                 }
 
                 let wait = backoff_ms(err.status, attempt, err.retry_after);
-
-                // Minutes of nothing on screen: say why once, before the wait.
-                if err.status == Some(429) && !rate_noticed {
-                    rate_noticed = true;
-                    let _ = chan.send(StreamEvent::Notice {
-                        msg: format!(
-                            "{} is rate limiting this request. Waiting {}s, then \
-                             trying again — up to {MAX_ATTEMPTS} attempts.",
-                            provider_label(&prov.name, &prov.id),
-                            wait.div_ceil(1_000)
-                        ),
-                    });
-                }
+                let _ = chan.send(StreamEvent::Retry {
+                    attempt,
+                    max_attempts: MAX_ATTEMPTS,
+                    wait_secs: wait.div_ceil(1_000),
+                    label: provider_label(&prov.name, &prov.id),
+                });
 
                 tokio::time::sleep(Duration::from_millis(wait)).await;
             }

@@ -3,8 +3,6 @@
   "productName": "Argus",
   "version": "0.1.0",
   "identifier": "com.anyscapelabs.argus",
-  "publisher": "Anyscape Labs PLC",
-  "description": "Argus is a personal AI agent that lives on your machine and grows with you. Chat, desktop control, skills, memory, a document library, and fourteen connected services \u2014 your data stays on your machine.",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
@@ -29,6 +27,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Anyscape Labs PLC",
+    "shortDescription": "Personal AI agent that lives on your machine.",
+    "longDescription": "Argus is a personal AI agent that lives on your machine and grows with you. Chat, desktop control, skills, memory, a document library, and fourteen connected services — your data stays on your machine.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -236,6 +236,13 @@ pub enum StreamEvent {
     },
     Err {
         msg: String,
+        kind: String,
+    },
+    Retry {
+        attempt: i64,
+        max_attempts: i64,
+        wait_secs: u64,
+        label: String,
     },
     Term {
         idx: u32,

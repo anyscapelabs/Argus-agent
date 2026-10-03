@@ -20,6 +20,30 @@ impl CallError {
         }
     }
 
+    pub fn kind(&self) -> &'static str {
+        match self.status {
+            Some(401) | Some(403) => "auth",
+            Some(429) => "quota",
+            Some(s) if s >= 500 => "server",
+            Some(_) => "error",
+            None => {
+                let m = self.msg.to_lowercase();
+
+                if m.contains("timed out")
+                    || m.contains("silent")
+                    || m.contains("mid-reply")
+                    || m.contains("connection")
+                    || m.contains("sending")
+                    || m.contains("dns")
+                {
+                    "network"
+                } else {
+                    "error"
+                }
+            }
+        }
+    }
+
     /// A raw `TimedOut` cannot tell "never sent headers" from "went quiet mid
     /// reply", and those are different failures to someone watching.
     pub fn from_send(err: &reqwest::Error, sent_any: bool) -> Self {

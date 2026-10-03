@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import AgentBubble from "./AgentBubble";
 import UsageCard from "./UsageCard";
 import UserBubble from "./UserBubble";
+import RetryRow from "./agent/RetryRow";
 import { parseCached, type BlockNode } from "../lib/agentXml";
 import {
   docBlockFor,
@@ -637,6 +638,9 @@ export default function ChatTranscript({
                       approval={turn?.approval ?? null}
                       sessionId={sessionId}
                     />
+                  )}
+                  {turn?.retry != null && answering && (
+                    <RetryRow retry={turn.retry} />
                   )}
                   <AgentBubble
                     onOpenAgent={onOpenAgent}

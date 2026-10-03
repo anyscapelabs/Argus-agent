@@ -238,10 +238,10 @@ fn a_success_at_any_window_position_blocks_the_trip() {
 // finish.
 #[test]
 fn budget_scales_with_the_window() {
-    assert_eq!(turn_budget(0), 256_000, "unknown window uses the default");
-    assert_eq!(turn_budget(128_000), 256_000);
-    assert_eq!(turn_budget(400_000), 800_000);
-    assert_eq!(turn_budget(8_000_000), 2_000_000, "capped");
+    assert_eq!(turn_budget(0), 1_024_000, "unknown window uses the default");
+    assert_eq!(turn_budget(128_000), 1_024_000);
+    assert_eq!(turn_budget(400_000), 3_200_000);
+    assert_eq!(turn_budget(64_000_000), 8_000_000, "capped");
     assert!(turn_budget(200_000) >= 200_000);
 }
 

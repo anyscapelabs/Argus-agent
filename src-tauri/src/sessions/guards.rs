@@ -204,10 +204,10 @@ pub fn thrashing(hist: &[(String, String)], failed: &[bool], key: &(String, Stri
 // re-sent each step), so one long turn legitimately spends many multiples of
 // a single prompt. The budget must cover a whole MAX_STEPS turn; the step
 // limit and compaction are the real bounds, this is only the backstop.
-const BUDGET_WINDOW_FRACTION: f64 = 2.0;
+const BUDGET_WINDOW_FRACTION: f64 = 8.0;
 pub const BUDGET_WARN_FRACTION: f64 = 0.7;
 const BUDGET_MIN: i64 = 200_000;
-const BUDGET_MAX: i64 = 2_000_000;
+const BUDGET_MAX: i64 = 8_000_000;
 
 pub fn turn_budget(ctx_tokens: i64) -> i64 {
     let base = if ctx_tokens > 0 {

@@ -78,3 +78,48 @@ fn a_remote_provider_sends_its_stored_key() {
         Ok(Some("sk-abc".to_string()))
     );
 }
+
+#[test]
+fn call_failures_carry_a_kind_for_the_error_card() {
+    use argus_lib::gateway::adapters::CallError;
+
+    let err = |status: Option<u16>, msg: &str| CallError {
+        status,
+        msg: msg.into(),
+        retry_after: None,
+    };
+
+    assert_eq!(err(Some(401), "unauthorized").kind(), "auth");
+    assert_eq!(err(Some(403), "forbidden").kind(), "auth");
+    assert_eq!(err(Some(429), "slow down").kind(), "quota");
+    assert_eq!(err(Some(500), "boom").kind(), "server");
+    assert_eq!(err(Some(400), "bad").kind(), "error");
+    assert_eq!(err(None, "connection refused").kind(), "network");
+    assert_eq!(
+        err(None, "provider accepted the request then went silent: x").kind(),
+        "network"
+    );
+    assert_eq!(err(None, "unknown compatible dialect z").kind(), "error");
+}
+
+#[test]
+fn plain_failures_classify_without_a_status() {
+    assert_eq!(
+        router::fail_kind("no API key stored for X — reconnect it in Providers settings"),
+        "config"
+    );
+    assert_eq!(router::fail_kind("provider gone"), "config");
+    assert_eq!(
+        router::fail_kind("no connected provider serves model m"),
+        "config"
+    );
+    assert_eq!(router::fail_kind("401 Unauthorized"), "auth");
+    assert_eq!(
+        router::fail_kind("all 10 attempts failed: request was rate limited, slow down"),
+        "quota"
+    );
+    assert_eq!(
+        router::fail_kind("model returned an empty reply — try again"),
+        "error"
+    );
+}

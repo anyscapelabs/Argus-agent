@@ -1,8 +1,9 @@
 [package]
 name = "argus"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Argus is a personal AI agent that lives on your machine and grows with you. Chat, desktop control, skills, memory, a document library, and fourteen connected services — your data stays on your machine."
+authors = ["Anyscape Labs PLC"]
+repository = "https://github.com/anyscapelabs/Argus-agent"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

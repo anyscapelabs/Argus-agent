@@ -1,8 +1,10 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "argus",
-  "version": "0.1.0-alpha.2",
+  "productName": "Argus",
+  "version": "0.1.0",
   "identifier": "com.anyscapelabs.argus",
+  "publisher": "Anyscape Labs PLC",
+  "description": "Argus is a personal AI agent that lives on your machine and grows with you. Chat, desktop control, skills, memory, a document library, and fourteen connected services \u2014 your data stays on your machine.",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +14,7 @@
   "app": {
     "windows": [
       {
-        "title": "argus",
+        "title": "Argus",
         "width": 1720,
         "height": 1200,
         "center": true,

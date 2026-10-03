@@ -1,7 +1,7 @@
 # Argus — Release Manifest
 
 - **Agent:** Argus
-- **Version:** 0.1.0-alpha.1
+- **Version:** 0.1.0
 - **Code name:** Panoptes
 
 ## Code name origin
@@ -18,8 +18,9 @@ Argus Panoptes is the namesake of the word *panoptic* — seeing everything.
 **Every release of Argus takes the code name of a watcher from myth and
 legend.** v0.1.0 starts at the source: **Panoptes, the original all-seeing
 process monitor** — the first daemon that never sleeps. The alpha builds
-(`0.1.0-alpha.N`) share the code name with the release they lead to; it changes
-when the minor version does.
+(`0.1.0-alpha.N`) were the private testing loop that burned the issues down
+before this cut; they share the code name with the release they lead to, and
+the name changes when the minor version does.
 
 For devs: an agent that reads your screen tree, watches your windows, drives
 your browser, and keeps working while you look away needs exactly one property
@@ -28,15 +29,16 @@ the whole of Panoptes, and it is why the name starts here.
 
 ## Status
 
-**0.1.0-alpha is a testing release, not a public one.** Alpha builds go to
-GitHub as prereleases for people installing the app to find what is broken.
-The public release is **0.3.0**. Alpha builds are signed with self-signed
-certificates, which means every platform will show a warning on first launch —
-that is expected and is not evidence of a tampered download.
+**0.1.0 is the release.** The `0.1.0-alpha.N` builds were the testing loop —
+prereleases for people installing the app to find what was broken while it was
+still burning. They are signed with self-signed certificates, so every platform
+showed a warning on first launch; that was expected and was not evidence of a
+tampered download. This build is signed with a real certificate issued to
+**Anyscape Labs PLC**.
 
 ## Features in Panoptes (v0.1.0)
 
-This is the first build of Argus — there is no earlier release to diff
+This is the first release of Argus — there is no earlier release to diff
 against, so everything below is new.
 
 - **Agent chat** — persistent sessions, `ask`/`never` permission modes,
@@ -44,6 +46,10 @@ against, so everything below is new.
 - **Computer control** — terminal-first: streaming shell with cwd and
   configurable timeouts, recursive grep with file globs, files, processes,
   installs, and scripts.
+- **In-place document editing** — `doc.edit` rewrites a library document from
+  full content in place (same id, same kind, new bytes); `doc.patch` makes
+  token-light `SEARCH/REPLACE` fixes that fail atomically if an `old` string
+  does not match exactly once, so a patch can never silently corrupt a file.
 - **Browser use** — snapshot-ref interaction with stale-reference recovery,
   via extension or isolated profiles. The Chrome extension is installed
   separately from the app (see `extension/`).

@@ -640,7 +640,7 @@ export default function ChatTranscript({
                   )}
                   <AgentBubble
                     onOpenAgent={onOpenAgent}
-                    text={allText}
+                    text={workSteps.length > 0 ? (last?.content ?? "") : allText}
                     caret
                     final={!streaming}
                     hideToolActivity

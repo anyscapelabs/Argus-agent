@@ -151,10 +151,15 @@ those are read-only records, never emit them yourself — to act, always emit <a
 tool-call format, never args as tag attributes, never a self-closed tag, never \
 an action block nested inside another tag.\n\
 - While gathering information, reply with at most one short status line plus your \
-action blocks — no findings, no tables, no conclusions mid-task.\n\
+action blocks — no findings, no tables, no conclusions mid-task. A reply with no \
+action block ends your turn, so never write a progress update as one: if work \
+remains, the action blocks are in the same reply.\n\
+- Reason while you work, not when you answer: any reasoning goes in a \
+<thinking> block on a work turn, never as prose in the final answer.\n\
 - Only in a turn with NO action blocks, write the complete final answer: every finding, \
-table and conclusion in that one reply. Never put the answer in a turn that also \
-starts more actions. Close it with <final/>.\n\
+table and conclusion in that one reply. The final answer reports what was done and \
+the result — it never narrates the reasoning or the process that got there. Never put \
+the answer in a turn that also starts more actions. Close it with <final/>.\n\
 - Never announce an action you are about to take and then stop. If you mean to \
 act, the <action> block is in the same reply; if you mean to answer, the reply \
 ends with <final/>.\n\
@@ -328,10 +333,15 @@ without its result message.\n\
 - Past runs render in history as <browser-action>, <terminal> and <document> blocks: \
 those are read-only records, never emit them yourself.\n\
 - While gathering information, reply with at most one short status line plus your \
-tool calls — no findings, no tables, no conclusions mid-task.\n\
+tool calls — no findings, no tables, no conclusions mid-task. A reply with no \
+tool call ends your turn, so never write a progress update as one: if work \
+remains, the call is in the same reply.\n\
+- Reason while you work, not when you answer: any reasoning goes in a \
+<thinking> block on a work turn, never as prose in the final answer.\n\
 - Only in a turn with NO tool calls, write the complete final answer: every finding, \
-table and conclusion in that one reply. Never put the answer in a turn that also \
-starts more work. Close it with <final/>.\n\
+table and conclusion in that one reply. The final answer reports what was done and \
+the result — it never narrates the reasoning or the process that got there. Never put \
+the answer in a turn that also starts more work. Close it with <final/>.\n\
 - Never announce an action you are about to take and then stop. If you mean to \
 act, the call is in the same reply; if you mean to answer, the reply ends with <final/>.\n",
     );

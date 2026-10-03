@@ -366,7 +366,7 @@ async fn setup(title: &str, model: &str, web_search: bool, respond: Respond) -> 
 
     let session_id = {
         let conn = gw.conn.lock().unwrap();
-        argus_lib::sessions::store::create_session(
+        let id = argus_lib::sessions::store::create_session(
             &conn,
             &argus_lib::sessions::schema::NewSession {
                 title: title.into(),
@@ -377,7 +377,11 @@ async fn setup(title: &str, model: &str, web_search: bool, respond: Respond) -> 
             },
         )
         .unwrap()
-        .id
+        .id;
+        // Scripted turn counts: the post-turn reflection check is covered by
+        // reflect_test and turn_step_test, not by these exact-count traces.
+        argus_lib::sessions::store::set_reflect(&conn, &id, false).unwrap();
+        id
     };
 
     let app = tauri::test::mock_app();

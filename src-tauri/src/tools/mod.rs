@@ -111,6 +111,18 @@ pub(crate) const TOOLS: &[ToolMeta] = &[
         mutating: true,
     },
     ToolMeta {
+        name: "doc.edit",
+        desc: "rewrite a library document in place with full content: same id, same kind. Read it first with library.read. Use for rewrites; for small fixes use doc.patch instead",
+        args: "{\"id\":\"...\",\"title\":\"...\",\"content\":\"...\"}",
+        mutating: true,
+    },
+    ToolMeta {
+        name: "doc.patch",
+        desc: "patch a library document in place with SEARCH/REPLACE edits on its text: each old must match exactly once or the whole call fails and nothing is written. Read it first with library.read. Cheaper than doc.edit for small fixes",
+        args: "{\"id\":\"...\",\"edits\":[{\"old\":\"...\",\"new\":\"...\"}]}",
+        mutating: true,
+    },
+    ToolMeta {
         name: "skill.read",
         desc: "read a skill's SKILL.md by name; pass file (e.g. reference/api.md) for a reference doc listed in the skill's body",
         args: "{\"name\":\"...\",\"file\":\"\"}",

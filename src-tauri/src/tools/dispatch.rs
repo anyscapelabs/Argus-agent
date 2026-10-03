@@ -360,6 +360,21 @@ pub async fn exec<R: tauri::Runtime>(call: ExecIn<'_, R>) -> Result<String, Stri
                 item.id, item.path, item.name, item.kind, item.ext, pages
             ))
         }
+        "doc.edit" => {
+            let sid = crate::tools::notepad::current_session();
+            let (item, pages) = crate::library::doc::edit(gw, &args, sid.as_deref())?;
+            Ok(format!(
+                "id={}\npath={}\nname={}\nkind={}\next={}\npages={}",
+                item.id, item.path, item.name, item.kind, item.ext, pages
+            ))
+        }
+        "doc.patch" => {
+            let (item, pages) = crate::library::doc::patch(gw, &args)?;
+            Ok(format!(
+                "id={}\npath={}\nname={}\nkind={}\next={}\npages={}",
+                item.id, item.path, item.name, item.kind, item.ext, pages
+            ))
+        }
         "skill.read" => {
             let name = args
                 .get("name")

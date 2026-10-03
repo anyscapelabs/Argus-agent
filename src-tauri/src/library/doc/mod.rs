@@ -5,6 +5,8 @@ mod args;
 pub mod build;
 mod create;
 mod docx;
+pub mod edit;
+pub mod patch;
 mod pdf;
 mod pptx;
 pub mod read;
@@ -13,6 +15,8 @@ mod zip;
 
 pub use build::{build, BuiltDoc};
 pub use create::create;
+pub use edit::edit;
+pub use patch::patch;
 pub use read::{para_markdown, preview_docx, xml_decode};
 
 /// Or `None` for a file we can only store, never generate.

@@ -47,7 +47,7 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
 
     if !has_reflect {
         conn.execute(
-            "ALTER TABLE sessions ADD COLUMN reflect INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE sessions ADD COLUMN reflect INTEGER NOT NULL DEFAULT 1",
             [],
         )
         .map_err(|err| err.to_string())?;

@@ -427,37 +427,64 @@ async fn sess(name: &str) -> Result<tokio::sync::MutexGuard<'static, SessMap>, S
 const SNAP_JS: &str = r#"
 (() => {
   const sel = 'a, button, input, textarea, select, summary, [role="button"], [role="tab"], [role="search"], [role="combobox"], [role="switch"], [role="option"], [draggable="true"], [onclick], [aria-expanded], [contenteditable="true"]';
-  const els = [...document.querySelectorAll(sel)];
   const out = [];
-
-  for (const el of els) {
+  function selFor(el, scope) {
+    let path = '';
+    for (let n = el; n && n.nodeType === 1 && n !== document.body && n !== scope; n = n.parentNode) {
+      if (n.id) { path = `#${CSS.escape(n.id)}${path ? ' > ' + path : ''}`; break; }
+      const p = n.parentNode;
+      let s = n.tagName.toLowerCase();
+      if (p && p.children) {
+        const sib = [...p.children].filter(c => c.tagName === n.tagName);
+        if (sib.length > 1) s += `:nth-of-type(${sib.indexOf(n) + 1})`;
+      }
+      path = path ? `${s} > ${path}` : s;
+    }
+    return path;
+  }
+  function pushEl(el, hops, scope) {
     const r = el.getBoundingClientRect();
-    if (r.width === 0 || r.height === 0) continue;
-    if (el.disabled) continue;
-
+    if (r.width === 0 || r.height === 0) return;
+    if (el.disabled) return;
     const label = (el.innerText || el.value || el.placeholder ||
       el.getAttribute('aria-label') || el.getAttribute('title') || '')
       .trim().replace(/\s+/g, ' ').slice(0, 60);
-
-    let path = '';
-    for (let n = el; n && n !== document.body; n = n.parentElement) {
-      if (n.id) { path = `#${CSS.escape(n.id)}${path ? ' > ' + path : ''}`; break; }
-      const p = n.parentElement;
-      if (!p) break;
-      let s = n.tagName.toLowerCase();
-      const sib = [...p.children].filter(c => c.tagName === n.tagName);
-      if (sib.length > 1) s += `:nth-of-type(${sib.indexOf(n) + 1})`;
-      path = path ? `${s} > ${path}` : s;
-    }
-
+    const tail = selFor(el, scope);
+    if (!tail) return;
+    const path = hops.length === 0 ? tail : 'shadow:' + JSON.stringify([...hops, { s: tail }]);
     out.push({
       kind: el.tagName.toLowerCase() === 'input' && el.type ? `input ${el.type}` : el.tagName.toLowerCase(),
       label,
       path,
     });
   }
-
-  return JSON.stringify(out.slice(0, 100));
+  function collect(root, hops, depth) {
+    if (out.length >= 100 || depth > 4) return;
+    for (const el of root.querySelectorAll(sel)) {
+      if (out.length >= 100) return;
+      pushEl(el, hops, root);
+    }
+    if (depth >= 4) return;
+    let all = [];
+    try { all = [...root.querySelectorAll('*')]; } catch (e) { all = []; }
+    for (const el of all) {
+      if (out.length >= 100) return;
+      const hs = selFor(el, root);
+      if (!hs) continue;
+      if (el.shadowRoot) {
+        collect(el.shadowRoot, [...hops, { s: hs, via: 'shadow' }], depth + 1);
+      }
+      if (el.tagName === 'IFRAME') {
+        let doc = null;
+        try { doc = el.contentDocument; } catch (e) { doc = null; }
+        if (doc) {
+          collect(doc, [...hops, { s: hs, via: 'frame' }], depth + 1);
+        }
+      }
+    }
+  }
+  collect(document, [], 0);
+  return JSON.stringify(out);
 })()
 "#;
 
@@ -633,15 +660,21 @@ pub async fn click(args: &Value) -> Result<String, String> {
     let path = target(s, r, snap).await?;
     let before = PageState::capture(&s.url, &s.title, s.text_hash, &s.elements.items);
 
-    let el = s
-        .page
-        .find_element(&path)
-        .await
-        .map_err(|_| "stale ref — run browser.read for a fresh element list".to_string())?;
+    if is_shadow(&path) {
+        if eval_str(&s.page, &click_js(&path)).await != "ok" {
+            return Err("stale ref — run browser.read for a fresh element list".into());
+        }
+    } else {
+        let el = s
+            .page
+            .find_element(&path)
+            .await
+            .map_err(|_| "stale ref — run browser.read for a fresh element list".to_string())?;
 
-    el.click()
-        .await
-        .map_err(|err| format!("click failed: {err}"))?;
+        el.click()
+            .await
+            .map_err(|err| format!("click failed: {err}"))?;
+    }
     let _ = s.page.wait_for_navigation().await;
 
     let out = page_out(s).await?;
@@ -682,19 +715,21 @@ pub async fn type_text(args: &Value) -> Result<String, String> {
 
     // Primary: trusted CDP key events. Masks, autocompletes and key handlers
     // only react to real keystrokes, so this stays first.
-    let el = s
-        .page
-        .find_element(&path)
-        .await
-        .map_err(|_| "stale ref — run browser.read for a fresh element list".to_string())?;
+    if !is_shadow(&path) {
+        let el = s
+            .page
+            .find_element(&path)
+            .await
+            .map_err(|_| "stale ref — run browser.read for a fresh element list".to_string())?;
 
-    el.click()
-        .await
-        .map_err(|err| format!("focus failed: {err}"))?;
-    el.type_str(text)
-        .await
-        .map_err(|err| format!("typing failed: {err}"))?;
-    drop(el);
+        el.click()
+            .await
+            .map_err(|err| format!("focus failed: {err}"))?;
+        el.type_str(text)
+            .await
+            .map_err(|err| format!("typing failed: {err}"))?;
+        drop(el);
+    }
 
     // Verify BEFORE any submit: sending wipes the evidence a failed write
     // would leave behind, and a submit-time navigation would re-read a fresh
@@ -743,13 +778,18 @@ pub async fn type_text(args: &Value) -> Result<String, String> {
         // Trusted CDP Enter first: chat composers and key-driven forms send
         // on keypress, while a premature native form submit can reload the
         // page and wipe the message.
-        let el = s
-            .page
-            .find_element(&path)
-            .await
-            .map_err(|_| "stale ref — run browser.read for a fresh element list".to_string())?;
-        let _ = el.press_key("Enter").await;
-        drop(el);
+        if is_shadow(&path) {
+            if eval_str(&s.page, &press_js(&path, "Enter", "Enter", 13)).await != "ok" {
+                return Err("stale ref — run browser.read for a fresh element list".into());
+            }
+        } else {
+            let el =
+                s.page.find_element(&path).await.map_err(|_| {
+                    "stale ref — run browser.read for a fresh element list".to_string()
+                })?;
+            let _ = el.press_key("Enter").await;
+            drop(el);
+        }
         let _ = s.page.wait_for_navigation().await;
 
         // Post-submit proof: an app that sent the message clears the field.
@@ -801,17 +841,100 @@ struct FillStatus {
     actual: String,
 }
 
+fn is_shadow(path: &str) -> bool {
+    path.starts_with("shadow:")
+}
+
+const RESOLVE_FN: &str = r#"(p) => {
+  if (typeof p === 'string' && p.startsWith('shadow:')) {
+    let hops = [];
+    try { hops = JSON.parse(p.slice(7)); } catch (e) { return null; }
+    let node = document;
+    for (const h of hops) {
+      if (!node || !node.querySelector) return null;
+      let el = null;
+      try { el = node.querySelector(h.s); } catch (e) { return null; }
+      if (!el) return null;
+      if (h.via === 'shadow') {
+        node = el.shadowRoot;
+        if (!node) return null;
+      } else if (h.via === 'frame') {
+        try { node = el.contentDocument; } catch (e) { return null; }
+        if (!node) return null;
+      } else {
+        node = el;
+      }
+    }
+    return node && node.tagName ? node : null;
+  }
+  try { return document.querySelector(p); } catch (e) { return null; }
+}"#;
+
+fn click_js(path: &str) -> String {
+    let sel = serde_json::to_string(path).unwrap_or_default();
+    format!(
+        r#"((path) => {{
+  const resolveT = {};
+  const el = resolveT(path);
+  if (!el) return 'missing';
+  try {{ el.scrollIntoView({{ block: 'center' }}); }} catch (e) {{}}
+  el.dispatchEvent(new MouseEvent('mousedown', {{ bubbles: true, cancelable: true }}));
+  el.dispatchEvent(new MouseEvent('mouseup', {{ bubbles: true, cancelable: true }}));
+  el.click();
+  return 'ok';
+}})({sel})"#,
+        RESOLVE_FN
+    )
+}
+
+fn press_js(path: &str, key: &str, code: &str, key_code: u32) -> String {
+    let sel = serde_json::to_string(path).unwrap_or_default();
+    let k = serde_json::to_string(key).unwrap_or_default();
+    let c = serde_json::to_string(code).unwrap_or_default();
+    format!(
+        r#"((path, k, code, kc) => {{
+  const resolveT = {};
+  const el = resolveT(path);
+  if (!el) return 'missing';
+  try {{ el.scrollIntoView({{ block: 'center' }}); }} catch (e) {{}}
+  try {{ el.focus(); }} catch (e) {{}}
+  for (const type of ['keydown', 'keypress', 'keyup']) {{
+    const ev = new KeyboardEvent(type, {{ key: k, code: code, bubbles: true, cancelable: true }});
+    try {{
+      Object.defineProperty(ev, 'keyCode', {{ value: kc }});
+      Object.defineProperty(ev, 'which', {{ value: kc }});
+    }} catch (e) {{}}
+    el.dispatchEvent(ev);
+  }}
+  return 'ok';
+}})({sel}, {k}, {c}, {key_code})"#,
+        RESOLVE_FN
+    )
+}
+
+fn upload_resolve_js(path: &str) -> String {
+    let sel = serde_json::to_string(path).unwrap_or_default();
+    format!(
+        r#"((path) => {{
+  const resolveT = {};
+  return resolveT(path);
+}})({sel})"#,
+        RESOLVE_FN
+    )
+}
+
 fn verify_js(path: &str) -> String {
     let sel = serde_json::to_string(path).unwrap_or_default();
     format!(
-        r#"((sel) => {{
-  let el = null;
-  try {{ el = document.querySelector(sel); }} catch {{ return ''; }}
+        r#"((path) => {{
+  const resolveT = {};
+  const el = resolveT(path);
   if (!el) return '';
   if (el.isContentEditable) return (el.innerText ?? el.textContent ?? '');
   if ('value' in el) return (el.value ?? '');
   return (el.innerText ?? el.textContent ?? '');
-}})({sel})"#
+}})({sel})"#,
+        RESOLVE_FN
     )
 }
 
@@ -823,32 +946,9 @@ fn fill_js(path: &str, text: &str) -> String {
     let sel = serde_json::to_string(path).unwrap_or_default();
     let val = serde_json::to_string(text).unwrap_or_default();
     format!(
-        r#"((sel, val) => {{
-  const el = (() => {{
-    try {{
-      const direct = document.querySelector(sel);
-      if (direct) return direct;
-    }} catch {{ return null; }}
-    const seen = new Set();
-    const stack = [document];
-    while (stack.length > 0) {{
-      const root = stack.pop();
-      if (!root || seen.has(root)) continue;
-      seen.add(root);
-      let hit = null;
-      try {{ hit = root.querySelector(sel); }} catch {{ hit = null; }}
-      if (hit) return hit;
-      let els = [];
-      try {{ els = [...root.querySelectorAll('*')]; }} catch {{ els = []; }}
-      for (const n of els) {{
-        if (n.shadowRoot) stack.push(n.shadowRoot);
-        if (n.tagName === 'IFRAME') {{
-          try {{ if (n.contentDocument) stack.push(n.contentDocument); }} catch {{}}
-        }}
-      }}
-    }}
-    return null;
-  }})();
+        r#"((path, val) => {{
+  const resolveT = {};
+  const el = resolveT(path);
   if (!el) return JSON.stringify({{ status: 'missing', actual: '' }});
   try {{ el.scrollIntoView({{ block: 'center' }}); }} catch {{}}
   const tag = (el.tagName || '').toUpperCase();
@@ -910,7 +1010,8 @@ fn fill_js(path: &str, text: &str) -> String {
   }}
   el.dispatchEvent(new Event('change', {{ bubbles: true }}));
   return JSON.stringify({{ status: 'ok', actual: el.value ?? '' }});
-}})({sel}, {val})"#
+}})({sel}, {val})"#,
+        RESOLVE_FN
     )
 }
 
@@ -920,9 +1021,9 @@ fn fill_js(path: &str, text: &str) -> String {
 fn submit_form_js(path: &str) -> String {
     let sel = serde_json::to_string(path).unwrap_or_default();
     format!(
-        r#"((sel) => {{
-  let el = null;
-  try {{ el = document.querySelector(sel); }} catch {{ return JSON.stringify({{ status: 'missing' }}); }}
+        r#"((path) => {{
+  const resolveT = {};
+  const el = resolveT(path);
   if (!el) return JSON.stringify({{ status: 'missing' }});
   const form = el.form;
   if (form && typeof form.requestSubmit === 'function') {{
@@ -930,7 +1031,8 @@ fn submit_form_js(path: &str) -> String {
     return JSON.stringify({{ status: 'submitted' }});
   }}
   return JSON.stringify({{ status: 'no-form' }});
-}})({sel})"#
+}})({sel})"#,
+        RESOLVE_FN
     )
 }
 
@@ -1018,13 +1120,18 @@ pub async fn press(args: &Value) -> Result<String, String> {
     match args.get("ref").and_then(|v| v.as_u64()) {
         Some(r) => {
             let path = target(s, r as usize, snap_of(args)).await?;
-            let el =
-                s.page.find_element(&path).await.map_err(|_| {
+            if is_shadow(&path) {
+                if eval_str(&s.page, &press_js(&path, key, code, key_code)).await != "ok" {
+                    return Err("stale ref — run browser.read for a fresh element list".into());
+                }
+            } else {
+                let el = s.page.find_element(&path).await.map_err(|_| {
                     "stale ref — run browser.read for a fresh element list".to_string()
                 })?;
-            el.press_key(key)
-                .await
-                .map_err(|err| format!("press failed: {err}"))?;
+                el.press_key(key)
+                    .await
+                    .map_err(|err| format!("press failed: {err}"))?;
+            }
         }
         None => {
             let js = format!(
@@ -1133,17 +1240,26 @@ pub async fn upload(args: &Value) -> Result<String, String> {
     let cdp_path = target(s, r, snap).await?;
     let before = PageState::capture(&s.url, &s.title, s.text_hash, &s.elements.items);
 
-    let el = s
+    let object_id = s
         .page
-        .find_element(&cdp_path)
+        .evaluate_expression(
+            chromiumoxide::cdp::js_protocol::runtime::EvaluateParams::builder()
+                .expression(upload_resolve_js(&cdp_path))
+                .return_by_value(false)
+                .build()
+                .map_err(|err| format!("upload failed: {err}"))?,
+        )
         .await
-        .map_err(|_| "stale ref — run browser.read for a fresh element list".to_string())?;
+        .map_err(|err| format!("upload failed: {err}"))?
+        .object()
+        .object_id
+        .clone()
+        .ok_or("stale ref — run browser.read for a fresh element list".to_string())?;
     let mut cmd =
         chromiumoxide::cdp::browser_protocol::dom::SetFileInputFilesParams::new(vec![path
             .to_string_lossy()
             .into_owned()]);
-    cmd.backend_node_id = Some(el.backend_node_id);
-    drop(el);
+    cmd.object_id = Some(object_id);
     s.page
         .execute(cmd)
         .await
@@ -1169,10 +1285,10 @@ fn drag_js(from: &str, to: &str) -> String {
     let a = serde_json::to_string(from).unwrap_or_default();
     let b = serde_json::to_string(to).unwrap_or_default();
     format!(
-        r#"((fromSel, toSel) => {{
-  const find = window.__argusFind || ((s) => document.querySelector(s));
-  const src = find(fromSel);
-  const dst = find(toSel);
+        r#"((fromPath, toPath) => {{
+  const resolveT = {};
+  const src = resolveT(fromPath);
+  const dst = resolveT(toPath);
   if (!src || !dst) return 'missing';
   try {{ src.scrollIntoView({{ block: 'center' }}); }} catch {{}}
   try {{ dst.scrollIntoView({{ block: 'center' }}); }} catch {{}}
@@ -1193,7 +1309,8 @@ fn drag_js(from: &str, to: &str) -> String {
   dst.dispatchEvent(ev('drop', q));
   src.dispatchEvent(ev('dragend', q));
   return 'ok';
-}})({a}, {b})"#
+}})({a}, {b})"#,
+        RESOLVE_FN
     )
 }
 

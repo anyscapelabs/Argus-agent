@@ -202,6 +202,8 @@ async function scrollTab(tabId, dy) {
     throw new Error("tab was closed — run browser.open again");
   }
 
+  await inject(tabId);
+
   await runTab(
     tabId,
     (amount) => {
@@ -221,11 +223,13 @@ async function clickEl(tabId, path) {
     throw new Error("tab was closed — run browser.open again");
   }
 
+  await inject(tabId);
+
   const out = await runTab(
     tabId,
     (sel) => {
       const find =
-        window.__argusFind || ((s) => document.querySelector(s));
+        window.__argusResolve || ((s) => document.querySelector(s));
       const el = find(sel);
       if (!el) return "missing";
 
@@ -254,11 +258,13 @@ async function dragEl(tabId, from, to) {
     throw new Error("tab was closed — run browser.open again");
   }
 
+  await inject(tabId);
+
   const out = await runTab(
     tabId,
     (fromSel, toSel) => {
       const find =
-        window.__argusFind || ((s) => document.querySelector(s));
+        window.__argusResolve || ((s) => document.querySelector(s));
       const src = find(fromSel);
       const dst = find(toSel);
       if (!src || !dst) return "missing";
@@ -330,6 +336,8 @@ async function pressKey(tabId, path, key) {
     throw new Error("tab was closed — run browser.open again");
   }
 
+  await inject(tabId);
+
   const spec = PRESS_KEYS[key];
   if (!spec) {
     throw new Error(`unsupported key "${key}"`);
@@ -339,7 +347,7 @@ async function pressKey(tabId, path, key) {
     tabId,
     (sel, k, meta) => {
       const find =
-        window.__argusFind || ((s) => document.querySelector(s));
+        window.__argusResolve || ((s) => document.querySelector(s));
       const target = sel ? find(sel) : document.activeElement;
       if (!target || target === document.body) return "missing";
       try {
@@ -379,6 +387,8 @@ async function fillEl(tabId, path, text, submit) {
     throw new Error("tab was closed — run browser.open again");
   }
 
+  await inject(tabId);
+
   if (chkPwd(text)) throw new Error(chkPwd(text));
 
   let out;
@@ -387,7 +397,7 @@ async function fillEl(tabId, path, text, submit) {
     tabId,
     async (sel, val, doSubmit) => {
       const find =
-        window.__argusFind || ((s) => document.querySelector(s));
+        window.__argusResolve || ((s) => document.querySelector(s));
 
       const pressEnter = (el) => {
         for (const type of ["keydown", "keypress", "keyup"]) {

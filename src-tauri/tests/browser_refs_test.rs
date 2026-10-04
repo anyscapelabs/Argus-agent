@@ -482,7 +482,7 @@ async fn iso_http() -> (String, tokio::task::JoinHandle<()>) {
                 let body = if path.starts_with("/second") {
                     "<html><body><h1>Second page</h1><button>Back</button></body></html>"
                 } else {
-                    "<html><body><a href=\"/second\">Go second</a><input placeholder=\"Name\"><input placeholder=\"ReactName\" oninput=\"if(event instanceof InputEvent){document.getElementById('echo').textContent=this.value}\"><span id=\"echo\"></span><div contenteditable=\"true\" oninput=\"if(event instanceof InputEvent){document.getElementById('echo2').textContent=this.innerText}\"></div><span id=\"echo2\"></span><input type=\"file\" placeholder=\"PickFile\" onchange=\"document.getElementById('echo3').textContent=this.files.length+' file(s): '+this.files[0].name\"><span id=\"echo3\"></span><span draggable=\"true\" ondragstart=\"event.dataTransfer.setData('text/plain','card-7')\">card-7</span><button ondragover=\"event.preventDefault()\" ondrop=\"event.preventDefault();document.getElementById('echo4').textContent='got:'+event.dataTransfer.getData('text/plain')\">DropBin</button><span id=\"echo4\"></span></body></html>"
+                    "<html><body><a href=\"/second\">Go second</a><input placeholder=\"Name\"><input placeholder=\"ReactName\" oninput=\"if(event instanceof InputEvent){document.getElementById('echo').textContent=this.value}\"><span id=\"echo\"></span><div contenteditable=\"true\" oninput=\"if(event instanceof InputEvent){document.getElementById('echo2').textContent=this.innerText}\"></div><span id=\"echo2\"></span><input type=\"file\" placeholder=\"PickFile\" onchange=\"document.getElementById('echo3').textContent=this.files.length+' file(s): '+this.files[0].name\"><span id=\"echo3\"></span><span draggable=\"true\" ondragstart=\"event.dataTransfer.setData('text/plain','card-7')\">card-7</span><button ondragover=\"event.preventDefault()\" ondrop=\"event.preventDefault();document.getElementById('echo4').textContent='got:'+event.dataTransfer.getData('text/plain')\">DropBin</button><span id=\"echo4\"></span><div id=\"shost\"></div><span id=\"shecho\"></span><script>document.getElementById('shost').attachShadow({mode:'open'}).innerHTML='<input placeholder=\"ShadowName\" oninput=\"if(event instanceof InputEvent){document.getElementById(\\'shecho\\').textContent=this.value}\">';</script></body></html>"
                 };
                 let resp = format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -776,4 +776,24 @@ async fn iso_drag_moves_data() {
     .await
     .expect("isolated drag");
     assert!(out.contains("got:card-7"), "drop never fired, got: {out}");
+}
+
+#[tokio::test]
+async fn iso_type_reaches_shadow_input() {
+    let _guard = serial();
+    let _ = iso_profiles();
+    let (base, _srv) = iso_http().await;
+
+    let out = browser::open(&serde_json::json!({"url": format!("{base}/"), "profile": "iso-h"}))
+        .await
+        .expect("isolated open");
+    let g = snap_gen(&out);
+    let r = ref_for_label(&out, "ShadowName");
+
+    let out = browser::type_text(
+        &serde_json::json!({"ref": r, "snapshot": g, "profile": "iso-h", "text": "hello-shadow"}),
+    )
+    .await
+    .expect("isolated type into shadow input");
+    assert!(out.contains("hello-shadow"), "echo never fired, got: {out}");
 }

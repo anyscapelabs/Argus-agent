@@ -30,7 +30,7 @@
 
   window.__argusSnapshot = () => {
     const sel =
-      'a, button, input, textarea, select, summary, [role="button"], [role="tab"], [role="search"], [role="combobox"], [role="switch"], [onclick], [aria-expanded], [contenteditable="true"]';
+      'a, button, input, textarea, select, summary, [role="button"], [role="tab"], [role="search"], [role="combobox"], [role="switch"], [role="option"], [onclick], [aria-expanded], [contenteditable="true"]';
     const els = [...document.querySelectorAll(sel)];
     const out = [];
 

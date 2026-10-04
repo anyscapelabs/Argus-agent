@@ -30,7 +30,7 @@ pub const META: &[ToolMeta] = &[
     },
     ToolMeta {
         name: "browser.click",
-        desc: "click an element from the last browser snapshot by its ref number",
+        desc: "click an element from the last browser snapshot by its ref number, including autocomplete options",
         args: "{\"ref\":3}",
         mutating: true,
     },
@@ -402,7 +402,7 @@ async fn sess(name: &str) -> Result<tokio::sync::MutexGuard<'static, SessMap>, S
 
 const SNAP_JS: &str = r#"
 (() => {
-  const sel = 'a, button, input, textarea, select, summary, [role="button"], [role="tab"], [role="search"], [role="combobox"], [role="switch"], [onclick], [aria-expanded], [contenteditable="true"]';
+  const sel = 'a, button, input, textarea, select, summary, [role="button"], [role="tab"], [role="search"], [role="combobox"], [role="switch"], [role="option"], [onclick], [aria-expanded], [contenteditable="true"]';
   const els = [...document.querySelectorAll(sel)];
   const out = [];
 
@@ -656,6 +656,8 @@ pub async fn type_text(args: &Value) -> Result<String, String> {
     let path = target(s, r, snap).await?;
     let before = PageState::capture(&s.url, &s.title, s.text_hash, &s.elements.items);
 
+    // Primary: trusted CDP key events. Masks, autocompletes and key handlers
+    // only react to real keystrokes, so this stays first.
     let el = s
         .page
         .find_element(&path)
@@ -668,10 +670,73 @@ pub async fn type_text(args: &Value) -> Result<String, String> {
     el.type_str(text)
         .await
         .map_err(|err| format!("typing failed: {err}"))?;
+    drop(el);
+
+    // Verify BEFORE any submit: sending wipes the evidence a failed write
+    // would leave behind, and a submit-time navigation would re-read a fresh
+    // page and mistake it for landed text.
+    if !landed(&eval_str(&s.page, &verify_js(&path)).await, text) {
+        // Fallback: the keystrokes never reached the model — React-controlled
+        // inputs swallow synthetic writes without the right InputEvent, and
+        // rich-text editors only accept the native beforeinput pipeline. Drive
+        // the same robust fill the extension bridge uses, then check again.
+        // Fill only — the submit below stays the single send gesture.
+        let res = eval_str(&s.page, &fill_js(&path, text)).await;
+        let status: FillStatus = serde_json::from_str(&res).unwrap_or(FillStatus {
+            status: "ok".into(),
+            actual: String::new(),
+        });
+
+        if status.status == "missing" {
+            return Err("stale ref — run browser.read for a fresh element list".into());
+        }
+        if status.status == "unsupported" {
+            return Err("that element takes no text — click it or pick a field".into());
+        }
+        if status.status == "no-option" {
+            return Err("no dropdown option matches that text".into());
+        }
+
+        let got = eval_str(&s.page, &verify_js(&path)).await;
+        if !landed(&got, text) {
+            let show = if got.len() > 120 {
+                format!("{}…", &got[..120])
+            } else {
+                got
+            };
+            return Err(format!(
+                "typing did not land (field shows {}) — the site may need one choice picked first, or the field is read-only",
+                if show.is_empty() {
+                    "empty".to_string()
+                } else {
+                    format!("\"{show}\"")
+                }
+            ));
+        }
+    }
 
     if submit {
+        // Trusted CDP Enter first: chat composers and key-driven forms send
+        // on keypress, while a premature native form submit can reload the
+        // page and wipe the message.
+        let el = s
+            .page
+            .find_element(&path)
+            .await
+            .map_err(|_| "stale ref — run browser.read for a fresh element list".to_string())?;
         let _ = el.press_key("Enter").await;
+        drop(el);
         let _ = s.page.wait_for_navigation().await;
+
+        // Post-submit proof: an app that sent the message clears the field.
+        // The exact text still sitting there means the send never triggered —
+        // say so with the recovery instead of reporting silent success.
+        if !text.is_empty() {
+            let after = eval_str(&s.page, &verify_js(&path)).await;
+            if after.contains(text) && !form_submitted(s, &path).await {
+                return Err("the text is in the field but sending didn't trigger — click the Send button element instead (find its ref with browser.read)".into());
+            }
+        }
     }
 
     let out = page_out(s).await?;
@@ -683,6 +748,166 @@ pub async fn type_text(args: &Value) -> Result<String, String> {
         &s.elements.items,
         out,
     ))
+}
+
+/// Whether the typed text reached the field. `contains` covers the primary
+/// append path; the `starts_with` arm covers maxlength truncation on replace.
+fn landed(readback: &str, want: &str) -> bool {
+    readback.contains(want) || (!readback.is_empty() && want.starts_with(readback))
+}
+
+/// Last-resort send for a field that swallowed Enter: fire the element's own
+/// form submit and report whether one actually ran. A real form submission is
+/// trusted to deliver (or navigate) — only a missing form counts as failure.
+async fn form_submitted(s: &Sess, path: &str) -> bool {
+    let res = eval_str(&s.page, &submit_form_js(path)).await;
+
+    if res.contains("submitted") {
+        let _ = s.page.wait_for_navigation().await;
+        return true;
+    }
+
+    false
+}
+
+#[derive(serde::Deserialize)]
+struct FillStatus {
+    status: String,
+    #[allow(dead_code)]
+    actual: String,
+}
+
+fn verify_js(path: &str) -> String {
+    let sel = serde_json::to_string(path).unwrap_or_default();
+    format!(
+        r#"((sel) => {{
+  let el = null;
+  try {{ el = document.querySelector(sel); }} catch {{ return ''; }}
+  if (!el) return '';
+  if (el.isContentEditable) return (el.innerText ?? el.textContent ?? '');
+  if ('value' in el) return (el.value ?? '');
+  return (el.innerText ?? el.textContent ?? '');
+}})({sel})"#
+    )
+}
+
+/// Mirrors `fillEl` in `extension/background.js`: native setter + InputEvent
+/// with data/inputType for framework inputs, execCommand for
+/// contenteditable editors. Keep the two in sync when either changes.
+#[allow(clippy::too_many_lines)]
+fn fill_js(path: &str, text: &str) -> String {
+    let sel = serde_json::to_string(path).unwrap_or_default();
+    let val = serde_json::to_string(text).unwrap_or_default();
+    format!(
+        r#"((sel, val) => {{
+  const el = (() => {{
+    try {{
+      const direct = document.querySelector(sel);
+      if (direct) return direct;
+    }} catch {{ return null; }}
+    const seen = new Set();
+    const stack = [document];
+    while (stack.length > 0) {{
+      const root = stack.pop();
+      if (!root || seen.has(root)) continue;
+      seen.add(root);
+      let hit = null;
+      try {{ hit = root.querySelector(sel); }} catch {{ hit = null; }}
+      if (hit) return hit;
+      let els = [];
+      try {{ els = [...root.querySelectorAll('*')]; }} catch {{ els = []; }}
+      for (const n of els) {{
+        if (n.shadowRoot) stack.push(n.shadowRoot);
+        if (n.tagName === 'IFRAME') {{
+          try {{ if (n.contentDocument) stack.push(n.contentDocument); }} catch {{}}
+        }}
+      }}
+    }}
+    return null;
+  }})();
+  if (!el) return JSON.stringify({{ status: 'missing', actual: '' }});
+  try {{ el.scrollIntoView({{ block: 'center' }}); }} catch {{}}
+  const tag = (el.tagName || '').toUpperCase();
+  const type = (el.type || '').toLowerCase();
+  const editable = el.isContentEditable || el.getAttribute('contenteditable') === 'true';
+  if (tag === 'INPUT' && (type === 'checkbox' || type === 'radio')) {{
+    el.click();
+    return JSON.stringify({{ status: 'ok', actual: val }});
+  }}
+  if (tag === 'SELECT') {{
+    const match = [...el.options].find((o) => o.value === val || (o.text || '').trim() === (val || '').trim());
+    if (!match) return JSON.stringify({{ status: 'no-option', actual: '' }});
+    el.focus();
+    el.value = match.value;
+    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+    return JSON.stringify({{ status: 'ok', actual: val }});
+  }}
+  if (editable) {{
+    el.focus();
+    try {{
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }} catch {{}}
+    let done = false;
+    try {{ done = document.execCommand('insertText', false, val); }} catch {{ done = false; }}
+    if (!done) {{
+      try {{
+        el.textContent = val;
+        el.dispatchEvent(new InputEvent('input', {{ bubbles: true, cancelable: true, inputType: 'insertText', data: val }}));
+      }} catch {{ el.textContent = val; }}
+    }}
+    const actual = (el.innerText ?? el.textContent ?? '').trim();
+    return JSON.stringify({{ status: 'ok', actual }});
+  }}
+  if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement)) {{
+    return JSON.stringify({{ status: 'unsupported', actual: '' }});
+  }}
+  el.focus();
+  try {{ el.click(); }} catch {{}}
+  try {{ if (typeof el.select === 'function') el.select(); }} catch {{}}
+  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  try {{
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+    if (setter) setter.call(el, val);
+    else el.value = val;
+  }} catch {{ el.value = val; }}
+  try {{
+    const tracker = el._valueTracker;
+    if (tracker && typeof tracker.setValue === 'function') tracker.setValue('');
+  }} catch {{}}
+  try {{
+    el.dispatchEvent(new InputEvent('input', {{ bubbles: true, cancelable: true, inputType: 'insertText', data: val }}));
+  }} catch {{
+    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+  }}
+  el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+  return JSON.stringify({{ status: 'ok', actual: el.value ?? '' }});
+}})({sel}, {val})"#
+    )
+}
+
+/// Runs the element's own form submit. Only the fallback after an Enter that
+/// changed nothing — Enter-first ordering is what chat composers need, and a
+/// premature native submit can reload the page and wipe the message.
+fn submit_form_js(path: &str) -> String {
+    let sel = serde_json::to_string(path).unwrap_or_default();
+    format!(
+        r#"((sel) => {{
+  let el = null;
+  try {{ el = document.querySelector(sel); }} catch {{ return JSON.stringify({{ status: 'missing' }}); }}
+  if (!el) return JSON.stringify({{ status: 'missing' }});
+  const form = el.form;
+  if (form && typeof form.requestSubmit === 'function') {{
+    form.requestSubmit();
+    return JSON.stringify({{ status: 'submitted' }});
+  }}
+  return JSON.stringify({{ status: 'no-form' }});
+}})({sel})"#
+    )
 }
 
 pub async fn read(args: &Value) -> Result<String, String> {

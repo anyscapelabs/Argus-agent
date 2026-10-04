@@ -571,6 +571,8 @@ pub async fn exec<R: tauri::Runtime>(call: ExecIn<'_, R>) -> Result<String, Stri
         "browser.scroll" => browser::scroll(&args).await,
         "browser.press" => browser::press(&args).await,
         "browser.wait" => browser::wait(&args).await,
+        "browser.upload" => browser::upload(&args).await,
+        "browser.drag" => browser::drag(&args).await,
         "browser.close" => browser::close(&args).await,
         "notepad.read" => notepad::read(&args),
         "notepad.append" => notepad::append(&args),

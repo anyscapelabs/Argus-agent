@@ -70,6 +70,18 @@ pub const META: &[ToolMeta] = &[
         args: "{\"text\":\"Order confirmed\",\"timeout\":10}",
         mutating: false,
     },
+    ToolMeta {
+        name: "browser.upload",
+        desc: "attach a local file to a file input; isolated profiles only, never real Chrome",
+        args: "{\"ref\":4,\"path\":\"/home/user/report.pdf\"}",
+        mutating: true,
+    },
+    ToolMeta {
+        name: "browser.drag",
+        desc: "drag an element onto another one: sortable lists, drop zones, sliders",
+        args: "{\"from\":2,\"to\":5}",
+        mutating: true,
+    },
 ];
 
 static NEXT_SNAP: AtomicU64 = AtomicU64::new(1);
@@ -414,7 +426,7 @@ async fn sess(name: &str) -> Result<tokio::sync::MutexGuard<'static, SessMap>, S
 
 const SNAP_JS: &str = r#"
 (() => {
-  const sel = 'a, button, input, textarea, select, summary, [role="button"], [role="tab"], [role="search"], [role="combobox"], [role="switch"], [role="option"], [onclick], [aria-expanded], [contenteditable="true"]';
+  const sel = 'a, button, input, textarea, select, summary, [role="button"], [role="tab"], [role="search"], [role="combobox"], [role="switch"], [role="option"], [draggable="true"], [onclick], [aria-expanded], [contenteditable="true"]';
   const els = [...document.querySelectorAll(sel)];
   const out = [];
 
@@ -1077,6 +1089,155 @@ pub async fn wait(args: &Value) -> Result<String, String> {
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
+}
+
+const MAX_UPLOAD_BYTES: u64 = 100 * 1024 * 1024;
+
+pub async fn upload(args: &Value) -> Result<String, String> {
+    let name = route_profile(args).await;
+
+    if self::ext::is_real(&name) {
+        return self::ext::upload(args).await;
+    }
+
+    let r = ref_of(args)?;
+    let snap = snap_of(args);
+    let raw = args
+        .get("path")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or("missing path")?;
+    let path = std::fs::canonicalize(crate::tools::expand(raw))
+        .map_err(|_| format!("no such file: {raw}"))?;
+    if !path.is_file() {
+        return Err(format!("not a file: {}", path.display()));
+    }
+    if path.metadata().map(|m| m.len()).unwrap_or(u64::MAX) > MAX_UPLOAD_BYTES {
+        return Err("file is larger than 100MB".into());
+    }
+
+    let mut map = sess(&name).await?;
+    let s = map.get_mut(&name).ok_or("browser session missing")?;
+    s.last_used = Instant::now();
+
+    let kind = s
+        .elements
+        .items
+        .get(r)
+        .map(|e| e.kind.clone())
+        .unwrap_or_default();
+    if kind != "input file" {
+        return Err("that element takes no file — pick a file input".into());
+    }
+    let cdp_path = target(s, r, snap).await?;
+    let before = PageState::capture(&s.url, &s.title, s.text_hash, &s.elements.items);
+
+    let el = s
+        .page
+        .find_element(&cdp_path)
+        .await
+        .map_err(|_| "stale ref — run browser.read for a fresh element list".to_string())?;
+    let mut cmd =
+        chromiumoxide::cdp::browser_protocol::dom::SetFileInputFilesParams::new(vec![path
+            .to_string_lossy()
+            .into_owned()]);
+    cmd.backend_node_id = Some(el.backend_node_id);
+    drop(el);
+    s.page
+        .execute(cmd)
+        .await
+        .map_err(|err| format!("upload failed: {err}"))?;
+
+    let got = eval_str(&s.page, &verify_js(&cdp_path)).await;
+    if got.is_empty() {
+        return Err("upload did not land — the input may reset on empty selection".into());
+    }
+
+    let out = page_out(s).await?;
+    Ok(verify_outcome(
+        &before,
+        &s.url,
+        &s.title,
+        s.text_hash,
+        &s.elements.items,
+        out,
+    ))
+}
+
+fn drag_js(from: &str, to: &str) -> String {
+    let a = serde_json::to_string(from).unwrap_or_default();
+    let b = serde_json::to_string(to).unwrap_or_default();
+    format!(
+        r#"((fromSel, toSel) => {{
+  const find = window.__argusFind || ((s) => document.querySelector(s));
+  const src = find(fromSel);
+  const dst = find(toSel);
+  if (!src || !dst) return 'missing';
+  try {{ src.scrollIntoView({{ block: 'center' }}); }} catch {{}}
+  try {{ dst.scrollIntoView({{ block: 'center' }}); }} catch {{}}
+  const dt = new DataTransfer();
+  const mid = (r) => ({{ x: r.x + r.width / 2, y: r.y + r.height / 2 }});
+  const p = mid(src.getBoundingClientRect());
+  const q = mid(dst.getBoundingClientRect());
+  const ev = (type, at) => new DragEvent(type, {{
+    bubbles: true,
+    cancelable: true,
+    clientX: at.x,
+    clientY: at.y,
+    dataTransfer: dt,
+  }});
+  src.dispatchEvent(ev('dragstart', p));
+  dst.dispatchEvent(ev('dragenter', q));
+  dst.dispatchEvent(ev('dragover', q));
+  dst.dispatchEvent(ev('drop', q));
+  src.dispatchEvent(ev('dragend', q));
+  return 'ok';
+}})({a}, {b})"#
+    )
+}
+
+pub async fn drag(args: &Value) -> Result<String, String> {
+    let name = route_profile(args).await;
+
+    if self::ext::is_real(&name) {
+        return self::ext::drag(args).await;
+    }
+
+    let snap = snap_of(args);
+    let from = args
+        .get("from")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize)
+        .ok_or("missing from")?;
+    let to = args
+        .get("to")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize)
+        .ok_or("missing to")?;
+
+    let mut map = sess(&name).await?;
+    let s = map.get_mut(&name).ok_or("browser session missing")?;
+    s.last_used = Instant::now();
+
+    let a = target(s, from, snap).await?;
+    let b = target(s, to, snap).await?;
+    let before = PageState::capture(&s.url, &s.title, s.text_hash, &s.elements.items);
+
+    if eval_str(&s.page, &drag_js(&a, &b)).await != "ok" {
+        return Err("stale ref — run browser.read for a fresh element list".into());
+    }
+
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let out = page_out(s).await?;
+    Ok(verify_outcome(
+        &before,
+        &s.url,
+        &s.title,
+        s.text_hash,
+        &s.elements.items,
+        out,
+    ))
 }
 
 pub async fn close(args: &Value) -> Result<String, String> {

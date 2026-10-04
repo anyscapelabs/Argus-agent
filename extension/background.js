@@ -76,6 +76,8 @@ async function handle(msg) {
       return snapTab(d.tabId);
     case "click":
       return clickEl(d.tabId, d.path);
+    case "drag":
+      return dragEl(d.tabId, d.from, d.to);
     case "press":
       return pressKey(d.tabId, d.path, d.key);
     case "fill":
@@ -243,6 +245,58 @@ async function clickEl(tabId, path) {
 
   await waitLoad(tabId, SETTLE_MS + 3_000);
   await inject(tabId);
+
+  return {};
+}
+
+async function dragEl(tabId, from, to) {
+  if (!(await hasTab(tabId))) {
+    throw new Error("tab was closed — run browser.open again");
+  }
+
+  const out = await runTab(
+    tabId,
+    (fromSel, toSel) => {
+      const find =
+        window.__argusFind || ((s) => document.querySelector(s));
+      const src = find(fromSel);
+      const dst = find(toSel);
+      if (!src || !dst) return "missing";
+      try {
+        src.scrollIntoView({ block: "center" });
+      } catch {
+      }
+      try {
+        dst.scrollIntoView({ block: "center" });
+      } catch {
+      }
+      const dt = new DataTransfer();
+      const mid = (r) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
+      const p = mid(src.getBoundingClientRect());
+      const q = mid(dst.getBoundingClientRect());
+      const ev = (type, at) =>
+        new DragEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: at.x,
+          clientY: at.y,
+          dataTransfer: dt,
+        });
+      src.dispatchEvent(ev("dragstart", p));
+      dst.dispatchEvent(ev("dragenter", q));
+      dst.dispatchEvent(ev("dragover", q));
+      dst.dispatchEvent(ev("drop", q));
+      src.dispatchEvent(ev("dragend", q));
+      return "ok";
+    },
+    [from, to]
+  );
+
+  if (out === "missing") {
+    throw new Error("stale ref — run browser.read for a fresh element list");
+  }
+
+  await new Promise((r) => setTimeout(r, 400));
 
   return {};
 }

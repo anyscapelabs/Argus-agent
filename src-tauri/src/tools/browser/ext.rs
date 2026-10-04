@@ -333,6 +333,42 @@ pub async fn scroll(args: &Value) -> Result<String, String> {
     read_page(tab_id).await
 }
 
+pub async fn upload(_args: &Value) -> Result<String, String> {
+    Err("file upload cannot run in real Chrome — rerun with an isolated profile name".into())
+}
+
+pub async fn drag(args: &Value) -> Result<String, String> {
+    ext_install::ensure_real().await?;
+
+    let snap = super::snap_of(args);
+    let snap_json = |r: u64| match snap {
+        Some(g) => serde_json::json!({"ref": r, "snapshot": g}),
+        None => serde_json::json!({"ref": r}),
+    };
+    let r = args
+        .get("from")
+        .and_then(|v| v.as_u64())
+        .ok_or("missing from")?;
+    let q = snap_json(r);
+    let (tab_id, from) = path_of(&q).await?;
+    let r = args
+        .get("to")
+        .and_then(|v| v.as_u64())
+        .ok_or("missing to")?;
+    let q = snap_json(r);
+    let (_, to) = path_of(&q).await?;
+    let before = current_state().await;
+
+    extpipe::request(
+        "drag",
+        serde_json::json!({"tabId": tab_id, "from": from, "to": to}),
+    )
+    .await?;
+
+    let out = read_page(tab_id).await?;
+    Ok(apply_verify(before, out).await)
+}
+
 pub async fn close(_args: &Value) -> Result<String, String> {
     let tab_id = SESS.lock().await.take().map(|s| s.tab_id).unwrap_or(0);
 

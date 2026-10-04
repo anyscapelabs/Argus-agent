@@ -2,7 +2,47 @@
 // with CSS selector paths. Password fields are never read or filled here.
 
 (() => {
-  if (window.__argusSnapshot) return;
+  if (window.__argusJsV === 2) return;
+  window.__argusJsV = 2;
+
+  window.__argusFind = (sel) => {
+    try {
+      const direct = document.querySelector(sel);
+      if (direct) return direct;
+    } catch {
+      return null;
+    }
+    const seen = new Set();
+    const stack = [document];
+    while (stack.length > 0) {
+      const root = stack.pop();
+      if (!root || seen.has(root)) continue;
+      seen.add(root);
+      let hit = null;
+      try {
+        hit = root.querySelector(sel);
+      } catch {
+        hit = null;
+      }
+      if (hit) return hit;
+      let els = [];
+      try {
+        els = [...root.querySelectorAll("*")];
+      } catch {
+        els = [];
+      }
+      for (const el of els) {
+        if (el.shadowRoot) stack.push(el.shadowRoot);
+        if (el.tagName === "IFRAME") {
+          try {
+            if (el.contentDocument) stack.push(el.contentDocument);
+          } catch {
+          }
+        }
+      }
+    }
+    return null;
+  };
 
   function selFor(el) {
     let path = "";

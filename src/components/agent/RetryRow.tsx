@@ -10,7 +10,7 @@ export default function RetryRow({ retry }: { retry: TurnRetry }) {
         Rate-limited — retrying ({retry.attempt}/{retry.maxAttempts})
       </span>
       <span className="shrink-0 font-mono text-xs text-text-tertiary">
-        next in {retry.waitSecs}s · {retry.label}
+        next in {retry.waitSecs}s
       </span>
     </div>
   );

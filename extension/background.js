@@ -76,6 +76,8 @@ async function handle(msg) {
       return snapTab(d.tabId);
     case "click":
       return clickEl(d.tabId, d.path);
+    case "press":
+      return pressKey(d.tabId, d.path, d.key);
     case "fill":
       return fillEl(d.tabId, d.path, d.text, !!d.submit);
     case "scroll":
@@ -220,46 +222,9 @@ async function clickEl(tabId, path) {
   const out = await runTab(
     tabId,
     (sel) => {
-      const queryDeep = (s) => {
-        try {
-          const direct = document.querySelector(s);
-          if (direct) return direct;
-        } catch {
-          return null;
-        }
-        const seen = new Set();
-        const stack = [document];
-        while (stack.length > 0) {
-          const root = stack.pop();
-          if (!root || seen.has(root)) continue;
-          seen.add(root);
-          let hit = null;
-          try {
-            hit = root.querySelector(s);
-          } catch {
-            hit = null;
-          }
-          if (hit) return hit;
-          let els = [];
-          try {
-            els = [...root.querySelectorAll("*")];
-          } catch {
-            els = [];
-          }
-          for (const el of els) {
-            if (el.shadowRoot) stack.push(el.shadowRoot);
-            if (el.tagName === "IFRAME") {
-              try {
-                if (el.contentDocument) stack.push(el.contentDocument);
-              } catch {
-              }
-            }
-          }
-        }
-        return null;
-      };
-
-      const el = queryDeep(sel);
+      const find =
+        window.__argusFind || ((s) => document.querySelector(s));
+      const el = find(sel);
       if (!el) return "missing";
 
       el.scrollIntoView({ block: "center" });
@@ -290,6 +255,71 @@ function chkPwd(text) {
   return null;
 }
 
+const PRESS_KEYS = {
+  Escape: { code: "Escape", keyCode: 27 },
+  Enter: { code: "Enter", keyCode: 13 },
+  Tab: { code: "Tab", keyCode: 9 },
+  ArrowDown: { code: "ArrowDown", keyCode: 40 },
+  ArrowUp: { code: "ArrowUp", keyCode: 38 },
+  ArrowLeft: { code: "ArrowLeft", keyCode: 37 },
+  ArrowRight: { code: "ArrowRight", keyCode: 39 },
+  PageDown: { code: "PageDown", keyCode: 34 },
+  PageUp: { code: "PageUp", keyCode: 33 },
+  Home: { code: "Home", keyCode: 36 },
+  End: { code: "End", keyCode: 35 },
+  Backspace: { code: "Backspace", keyCode: 8 },
+  Delete: { code: "Delete", keyCode: 46 },
+};
+
+async function pressKey(tabId, path, key) {
+  if (!(await hasTab(tabId))) {
+    throw new Error("tab was closed — run browser.open again");
+  }
+
+  const spec = PRESS_KEYS[key];
+  if (!spec) {
+    throw new Error(`unsupported key "${key}"`);
+  }
+
+  const out = await runTab(
+    tabId,
+    (sel, k, meta) => {
+      const find =
+        window.__argusFind || ((s) => document.querySelector(s));
+      const target = sel ? find(sel) : document.activeElement;
+      if (!target || target === document.body) return "missing";
+      try {
+        target.scrollIntoView({ block: "center" });
+      } catch {
+      }
+      for (const type of ["keydown", "keypress", "keyup"]) {
+        const ev = new KeyboardEvent(type, {
+          key: k,
+          code: meta.code,
+          bubbles: true,
+          cancelable: true,
+        });
+        try {
+          Object.defineProperty(ev, "keyCode", { value: meta.keyCode });
+          Object.defineProperty(ev, "which", { value: meta.keyCode });
+        } catch {
+        }
+        target.dispatchEvent(ev);
+      }
+      return "ok";
+    },
+    [path ?? null, key, spec]
+  );
+
+  if (out === "missing") {
+    throw new Error("nothing to press — run browser.read for a fresh element list");
+  }
+
+  await new Promise((r) => setTimeout(r, 300));
+
+  return {};
+}
+
 async function fillEl(tabId, path, text, submit) {
   if (!(await hasTab(tabId))) {
     throw new Error("tab was closed — run browser.open again");
@@ -302,44 +332,8 @@ async function fillEl(tabId, path, text, submit) {
     out = await runTab(
     tabId,
     async (sel, val, doSubmit) => {
-      const queryDeep = (s) => {
-        try {
-          const direct = document.querySelector(s);
-          if (direct) return direct;
-        } catch {
-          return null;
-        }
-        const seen = new Set();
-        const stack = [document];
-        while (stack.length > 0) {
-          const root = stack.pop();
-          if (!root || seen.has(root)) continue;
-          seen.add(root);
-          let hit = null;
-          try {
-            hit = root.querySelector(s);
-          } catch {
-            hit = null;
-          }
-          if (hit) return hit;
-          let els = [];
-          try {
-            els = [...root.querySelectorAll("*")];
-          } catch {
-            els = [];
-          }
-          for (const el of els) {
-            if (el.shadowRoot) stack.push(el.shadowRoot);
-            if (el.tagName === "IFRAME") {
-              try {
-                if (el.contentDocument) stack.push(el.contentDocument);
-              } catch {
-              }
-            }
-          }
-        }
-        return null;
-      };
+      const find =
+        window.__argusFind || ((s) => document.querySelector(s));
 
       const pressEnter = (el) => {
         for (const type of ["keydown", "keypress", "keyup"]) {
@@ -380,7 +374,7 @@ async function fillEl(tabId, path, text, submit) {
         return JSON.stringify({ status: "submit-failed", actual: readField(node, isEditable) });
       };
 
-      const el = queryDeep(sel);
+      const el = find(sel);
       if (!el) return JSON.stringify({ status: "missing" });
 
       el.scrollIntoView({ block: "center" });

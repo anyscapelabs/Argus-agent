@@ -242,6 +242,46 @@ pub async fn click(args: &Value) -> Result<String, String> {
     Ok(apply_verify(before, out).await)
 }
 
+pub async fn press(args: &Value) -> Result<String, String> {
+    ext_install::ensure_real().await?;
+
+    let key = args
+        .get("key")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or("missing key")?;
+    if super::press_key_spec(key).is_none() {
+        return Err(format!("unsupported key \"{key}\" — use Escape, Enter, Tab, arrows, PageDown, PageUp, Home, End, Backspace or Delete"));
+    }
+
+    let (tab_id, path) = match args.get("ref").and_then(|v| v.as_u64()) {
+        Some(_) => {
+            let (tab_id, path) = path_of(args).await?;
+            (tab_id, Some(path))
+        }
+        None => {
+            let tab_id = SESS
+                .lock()
+                .await
+                .as_ref()
+                .map(|s| s.tab_id)
+                .ok_or("no page open — run browser.open first")?;
+            (tab_id, None)
+        }
+    };
+    let before = current_state().await;
+
+    extpipe::request(
+        "press",
+        serde_json::json!({"tabId": tab_id, "path": path, "key": key}),
+    )
+    .await?;
+
+    let out = read_page(tab_id).await?;
+    Ok(apply_verify(before, out).await)
+}
+
 pub async fn type_text(args: &Value) -> Result<String, String> {
     ext_install::ensure_real().await?;
 

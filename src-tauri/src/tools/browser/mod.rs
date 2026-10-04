@@ -58,6 +58,18 @@ pub const META: &[ToolMeta] = &[
         args: "{}",
         mutating: false,
     },
+    ToolMeta {
+        name: "browser.press",
+        desc: "press a key on an element or the focused field: Escape, Enter, Tab, arrows, PageDown, PageUp, Home, End, Backspace, Delete. Escape dismisses overlays and dropdowns",
+        args: "{\"ref\":3,\"key\":\"Escape\"}",
+        mutating: true,
+    },
+    ToolMeta {
+        name: "browser.wait",
+        desc: "wait until the page text contains a string, for content that loads late; fails on timeout instead of guessing",
+        args: "{\"text\":\"Order confirmed\",\"timeout\":10}",
+        mutating: false,
+    },
 ];
 
 static NEXT_SNAP: AtomicU64 = AtomicU64::new(1);
@@ -949,6 +961,122 @@ pub async fn scroll(args: &Value) -> Result<String, String> {
     eval_str(&s.page, &format!("(() => window.scrollBy(0, {dy}))()")).await;
 
     page_out(s).await
+}
+
+pub(crate) fn press_key_spec(key: &str) -> Option<(&'static str, u32)> {
+    Some(match key {
+        "Escape" => ("Escape", 27),
+        "Enter" => ("Enter", 13),
+        "Tab" => ("Tab", 9),
+        "ArrowDown" => ("ArrowDown", 40),
+        "ArrowUp" => ("ArrowUp", 38),
+        "ArrowLeft" => ("ArrowLeft", 37),
+        "ArrowRight" => ("ArrowRight", 39),
+        "PageDown" => ("PageDown", 34),
+        "PageUp" => ("PageUp", 33),
+        "Home" => ("Home", 36),
+        "End" => ("End", 35),
+        "Backspace" => ("Backspace", 8),
+        "Delete" => ("Delete", 46),
+        _ => return None,
+    })
+}
+
+pub async fn press(args: &Value) -> Result<String, String> {
+    let name = route_profile(args).await;
+
+    if self::ext::is_real(&name) {
+        return self::ext::press(args).await;
+    }
+
+    let key = args
+        .get("key")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or("missing key")?;
+    let (code, key_code) = press_key_spec(key)
+        .ok_or_else(|| format!("unsupported key \"{key}\" — use Escape, Enter, Tab, arrows, PageDown, PageUp, Home, End, Backspace or Delete"))?;
+
+    let mut map = sess(&name).await?;
+    let s = map.get_mut(&name).ok_or("browser session missing")?;
+    s.last_used = Instant::now();
+    let before = PageState::capture(&s.url, &s.title, s.text_hash, &s.elements.items);
+
+    match args.get("ref").and_then(|v| v.as_u64()) {
+        Some(r) => {
+            let path = target(s, r as usize, snap_of(args)).await?;
+            let el =
+                s.page.find_element(&path).await.map_err(|_| {
+                    "stale ref — run browser.read for a fresh element list".to_string()
+                })?;
+            el.press_key(key)
+                .await
+                .map_err(|err| format!("press failed: {err}"))?;
+        }
+        None => {
+            let js = format!(
+                r#"((k, code, kc) => {{
+  const t = document.activeElement;
+  if (!t || t === document.body) return 'missing';
+  for (const type of ['keydown', 'keypress', 'keyup']) {{
+    const ev = new KeyboardEvent(type, {{ key: k, code: code, bubbles: true, cancelable: true }});
+    try {{
+      Object.defineProperty(ev, 'keyCode', {{ value: kc }});
+      Object.defineProperty(ev, 'which', {{ value: kc }});
+    }} catch {{}}
+    t.dispatchEvent(ev);
+  }}
+  return 'ok';
+}})({}, {}, {})"#,
+                serde_json::to_string(key).unwrap_or_default(),
+                serde_json::to_string(code).unwrap_or_default(),
+                key_code,
+            );
+            if eval_str(&s.page, &js).await != "ok" {
+                return Err("nothing focused to press on — click a field first".into());
+            }
+        }
+    }
+
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let out = page_out(s).await?;
+    Ok(verify_outcome(
+        &before,
+        &s.url,
+        &s.title,
+        s.text_hash,
+        &s.elements.items,
+        out,
+    ))
+}
+
+pub async fn wait(args: &Value) -> Result<String, String> {
+    let text = args
+        .get("text")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or("missing text")?;
+    let timeout = args
+        .get("timeout")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(10)
+        .clamp(1, 60);
+    let deadline = Instant::now() + Duration::from_secs(timeout);
+
+    loop {
+        let out = read(args).await?;
+        if out.contains(text) {
+            return Ok(out);
+        }
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "still not showing \"{text}\" after {timeout}s — the update may need a trigger first"
+            ));
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
 }
 
 pub async fn close(args: &Value) -> Result<String, String> {

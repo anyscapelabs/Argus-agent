@@ -228,3 +228,26 @@ fn template_style_teaches_the_exact_xml_grammar() {
     assert!(s.contains("never an empty key"), "{s}");
     assert!(!s.contains("Never write a tool call as text"), "{s}");
 }
+
+#[test]
+fn base_demands_short_answers_only() {
+    assert!(BASE.contains("Answer only what was asked"), "{BASE}");
+    assert!(BASE.contains("one or two sentences"), "{BASE}");
+    assert!(BASE.contains("never paragraphs"), "{BASE}");
+    assert!(BASE.contains("offer follow-ups"), "{BASE}");
+}
+
+#[test]
+fn final_answer_rule_demands_brevity() {
+    use argus_lib::tools::protocol_section;
+
+    for s in [
+        section(false, ToolCallStyle::Native),
+        section(false, ToolCallStyle::GlmXml),
+        protocol_section(),
+    ] {
+        assert!(s.contains("as short as the question allows"), "{s}");
+        assert!(s.contains("never a recap of the steps"), "{s}");
+        assert!(!s.contains("every finding"), "{s}");
+    }
+}

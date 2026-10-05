@@ -192,6 +192,12 @@ pub(crate) const WEB_TOOLS: &[ToolMeta] = &[
         args: "{\"url\":\"https://...\"}",
         mutating: false,
     },
+    ToolMeta {
+        name: "web.image",
+        desc: "find direct image links for a query; embed one as ![what it shows](direct link), never a page url",
+        args: "{\"query\":\"lion\"}",
+        mutating: false,
+    },
 ];
 
 pub struct Action {

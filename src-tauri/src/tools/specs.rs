@@ -156,8 +156,10 @@ action block ends your turn, so never write a progress update as one: if work \
 remains, the action blocks are in the same reply.\n\
 - Reason while you work, not when you answer: any reasoning goes in a \
 <thinking> block on a work turn, never as prose in the final answer.\n\
-- Only in a turn with NO action blocks, write the complete final answer: every finding, \
-table and conclusion in that one reply. The final answer reports what was done and \
+- Only in a turn with NO action blocks, write the complete final answer in that one \
+reply — and keep it as short as the question allows: a simple task gets one or two \
+sentences (what was done plus the result or error), never a recap of the steps. \
+The final answer reports what was done and \
 the result — it never narrates the reasoning or the process that got there. Never put \
 the answer in a turn that also starts more actions. Close it with <final/>.\n\
 - Never announce an action you are about to take and then stop. If you mean to \
@@ -276,7 +278,10 @@ no GUI automation tools — anything without a command-line surface cannot be do
 For static pages — docs, pricing, articles — prefer web.read: plain fetch, faster, \
 fewer bot checks; use the browser only when a page needs interaction (clicking, \
 forms, JS apps). If search or a page serves a bot-check or rate-limit page, \
-retry once with different wording, or switch engine.\n",
+retry once with different wording, or switch engine.\n\
+When the user wants to see something, use web.image and embed a returned direct \
+link as ![what it shows](url) — direct file links only, never page urls — so \
+the picture lands in the answer.\n",
         );
     }
 
@@ -338,8 +343,10 @@ tool call ends your turn, so never write a progress update as one: if work \
 remains, the call is in the same reply.\n\
 - Reason while you work, not when you answer: any reasoning goes in a \
 <thinking> block on a work turn, never as prose in the final answer.\n\
-- Only in a turn with NO tool calls, write the complete final answer: every finding, \
-table and conclusion in that one reply. The final answer reports what was done and \
+- Only in a turn with NO tool calls, write the complete final answer in that one \
+reply — and keep it as short as the question allows: a simple task gets one or two \
+sentences (what was done plus the result or error), never a recap of the steps. \
+The final answer reports what was done and \
 the result — it never narrates the reasoning or the process that got there. Never put \
 the answer in a turn that also starts more work. Close it with <final/>.\n\
 - Never announce an action you are about to take and then stop. If you mean to \

@@ -3,13 +3,21 @@ use crate::mcp::vault;
 const BASE: &str = "https://api.exa.ai";
 const SERVICE: &str = "exa";
 
+fn base() -> String {
+    std::env::var("ARGUS_EXA_BASE")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| BASE.into())
+}
+
 async fn post(path: &str, body: &serde_json::Value) -> Result<serde_json::Value, String> {
     let label = format!("POST {path}");
     let out = async {
         let tok = vault::get(SERVICE)?.ok_or("exa not connected")?;
 
         reqwest::Client::new()
-            .post(format!("{BASE}{path}"))
+            .post(format!("{}{path}", base()))
             .header("x-api-key", tok)
             .json(body)
             .send()

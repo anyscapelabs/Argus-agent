@@ -299,10 +299,15 @@ export default function ChatTranscript({
             }
 
             // Older chats hold a duplicated retry answer. Keep the last of a run
-            // so `final` survives.
+            // so `final` survives. Empty work rows are never duplicates:
+            // collapsing them orphans their event rows and strips the panel.
             const prev = assistants[assistants.length - 1];
 
-            if (prev !== undefined && prev.content === a.content) {
+            if (
+              prev !== undefined &&
+              a.content.trim().length > 0 &&
+              prev.content === a.content
+            ) {
               assistants[assistants.length - 1] = a;
               continue;
             }
@@ -479,15 +484,22 @@ export default function ChatTranscript({
 
           if (live) {
             last = assistants[assistants.length - 1];
+            // Empty work rows still own their event rows: dropping them
+            // strips the whole work panel on native turns, whose text is
+            // prose-only by design.
             prior = assistants
               .slice(0, -1)
-              .filter((a) => a.content.trim().length > 0);
+              .filter(
+                (a) => a.content.trim().length > 0 || eventMap.has(a.id),
+              );
           } else {
             last =
               assistants.find((a) => a.kind === "final") ??
               assistants[assistants.length - 1];
             prior = assistants.filter(
-              (a) => a !== last && a.content.trim().length > 0,
+              (a) =>
+                a !== last &&
+                (a.content.trim().length > 0 || eventMap.has(a.id)),
             );
           }
 

@@ -39,6 +39,7 @@ pub struct WebConfig {
     pub searxng_pool: Vec<String>,
     pub ddg_url: String,
     pub jina_base: String,
+    pub exa: bool,
 }
 
 impl Default for WebConfig {
@@ -47,6 +48,7 @@ impl Default for WebConfig {
             searxng_pool: SEARXNG_POOL.iter().map(|s| s.to_string()).collect(),
             ddg_url: "https://html.duckduckgo.com/html/".into(),
             jina_base: "https://r.jina.ai".into(),
+            exa: true,
         }
     }
 }
@@ -75,6 +77,7 @@ impl WebConfig {
             searxng_pool: pool,
             ddg_url: non_empty("ARGUS_DDG_URL", base.ddg_url),
             jina_base: non_empty("ARGUS_JINA_URL", base.jina_base),
+            exa: base.exa,
         }
     }
 }
@@ -87,6 +90,14 @@ pub async fn search_with(args: &Value, cfg: &WebConfig) -> Result<String, String
     let query = arg_str(args, "query")?;
     let mut failures: Vec<String> = vec![];
     let mut empty_from: Vec<&str> = vec![];
+
+    if cfg.exa {
+        match exa_search(query).await {
+            Ok(hits) if !hits.is_empty() => return Ok(format_hits(&hits, "exa")),
+            Ok(_) => empty_from.push("exa"),
+            Err(e) => failures.push(format!("exa: {e}")),
+        }
+    }
 
     match searxng_search(&cfg.searxng_pool, query).await {
         Ok(hits) if !hits.is_empty() => return Ok(format_hits(&hits, "searxng")),
@@ -124,6 +135,38 @@ fn domain_of(url: &str) -> String {
         .unwrap_or_default()
 }
 
+async fn exa_search(query: &str) -> Result<Vec<(String, String, String)>, String> {
+    let keyed = crate::mcp::vault::get("exa")
+        .ok()
+        .flatten()
+        .is_some_and(|k| !k.trim().is_empty())
+        || std::env::var("EXA_API_KEY")
+            .ok()
+            .is_some_and(|k| !k.trim().is_empty());
+    if !keyed {
+        return Err("exa not connected".into());
+    }
+
+    let v = crate::mcp::exa::search(query, MAX_RESULTS as u64).await?;
+    Ok(v.as_array()
+        .map(|rs| {
+            rs.iter()
+                .filter_map(|r| {
+                    let title = r.get("title")?.as_str()?.trim().to_string();
+                    let url = r.get("url")?.as_str()?.trim().to_string();
+                    let snip = r
+                        .get("snippet")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
+                    (!title.is_empty() && !url.is_empty()).then_some((title, url, snip))
+                })
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
 fn format_hits(hits: &[(String, String, String)], provider: &str) -> String {
     let mut out = String::new();
     for (i, (title, url, snippet)) in hits.iter().take(MAX_RESULTS).enumerate() {
@@ -150,6 +193,8 @@ struct SearxngHit {
     url: String,
     #[serde(default)]
     content: String,
+    #[serde(default)]
+    img_src: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -377,6 +422,81 @@ fn decode_entities(s: &str) -> String {
 
 pub async fn read(args: &Value) -> Result<String, String> {
     read_with(args, &WebConfig::from_env()).await
+}
+
+pub async fn image(args: &Value) -> Result<String, String> {
+    image_with(args, &WebConfig::from_env()).await
+}
+
+pub async fn image_with(args: &Value, cfg: &WebConfig) -> Result<String, String> {
+    let query = arg_str(args, "query")?;
+    let mut failures: Vec<String> = vec![];
+    let mut out = format!(
+        "Pictures for \"{query}\" — embed one with ![caption](direct link). \
+         Use a direct link below, never a source page:\n"
+    );
+    let mut n = 0;
+
+    for base in &cfg.searxng_pool {
+        let urls = match searxng_images(base, query).await {
+            Ok(urls) => urls,
+            Err(e) => {
+                failures.push(format!("{base}: {e}"));
+                continue;
+            }
+        };
+
+        if urls.is_empty() {
+            failures.push(format!("{base}: no images"));
+            continue;
+        }
+
+        for (img, page) in urls {
+            n += 1;
+            out.push_str(&format!("{n}. {img} (from {page})\n"));
+            if n >= MAX_RESULTS {
+                return Ok(out);
+            }
+        }
+    }
+
+    if n > 0 {
+        return Ok(out);
+    }
+
+    Err(format!(
+        "no image found for \"{query}\": {}",
+        failures.join("; ")
+    ))
+}
+
+async fn searxng_images(base: &str, query: &str) -> Result<Vec<(String, String)>, String> {
+    let resp = client()
+        .get(base)
+        .query(&[("q", query), ("format", "json"), ("categories", "images")])
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|err| format!("request failed: {err}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("answered {}", resp.status()));
+    }
+
+    let body: SearxngResp = resp
+        .json()
+        .await
+        .map_err(|_| "invalid response".to_string())?;
+    Ok(body
+        .results
+        .into_iter()
+        .filter_map(|r| {
+            let img = r.img_src.trim().to_string();
+            let page = r.url.trim().to_string();
+            (img.starts_with("http://") || img.starts_with("https://")).then_some((img, page))
+        })
+        .take(MAX_RESULTS)
+        .collect())
 }
 
 pub async fn read_with(args: &Value, cfg: &WebConfig) -> Result<String, String> {

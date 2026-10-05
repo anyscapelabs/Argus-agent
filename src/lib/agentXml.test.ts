@@ -411,13 +411,7 @@ describe("prose components the bubble used to drop", () => {
     const out = normalizeMd("see ![alt](https://x.test/i.png) now");
     expect(out).toContain("<img");
     expect(out).toContain('src="https://x.test/i.png"');
-    expect(normalizeMd("see ![alt](/home/u/lion.png) now")).toContain(
-      '<img src="/home/u/lion.png"',
-    );
-    expect(normalizeMd("see ![alt](relative/i.png) now")).not.toContain(
-      "<img",
-    );
-    expect(normalizeMd("see ![alt](//evil.test/i.png) now")).not.toContain(
+    expect(normalizeMd("see ![alt](/local/i.png) now")).not.toContain(
       "<img",
     );
   });

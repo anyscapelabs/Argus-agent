@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-type Routes = Arc<Mutex<HashMap<String, (u16, String, Vec<u8>)>>>;
+type Routes = Arc<Mutex<HashMap<String, (u16, String, String)>>>;
 
 struct Mock {
     base: String,
@@ -33,7 +33,7 @@ async fn start_mock() -> Mock {
                     .and_then(|l| l.split_whitespace().nth(1))
                     .unwrap_or("/")
                     .to_string();
-                let hit: Option<(u16, String, Vec<u8>)> = {
+                let hit: Option<(u16, String, String)> = {
                     let routes = table.lock().unwrap();
                     let mut hit = None;
                     let mut best = 0usize;
@@ -46,7 +46,7 @@ async fn start_mock() -> Mock {
                     hit
                 };
                 let (status, ct, body) =
-                    hit.unwrap_or((404, "text/plain".into(), b"mock: no route".to_vec()));
+                    hit.unwrap_or((404, "text/plain".into(), "mock: no route".into()));
                 let reason = match status {
                     200 => "OK",
                     403 => "Forbidden",
@@ -55,12 +55,11 @@ async fn start_mock() -> Mock {
                     500 => "Internal Server Error",
                     _ => "Error",
                 };
-                let head = format!(
-                    "HTTP/1.1 {status} {reason}\r\nContent-Type: {ct}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                let resp = format!(
+                    "HTTP/1.1 {status} {reason}\r\nContent-Type: {ct}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                     body.len()
                 );
-                let _ = sock.write_all(head.as_bytes()).await;
-                let _ = sock.write_all(&body).await;
+                let _ = sock.write_all(resp.as_bytes()).await;
             });
         }
     });
@@ -71,15 +70,8 @@ async fn start_mock() -> Mock {
 fn route(mock: &Mock, prefix: &str, status: u16, ct: &str, body: &str) {
     mock.routes.lock().unwrap().insert(
         prefix.to_string(),
-        (status, ct.to_string(), body.as_bytes().to_vec()),
+        (status, ct.to_string(), body.to_string()),
     );
-}
-
-fn route_bytes(mock: &Mock, prefix: &str, status: u16, ct: &str, body: &[u8]) {
-    mock.routes
-        .lock()
-        .unwrap()
-        .insert(prefix.to_string(), (status, ct.to_string(), body.to_vec()));
 }
 
 fn cfg(mock: &Mock) -> WebConfig {
@@ -373,59 +365,44 @@ async fn search_result_url_flows_into_read() {
     assert!(out.contains(&format!("Source: {mock_page}")), "got: {out}");
 }
 
-const MINI_PNG: &[u8] = &[
-    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
-    0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x60, 0x00, 0x00, 0x00,
-    0x02, 0x00, 0x01, 0xe5, 0x27, 0xde, 0xfc, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
-    0x42, 0x60, 0x82,
-];
-
 #[tokio::test]
-async fn image_download_saves_verified_file() {
+async fn image_returns_direct_links() {
     let mock = start_mock().await;
-    let hits = format!(
-        r#"{{"results":[{{"title":"Lion","url":"https://example.com/lion","img_src":"{}/img/lion.png"}}]}}"#,
-        mock.base
-    );
-    route(&mock, "/search", 200, "application/json", &hits);
-    route_bytes(&mock, "/img/lion.png", 200, "image/png", MINI_PNG);
-    route(&mock, "/img/lion.txt", 200, "text/plain", "not a picture");
-    let config = cfg(&mock);
+    let hits = r#"{"results":[
+{"title":"Lion","url":"https://example.com/lion","img_src":"https://img.example.com/lion.jpg"},
+{"title":"NoSrc","url":"https://example.com/x"}
+]}"#;
+    route(&mock, "/search", 200, "application/json", hits);
 
-    let tmp = std::env::temp_dir().join(format!("argus-wimg-{}", std::process::id()));
-    std::fs::create_dir_all(&tmp).unwrap();
-    let prev = std::env::var("XDG_DATA_HOME").ok();
-    std::env::set_var("XDG_DATA_HOME", &tmp);
-
-    let out = image_with(&search_args("lion"), &config)
+    let out = image_with(&search_args("lion"), &cfg(&mock))
         .await
         .expect("image");
 
-    assert!(out.contains("saved to"), "got: {out}");
-    assert!(out.contains("![lion]("), "got: {out}");
-    assert!(out.ends_with(".png)"), "got: {out}");
-
-    let start = out.find("saved to ").unwrap() + "saved to ".len();
-    let end = out[start..].find(' ').unwrap() + start;
-    let saved = std::path::Path::new(&out[start..end]);
-    assert!(saved.exists(), "missing file: {out}");
-    assert_eq!(std::fs::read(saved).unwrap(), MINI_PNG);
-
-    let bad_hits = format!(
-        r#"{{"results":[{{"title":"Lion","url":"https://example.com/lion","img_src":"{}/img/lion.txt"}}]}}"#,
-        mock.base
+    assert!(
+        out.contains("https://img.example.com/lion.jpg"),
+        "got: {out}"
     );
-    route(&mock, "/search", 200, "application/json", &bad_hits);
-    let err = image_with(&search_args("lion"), &config)
-        .await
-        .expect_err("text payload must fail");
-    assert!(err.contains("no image found"), "got: {err}");
-    assert!(err.contains("not an image"), "got: {err}");
+    assert!(
+        out.contains("(from https://example.com/lion)"),
+        "got: {out}"
+    );
+    assert!(out.contains("never a source page"), "got: {out}");
+    assert!(!out.contains("NoSrc"), "got: {out}");
+}
 
-    match prev {
-        Some(v) => std::env::set_var("XDG_DATA_HOME", v),
-        None => std::env::remove_var("XDG_DATA_HOME"),
-    }
-    std::fs::remove_dir_all(&tmp).ok();
+#[tokio::test]
+async fn image_without_sources_is_structured_error() {
+    let mock = start_mock().await;
+    route(
+        &mock,
+        "/search",
+        200,
+        "application/json",
+        r#"{"results":[{"title":"Lion","url":"https://example.com/lion"}]}"#,
+    );
+
+    let err = image_with(&search_args("lion"), &cfg(&mock))
+        .await
+        .expect_err("sourceless results must fail");
+    assert!(err.contains("no image found"), "got: {err}");
 }

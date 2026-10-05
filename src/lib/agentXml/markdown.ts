@@ -242,8 +242,7 @@ function matchingBracket(s: string, at: number): number {
  */
 function renderLink(text: string, href: string, isImage: boolean): string {
   if (isImage) {
-    const local = href.startsWith("/") && !href.startsWith("//");
-    if (!isHttpUrl(href) && !local) return esc(text);
+    if (!isHttpUrl(href)) return esc(text);
     const body = inlineMd(text);
     return `<img src="${esc(href)}" alt="${esc(body).replaceAll('"', "&quot;")}">`;
   }

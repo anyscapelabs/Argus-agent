@@ -194,7 +194,7 @@ pub(crate) const WEB_TOOLS: &[ToolMeta] = &[
     },
     ToolMeta {
         name: "web.image",
-        desc: "fetch one picture for a query, saved locally; embed the returned path as ![what it shows](path) so it renders in the answer",
+        desc: "find direct image links for a query; embed one as ![what it shows](direct link), never a page url",
         args: "{\"query\":\"lion\"}",
         mutating: false,
     },

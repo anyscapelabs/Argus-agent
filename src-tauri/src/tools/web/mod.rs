@@ -160,7 +160,7 @@ async fn exa_search(query: &str) -> Result<Vec<(String, String, String)>, String
                         .unwrap_or("")
                         .trim()
                         .to_string();
-                    (!title.is_empty() && !url.is_empty()).then(|| (title, url, snip))
+                    (!title.is_empty() && !url.is_empty()).then_some((title, url, snip))
                 })
                 .collect()
         })

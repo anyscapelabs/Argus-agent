@@ -3,6 +3,7 @@ import { memo, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
 import { ExtLink } from "../../lib/extLink";
 import PathChip from "./PathChip";
@@ -151,22 +152,27 @@ function pathify(seg: string): React.ReactNode[] {
 
 function SafeImage({ src, alt }: { src?: string; alt?: string }) {
   const [dead, setDead] = useState(false);
+  const local = !!src && src.startsWith("/") && !src.startsWith("//");
 
-  if (!src || !isHttp(src) || dead) {
+  if (!src || dead || (!isHttp(src) && !local)) {
     return alt ? <span>{alt}</span> : null;
   }
 
-  return (
-    <ExtLink href={src}>
-      <img
-        src={src}
-        alt={alt ?? ""}
-        loading="lazy"
-        onError={() => setDead(true)}
-        className="h-auto w-full max-w-[480px] rounded-lg border border-border-primary object-contain"
-      />
-    </ExtLink>
+  const img = (
+    <img
+      src={local ? convertFileSrc(src) : src}
+      alt={alt ?? ""}
+      loading="lazy"
+      onError={() => setDead(true)}
+      className="h-auto w-full max-w-[480px] rounded-lg border border-border-primary object-contain"
+    />
   );
+
+  if (!local) {
+    return <ExtLink href={src}>{img}</ExtLink>;
+  }
+
+  return img;
 }
 
 function mdChildren(children: React.ReactNode): React.ReactNode {

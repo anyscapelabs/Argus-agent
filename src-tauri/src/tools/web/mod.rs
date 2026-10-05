@@ -150,6 +150,8 @@ struct SearxngHit {
     url: String,
     #[serde(default)]
     content: String,
+    #[serde(default)]
+    img_src: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -377,6 +379,177 @@ fn decode_entities(s: &str) -> String {
 
 pub async fn read(args: &Value) -> Result<String, String> {
     read_with(args, &WebConfig::from_env()).await
+}
+
+const MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
+
+pub async fn image(args: &Value) -> Result<String, String> {
+    image_with(args, &WebConfig::from_env()).await
+}
+
+pub async fn image_with(args: &Value, cfg: &WebConfig) -> Result<String, String> {
+    let query = arg_str(args, "query")?;
+    let mut failures: Vec<String> = vec![];
+
+    for base in &cfg.searxng_pool {
+        let urls = match searxng_images(base, query).await {
+            Ok(urls) => urls,
+            Err(e) => {
+                failures.push(format!("{base}: {e}"));
+                continue;
+            }
+        };
+
+        if urls.is_empty() {
+            failures.push(format!("{base}: no images"));
+            continue;
+        }
+
+        for url in urls {
+            match fetch_image(&url, query).await {
+                Ok(saved) => return Ok(saved),
+                Err(e) => failures.push(format!("{url}: {e}")),
+            }
+        }
+    }
+
+    Err(format!(
+        "no image found for \"{query}\": {}",
+        failures.join("; ")
+    ))
+}
+
+async fn searxng_images(base: &str, query: &str) -> Result<Vec<String>, String> {
+    let resp = client()
+        .get(base)
+        .query(&[("q", query), ("format", "json"), ("categories", "images")])
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|err| format!("request failed: {err}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("answered {}", resp.status()));
+    }
+
+    let body: SearxngResp = resp
+        .json()
+        .await
+        .map_err(|_| "invalid response".to_string())?;
+    Ok(body
+        .results
+        .into_iter()
+        .map(|r| r.img_src.trim().to_string())
+        .filter(|u| u.starts_with("http://") || u.starts_with("https://"))
+        .take(MAX_RESULTS)
+        .collect())
+}
+
+fn image_ext(bytes: &[u8], content_type: &str) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Some("png");
+    }
+    if bytes.starts_with(b"\xff\xd8\xff") {
+        return Some("jpg");
+    }
+    if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        return Some("gif");
+    }
+    if bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return Some("webp");
+    }
+    if content_type.contains("png") {
+        return Some("png");
+    }
+    if content_type.contains("jpeg") || content_type.contains("jpg") {
+        return Some("jpg");
+    }
+    if content_type.contains("gif") {
+        return Some("gif");
+    }
+    if content_type.contains("webp") {
+        return Some("webp");
+    }
+    None
+}
+
+async fn fetch_image(url: &str, query: &str) -> Result<String, String> {
+    crate::tools::browser::url_guard(url)?;
+
+    let resp = client()
+        .get(url)
+        .send()
+        .await
+        .map_err(|err| format!("fetch failed: {err}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("answered {}", resp.status()));
+    }
+
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if !content_type.starts_with("image/") {
+        return Err(format!("not an image ({content_type})"));
+    }
+
+    if let Some(len) = resp.content_length() {
+        if len > MAX_IMAGE_BYTES {
+            return Err("larger than 10MB".into());
+        }
+    }
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|err| format!("read failed: {err}"))?;
+    if bytes.len() as u64 > MAX_IMAGE_BYTES {
+        return Err("larger than 10MB".into());
+    }
+
+    let ext = image_ext(&bytes, &content_type).ok_or("unrecognized image format")?;
+    let slug: String = query
+        .to_lowercase()
+        .chars()
+        .filter_map(|c| {
+            if c.is_ascii_alphanumeric() {
+                Some(c)
+            } else if c == ' ' || c == '-' || c == '_' {
+                Some('-')
+            } else {
+                None
+            }
+        })
+        .take(32)
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string();
+    let slug = if slug.is_empty() {
+        "image".into()
+    } else {
+        slug
+    };
+    let hash: u64 = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        url.hash(&mut h);
+        h.finish()
+    };
+
+    let dir = crate::sessions::ext_install::data_dir().join("images");
+    std::fs::create_dir_all(&dir).map_err(|err| format!("images dir failed: {err}"))?;
+    let dest = dir.join(format!("{slug}-{hash:016x}.{ext}"));
+    std::fs::write(&dest, &bytes).map_err(|err| format!("save failed: {err}"))?;
+
+    Ok(format!(
+        "saved to {} ({} bytes) from {url} — embed it as ![{}]({})",
+        dest.display(),
+        bytes.len(),
+        query,
+        dest.display()
+    ))
 }
 
 pub async fn read_with(args: &Value, cfg: &WebConfig) -> Result<String, String> {

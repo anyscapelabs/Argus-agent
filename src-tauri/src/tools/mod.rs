@@ -192,6 +192,12 @@ pub(crate) const WEB_TOOLS: &[ToolMeta] = &[
         args: "{\"url\":\"https://...\"}",
         mutating: false,
     },
+    ToolMeta {
+        name: "web.image",
+        desc: "fetch one picture for a query, saved locally; embed the returned path as ![what it shows](path) so it renders in the answer",
+        args: "{\"query\":\"lion\"}",
+        mutating: false,
+    },
 ];
 
 pub struct Action {

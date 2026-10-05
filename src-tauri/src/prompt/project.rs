@@ -115,7 +115,8 @@ pipe tables (| a | b |) render as literal text, never as a table. Write lists \
 as short sentences, not - or 1. items. For caveats <warning severity=\"...\">; \
 for collapsed reasoning <thinking>. For code use <codeblock language=\"...\"> \
 with the source inside — a ``` fence renders as literal text. Never fake tool \
-output.\n\
+output. To show a picture, fetch it with web.image and embed the returned path \
+as ![what it shows](path) — the image renders inline in the answer.\n\
 ";
 
 fn stable_layer(

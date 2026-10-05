@@ -278,7 +278,9 @@ no GUI automation tools — anything without a command-line surface cannot be do
 For static pages — docs, pricing, articles — prefer web.read: plain fetch, faster, \
 fewer bot checks; use the browser only when a page needs interaction (clicking, \
 forms, JS apps). If search or a page serves a bot-check or rate-limit page, \
-retry once with different wording, or switch engine.\n",
+retry once with different wording, or switch engine.\n\
+When the user wants to see something, fetch it with web.image and embed the \
+returned path as ![what it shows](path) so the picture lands in the answer.\n",
         );
     }
 

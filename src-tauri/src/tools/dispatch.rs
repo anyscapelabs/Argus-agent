@@ -564,6 +564,7 @@ pub async fn exec<R: tauri::Runtime>(call: ExecIn<'_, R>) -> Result<String, Stri
         }
         "web.search" => web::search(&args).await,
         "web.read" => web::read(&args).await,
+        "web.image" => web::image(&args).await,
         "browser.open" => browser::open(&args).await,
         "browser.click" => browser::click(&args).await,
         "browser.type" => browser::type_text(&args).await,

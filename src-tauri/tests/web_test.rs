@@ -79,6 +79,7 @@ fn cfg(mock: &Mock) -> WebConfig {
         searxng_pool: vec![format!("{}/search", mock.base)],
         ddg_url: format!("{}/html", mock.base),
         jina_base: mock.base.clone(),
+        exa: false,
     }
 }
 

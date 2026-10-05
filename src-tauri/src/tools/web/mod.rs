@@ -39,6 +39,7 @@ pub struct WebConfig {
     pub searxng_pool: Vec<String>,
     pub ddg_url: String,
     pub jina_base: String,
+    pub exa: bool,
 }
 
 impl Default for WebConfig {
@@ -47,6 +48,7 @@ impl Default for WebConfig {
             searxng_pool: SEARXNG_POOL.iter().map(|s| s.to_string()).collect(),
             ddg_url: "https://html.duckduckgo.com/html/".into(),
             jina_base: "https://r.jina.ai".into(),
+            exa: true,
         }
     }
 }
@@ -75,6 +77,7 @@ impl WebConfig {
             searxng_pool: pool,
             ddg_url: non_empty("ARGUS_DDG_URL", base.ddg_url),
             jina_base: non_empty("ARGUS_JINA_URL", base.jina_base),
+            exa: base.exa,
         }
     }
 }
@@ -87,6 +90,14 @@ pub async fn search_with(args: &Value, cfg: &WebConfig) -> Result<String, String
     let query = arg_str(args, "query")?;
     let mut failures: Vec<String> = vec![];
     let mut empty_from: Vec<&str> = vec![];
+
+    if cfg.exa {
+        match exa_search(query).await {
+            Ok(hits) if !hits.is_empty() => return Ok(format_hits(&hits, "exa")),
+            Ok(_) => empty_from.push("exa"),
+            Err(e) => failures.push(format!("exa: {e}")),
+        }
+    }
 
     match searxng_search(&cfg.searxng_pool, query).await {
         Ok(hits) if !hits.is_empty() => return Ok(format_hits(&hits, "searxng")),
@@ -122,6 +133,38 @@ fn domain_of(url: &str) -> String {
         .ok()
         .and_then(|u| u.host_str().map(str::to_string))
         .unwrap_or_default()
+}
+
+async fn exa_search(query: &str) -> Result<Vec<(String, String, String)>, String> {
+    let keyed = crate::mcp::vault::get("exa")
+        .ok()
+        .flatten()
+        .is_some_and(|k| !k.trim().is_empty())
+        || std::env::var("EXA_API_KEY")
+            .ok()
+            .is_some_and(|k| !k.trim().is_empty());
+    if !keyed {
+        return Err("exa not connected".into());
+    }
+
+    let v = crate::mcp::exa::search(query, MAX_RESULTS as u64).await?;
+    Ok(v.as_array()
+        .map(|rs| {
+            rs.iter()
+                .filter_map(|r| {
+                    let title = r.get("title")?.as_str()?.trim().to_string();
+                    let url = r.get("url")?.as_str()?.trim().to_string();
+                    let snip = r
+                        .get("snippet")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
+                    (!title.is_empty() && !url.is_empty()).then(|| (title, url, snip))
+                })
+                .collect()
+        })
+        .unwrap_or_default())
 }
 
 fn format_hits(hits: &[(String, String, String)], provider: &str) -> String {

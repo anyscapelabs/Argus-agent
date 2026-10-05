@@ -493,7 +493,7 @@ async fn searxng_images(base: &str, query: &str) -> Result<Vec<(String, String)>
         .filter_map(|r| {
             let img = r.img_src.trim().to_string();
             let page = r.url.trim().to_string();
-            (img.starts_with("http://") || img.starts_with("https://")).then(|| (img, page))
+            (img.starts_with("http://") || img.starts_with("https://")).then_some((img, page))
         })
         .take(MAX_RESULTS)
         .collect())

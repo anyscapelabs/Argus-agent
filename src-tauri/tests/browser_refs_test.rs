@@ -482,7 +482,7 @@ async fn iso_http() -> (String, tokio::task::JoinHandle<()>) {
                 let body = if path.starts_with("/second") {
                     "<html><body><h1>Second page</h1><button>Back</button></body></html>"
                 } else {
-                    "<html><body><a href=\"/second\">Go second</a><input placeholder=\"Name\"></body></html>"
+                    "<html><body><a href=\"/second\">Go second</a><input placeholder=\"Name\"><input placeholder=\"ReactName\" oninput=\"if(event instanceof InputEvent){document.getElementById('echo').textContent=this.value}\"><span id=\"echo\"></span><div contenteditable=\"true\" oninput=\"if(event instanceof InputEvent){document.getElementById('echo2').textContent=this.innerText}\"></div><span id=\"echo2\"></span><input type=\"file\" placeholder=\"PickFile\" onchange=\"document.getElementById('echo3').textContent=this.files.length+' file(s): '+this.files[0].name\"><span id=\"echo3\"></span><span draggable=\"true\" ondragstart=\"event.dataTransfer.setData('text/plain','card-7')\">card-7</span><button ondragover=\"event.preventDefault()\" ondrop=\"event.preventDefault();document.getElementById('echo4').textContent='got:'+event.dataTransfer.getData('text/plain')\">DropBin</button><span id=\"echo4\"></span><div id=\"shost\"></div><span id=\"shecho\"></span><script>document.getElementById('shost').attachShadow({mode:'open'}).innerHTML='<input placeholder=\"ShadowName\" oninput=\"if(event instanceof InputEvent){document.getElementById(\\'shecho\\').textContent=this.value}\">';</script></body></html>"
                 };
                 let resp = format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -515,6 +515,18 @@ fn link_ref(out: &str) -> usize {
                 .and_then(|n| n.parse().ok())
         })
         .expect("link ref for Go second")
+}
+
+fn ref_for_label(out: &str, label: &str) -> usize {
+    out.lines()
+        .map(str::trim)
+        .find(|l| l.starts_with('[') && l.contains(label))
+        .and_then(|l| {
+            l.strip_prefix('[')
+                .and_then(|r| r.split(']').next())
+                .and_then(|n| n.parse().ok())
+        })
+        .unwrap_or_else(|| panic!("ref for {label}"))
 }
 
 #[tokio::test]
@@ -561,4 +573,227 @@ async fn iso_old_gen_rejected_after_navigate() {
         argus_lib::tools::recover::classify(&err),
         argus_lib::tools::recover::RecoveryKind::StaleReference
     );
+}
+
+#[tokio::test]
+async fn ext_press_key_succeeds() {
+    let _guard = serial();
+    let _ = ext_harness(vec![two_el()]).await;
+
+    let out = browser::open(&serde_json::json!({"url": "https://example.com/"}))
+        .await
+        .unwrap();
+    let g = snap_gen(&out);
+
+    let out = browser::press(&serde_json::json!({"ref": 1, "key": "Escape", "snapshot": g}))
+        .await
+        .expect("press Escape");
+    assert!(out.contains("(snapshot "), "got: {out}");
+}
+
+#[tokio::test]
+async fn ext_press_rejects_unknown_key() {
+    let _guard = serial();
+    let _ = ext_harness(vec![two_el()]).await;
+
+    let err = browser::press(&serde_json::json!({"key": "F13"}))
+        .await
+        .expect_err("unknown key must fail");
+    assert!(err.contains("unsupported key"), "got: {err}");
+}
+
+#[tokio::test]
+async fn ext_wait_finds_text_without_waiting() {
+    let _guard = serial();
+    let _ = ext_harness(vec![two_el()]).await;
+
+    let _ = browser::open(&serde_json::json!({"url": "https://example.com/"}))
+        .await
+        .unwrap();
+
+    let out = browser::wait(&serde_json::json!({"text": "hello from fake page"}))
+        .await
+        .expect("text is already there");
+    assert!(out.contains("hello from fake page"), "got: {out}");
+}
+
+#[tokio::test]
+async fn ext_wait_times_out_with_guidance() {
+    let _guard = serial();
+    let _ = ext_harness(vec![two_el()]).await;
+
+    let _ = browser::open(&serde_json::json!({"url": "https://example.com/"}))
+        .await
+        .unwrap();
+
+    let err = browser::wait(&serde_json::json!({"text": "zzz-never-appears", "timeout": 1}))
+        .await
+        .expect_err("missing text must time out");
+    assert!(err.contains("still not showing"), "got: {err}");
+}
+
+#[tokio::test]
+async fn iso_type_reaches_framework_style_input() {
+    let _guard = serial();
+    let _ = iso_profiles();
+    let (base, _srv) = iso_http().await;
+
+    let out = browser::open(&serde_json::json!({"url": format!("{base}/"), "profile": "iso-c"}))
+        .await
+        .expect("isolated open");
+    let g = snap_gen(&out);
+    let r = ref_for_label(&out, "ReactName");
+
+    let out = browser::type_text(
+        &serde_json::json!({"ref": r, "snapshot": g, "profile": "iso-c", "text": "hello-react"}),
+    )
+    .await
+    .expect("isolated type");
+    assert!(out.contains("hello-react"), "echo never fired, got: {out}");
+}
+
+#[tokio::test]
+async fn iso_type_reaches_contenteditable() {
+    let _guard = serial();
+    let _ = iso_profiles();
+    let (base, _srv) = iso_http().await;
+
+    let out = browser::open(&serde_json::json!({"url": format!("{base}/"), "profile": "iso-d"}))
+        .await
+        .expect("isolated open");
+    let g = snap_gen(&out);
+    let r = ref_for_label(&out, "] div");
+
+    let out = browser::type_text(
+        &serde_json::json!({"ref": r, "snapshot": g, "profile": "iso-d", "text": "hello-editor"}),
+    )
+    .await
+    .expect("isolated type into editor");
+    assert!(out.contains("hello-editor"), "echo never fired, got: {out}");
+}
+
+#[tokio::test]
+async fn iso_press_escape_succeeds() {
+    let _guard = serial();
+    let _ = iso_profiles();
+    let (base, _srv) = iso_http().await;
+
+    let out = browser::open(&serde_json::json!({"url": format!("{base}/"), "profile": "iso-e"}))
+        .await
+        .expect("isolated open");
+    let g = snap_gen(&out);
+    let r = ref_for_label(&out, "ReactName");
+
+    let out = browser::press(
+        &serde_json::json!({"ref": r, "snapshot": g, "profile": "iso-e", "key": "Escape"}),
+    )
+    .await
+    .expect("isolated press");
+    assert!(out.contains("(snapshot "), "got: {out}");
+}
+
+#[tokio::test]
+async fn ext_drag_succeeds() {
+    let _guard = serial();
+    let _ = ext_harness(vec![two_el()]).await;
+
+    let out = browser::open(&serde_json::json!({"url": "https://example.com/"}))
+        .await
+        .unwrap();
+    let g = snap_gen(&out);
+
+    let out = browser::drag(&serde_json::json!({"from": 0, "to": 1, "snapshot": g}))
+        .await
+        .expect("drag");
+    assert!(out.contains("(snapshot "), "got: {out}");
+}
+
+#[tokio::test]
+async fn ext_upload_refuses_real_chrome() {
+    let _guard = serial();
+    let _ = ext_harness(vec![two_el()]).await;
+
+    let err = browser::upload(&serde_json::json!({"ref": 0, "path": "/tmp/x.txt"}))
+        .await
+        .expect_err("real-Chrome upload must refuse");
+    assert!(err.contains("isolated"), "got: {err}");
+}
+
+#[tokio::test]
+async fn iso_upload_attaches_file() {
+    let _guard = serial();
+    let _ = iso_profiles();
+    let (base, _srv) = iso_http().await;
+
+    let up = std::env::temp_dir().join(format!("argus-upload-{}.txt", std::process::id()));
+    std::fs::write(&up, b"hello upload").unwrap();
+
+    let out = browser::open(&serde_json::json!({"url": format!("{base}/"), "profile": "iso-f"}))
+        .await
+        .expect("isolated open");
+    let g = snap_gen(&out);
+    let r = ref_for_label(&out, "PickFile");
+
+    let missing =
+        browser::upload(&serde_json::json!({"ref": r, "snapshot": g, "profile": "iso-f", "path": "/nope/missing.txt"}))
+            .await
+            .expect_err("missing file must fail");
+    assert!(missing.contains("no such file"), "got: {missing}");
+
+    let bin = ref_for_label(&out, "DropBin");
+    let wrong_kind =
+        browser::upload(&serde_json::json!({"ref": bin, "snapshot": g, "profile": "iso-f", "path": up.to_string_lossy()}))
+            .await
+            .expect_err("non-file input must fail");
+    assert!(wrong_kind.contains("takes no file"), "got: {wrong_kind}");
+
+    let out = browser::upload(
+        &serde_json::json!({"ref": r, "snapshot": g, "profile": "iso-f", "path": up.to_string_lossy()}),
+    )
+    .await
+    .expect("isolated upload");
+    let name = up.file_name().unwrap().to_string_lossy();
+    assert!(out.contains(&format!("1 file(s): {name}")), "got: {out}");
+    let _ = std::fs::remove_file(&up);
+}
+
+#[tokio::test]
+async fn iso_drag_moves_data() {
+    let _guard = serial();
+    let _ = iso_profiles();
+    let (base, _srv) = iso_http().await;
+
+    let out = browser::open(&serde_json::json!({"url": format!("{base}/"), "profile": "iso-g"}))
+        .await
+        .expect("isolated open");
+    let g = snap_gen(&out);
+    let from = ref_for_label(&out, "card-7");
+    let to = ref_for_label(&out, "DropBin");
+
+    let out = browser::drag(
+        &serde_json::json!({"from": from, "to": to, "snapshot": g, "profile": "iso-g"}),
+    )
+    .await
+    .expect("isolated drag");
+    assert!(out.contains("got:card-7"), "drop never fired, got: {out}");
+}
+
+#[tokio::test]
+async fn iso_type_reaches_shadow_input() {
+    let _guard = serial();
+    let _ = iso_profiles();
+    let (base, _srv) = iso_http().await;
+
+    let out = browser::open(&serde_json::json!({"url": format!("{base}/"), "profile": "iso-h"}))
+        .await
+        .expect("isolated open");
+    let g = snap_gen(&out);
+    let r = ref_for_label(&out, "ShadowName");
+
+    let out = browser::type_text(
+        &serde_json::json!({"ref": r, "snapshot": g, "profile": "iso-h", "text": "hello-shadow"}),
+    )
+    .await
+    .expect("isolated type into shadow input");
+    assert!(out.contains("hello-shadow"), "echo never fired, got: {out}");
 }

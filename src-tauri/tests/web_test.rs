@@ -1,4 +1,4 @@
-use argus_lib::tools::web::{read_with, search_with, WebConfig};
+use argus_lib::tools::web::{image_with, read_with, search_with, WebConfig};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -79,6 +79,7 @@ fn cfg(mock: &Mock) -> WebConfig {
         searxng_pool: vec![format!("{}/search", mock.base)],
         ddg_url: format!("{}/html", mock.base),
         jina_base: mock.base.clone(),
+        exa: false,
     }
 }
 
@@ -363,4 +364,46 @@ async fn search_result_url_flows_into_read() {
         .expect("read");
     assert!(out.contains("Rust 1.98 notes body."), "got: {out}");
     assert!(out.contains(&format!("Source: {mock_page}")), "got: {out}");
+}
+
+#[tokio::test]
+async fn image_returns_direct_links() {
+    let mock = start_mock().await;
+    let hits = r#"{"results":[
+{"title":"Lion","url":"https://example.com/lion","img_src":"https://img.example.com/lion.jpg"},
+{"title":"NoSrc","url":"https://example.com/x"}
+]}"#;
+    route(&mock, "/search", 200, "application/json", hits);
+
+    let out = image_with(&search_args("lion"), &cfg(&mock))
+        .await
+        .expect("image");
+
+    assert!(
+        out.contains("https://img.example.com/lion.jpg"),
+        "got: {out}"
+    );
+    assert!(
+        out.contains("(from https://example.com/lion)"),
+        "got: {out}"
+    );
+    assert!(out.contains("never a source page"), "got: {out}");
+    assert!(!out.contains("NoSrc"), "got: {out}");
+}
+
+#[tokio::test]
+async fn image_without_sources_is_structured_error() {
+    let mock = start_mock().await;
+    route(
+        &mock,
+        "/search",
+        200,
+        "application/json",
+        r#"{"results":[{"title":"Lion","url":"https://example.com/lion"}]}"#,
+    );
+
+    let err = image_with(&search_args("lion"), &cfg(&mock))
+        .await
+        .expect_err("sourceless results must fail");
+    assert!(err.contains("no image found"), "got: {err}");
 }

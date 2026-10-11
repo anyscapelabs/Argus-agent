@@ -246,7 +246,7 @@ async fn searxng_fetch(base: &str, query: &str) -> Result<Vec<(String, String, S
             let title = strip(&r.title);
             let url = r.url.trim().to_string();
 
-            (!title.is_empty() && !url.is_empty()).then(|| (title, url, strip(&r.content)))
+            (!title.is_empty() && !url.is_empty()).then_some((title, url, strip(&r.content)))
         })
         .take(MAX_RESULTS)
         .collect())

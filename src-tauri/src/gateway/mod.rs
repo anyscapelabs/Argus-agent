@@ -215,6 +215,10 @@ pub fn approval_reply(allow: bool, args: Option<String>) -> Result<ApprovalReply
 
 #[tauri::command]
 pub fn gw_list_providers(gw: State<'_, Gateway>) -> Result<Vec<Provider>, String> {
+    {
+        let conn = gw.conn.lock().map_err(|err| err.to_string())?;
+        store::reconcile_connected(&conn)?;
+    }
     let conn = gw.conn.lock().map_err(|err| err.to_string())?;
     store::list_providers(&conn)
 }

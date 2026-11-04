@@ -105,7 +105,7 @@ export default function ProviderConnectModal({
             <img
               src={logoUri}
               alt=""
-              className="h-6 w-6 shrink-0 rounded object-contain p-0.5 invert"
+              className="h-6 w-6 shrink-0 rounded object-contain p-0.5"
             />
           ) : (
             <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-accent text-[11px] font-bold leading-none text-bg-primary">

@@ -17,7 +17,11 @@ pub fn open(db_path: &Path) -> Result<Connection, String> {
     Ok(conn)
 }
 
-fn reconcile_connected(conn: &Connection) -> Result<(), String> {
+// The keyring is the source of truth: connected=1 without a stored secret is
+// a phantom state (crashed runs, partial connects) and gets cleared. Only
+// flagged rows are probed so a page refresh stays cheap; secrets surviving
+// their flags are harmless in-memory drift and self-heal on reconnect.
+pub fn reconcile_connected(conn: &Connection) -> Result<(), String> {
     let unnamed: Vec<String> = {
         let mut stmt = conn
             .prepare("SELECT id FROM providers WHERE name = ''")
@@ -39,23 +43,20 @@ fn reconcile_connected(conn: &Connection) -> Result<(), String> {
             .map_err(|err| err.to_string())?;
     }
 
-    let rows: Vec<(String, bool)> = {
+    let flagged: Vec<String> = {
         let mut stmt = conn
-            .prepare("SELECT id, connected FROM providers")
+            .prepare("SELECT id FROM providers WHERE connected = 1")
             .map_err(|err| err.to_string())?;
         let map = stmt
-            .query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? != 0))
-            })
+            .query_map([], |r| r.get::<_, String>(0))
             .map_err(|err| err.to_string())?;
         map.collect::<Result<Vec<_>, _>>()
             .map_err(|err| err.to_string())?
     };
 
-    for (id, connected) in rows {
-        let has = secret_get(&id).unwrap_or(None).is_some();
-        if has != connected {
-            set_connected(conn, &id, has)?;
+    for id in flagged {
+        if secret_get(&id).ok().flatten().is_none() {
+            set_connected(conn, &id, false)?;
         }
     }
 

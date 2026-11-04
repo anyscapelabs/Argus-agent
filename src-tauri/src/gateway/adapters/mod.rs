@@ -276,12 +276,20 @@ pub async fn verify_key(http: &Client, prov: &Provider, key: &str) -> Result<(),
     }
 
     match req.send().await {
-        Ok(r)
-            if r.status() == reqwest::StatusCode::UNAUTHORIZED
-                || r.status() == reqwest::StatusCode::FORBIDDEN =>
-        {
+        Ok(r) if r.status() == reqwest::StatusCode::UNAUTHORIZED => {
             Err(format!("{} rejected this API key", prov.name))
         }
-        _ => Ok(()),
+        Ok(r) if r.status() == reqwest::StatusCode::FORBIDDEN => {
+            Err(format!("{} denied this API key", prov.name))
+        }
+        // Anything the endpoint refused to serve is un-verified; storing the
+        // key as connected without proof is how phantom connections happen.
+        Ok(r) if r.status().is_server_error() => Err(format!(
+            "{} could not verify the key ({})",
+            prov.name,
+            r.status()
+        )),
+        Ok(_) => Ok(()),
+        Err(err) => Err(format!("{} unreachable: {err}", prov.name)),
     }
 }

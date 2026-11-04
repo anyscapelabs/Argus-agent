@@ -7,7 +7,8 @@ const LOGO_CACHE = new Map<string, string | null>();
 const SVG_URI_PREFIX = "data:image/svg+xml;utf8,";
 
 function toDataUri(svg: string): string {
-  return `${SVG_URI_PREFIX}${encodeURIComponent(svg)}`;
+  const themed = svg.replace(/currentColor/g, "#fff");
+  return SVG_URI_PREFIX + encodeURIComponent(themed);
 }
 
 export function useProviderLogo(id: string) {
